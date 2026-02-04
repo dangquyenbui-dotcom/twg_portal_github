@@ -32,10 +32,10 @@ def get_token_from_code(code, scopes=None, auth_code_flow=None):
     """
     cache = msal.SerializableTokenCache()
     
+    # We remove 'auth_code_flow' here to prevent the TypeError in older/incompatible MSAL versions
     result = _build_msal_app(cache=cache).acquire_token_by_authorization_code(
         code,
         scopes=scopes or Config.SCOPE,
-        redirect_uri='http://localhost:5000' + Config.REDIRECT_PATH,
-        auth_code_flow=auth_code_flow
+        redirect_uri='http://localhost:5000' + Config.REDIRECT_PATH
     )
     return result
