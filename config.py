@@ -1,5 +1,5 @@
 """
-Configuration settings for Production Portal
+Configuration settings for TWG Portal
 """
 
 import os
@@ -19,6 +19,10 @@ class Config:
     AUTHORITY = os.getenv('AUTHORITY')
     REDIRECT_PATH = os.getenv('REDIRECT_PATH', '/auth/redirect')
     SCOPE = [os.getenv('SCOPE', 'User.Read')]
+    
+    # Database default updated to remove 'Production' reference
+    DB_SERVER = os.getenv('DB_SERVER')
+    DB_NAME = os.getenv('DB_NAME', 'TwgPortalDB')
     
     @classmethod
     def validate(cls):

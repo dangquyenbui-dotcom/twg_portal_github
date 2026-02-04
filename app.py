@@ -1,5 +1,5 @@
 """
-Production Portal - Main Application
+TWG Portal - Main Application
 Cloud-ready configuration with Microsoft Entra ID SSO
 """
 
@@ -33,7 +33,6 @@ def create_app():
     def login():
         try:
             # 1. Initiate the auth code flow and store in session
-            # This generates the PKCE 'code_verifier' which is saved in the session
             session["flow"] = auth_utils._build_msal_app().initiate_auth_code_flow(
                 Config.SCOPE,
                 redirect_uri='http://localhost:5000' + Config.REDIRECT_PATH
@@ -49,12 +48,11 @@ def create_app():
         # 2. Retrieve the flow from the session
         flow = session.get("flow")
         if not flow:
-            logger.warning("No flow found in session. Session may have expired or cookies are missing.")
+            logger.warning("No flow found in session. Session may have expired.")
             return redirect(url_for("main.login_page"))
 
         try:
             # 3. Exchange code for token using the flow
-            # We convert request.args to a dict to ensure compatibility
             result = auth_utils.get_token_from_code(
                 auth_response=request.args.to_dict(),
                 auth_code_flow=flow
@@ -75,7 +73,6 @@ def create_app():
             
             logger.info(f"User {session['user']['email']} logged in successfully.")
             
-            # Clear the flow to keep session clean
             session.pop("flow", None)
             return redirect(url_for("main.index"))
             
