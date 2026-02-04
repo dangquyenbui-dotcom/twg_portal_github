@@ -32,7 +32,8 @@ def get_token_from_code(code, scopes=None, auth_code_flow=None):
     """
     cache = msal.SerializableTokenCache()
     
-    # We remove 'auth_code_flow' here to prevent the TypeError in older/incompatible MSAL versions
+    # FIX: We remove 'auth_code_flow' here to prevent the TypeError 
+    # "Session.request() got an unexpected keyword argument 'auth_code_flow'"
     result = _build_msal_app(cache=cache).acquire_token_by_authorization_code(
         code,
         scopes=scopes or Config.SCOPE,
