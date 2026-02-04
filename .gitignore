@@ -1,10 +1,16 @@
-# Security: Ignore environment variables containing secrets
+# 1. Secrets (Never upload these)
 .env
 
-# Virtual Environment: Ignore the massive venv folder
+# 2. Virtual Environment (Too large, install via requirements.txt instead)
 venv/
 env/
+.venv/
 
-# Python Cache: Ignore compiled python files
+# 3. Python Compiled files (Junk files)
 __pycache__/
 *.pyc
+
+# 4. Editor settings (Optional, keeps repo clean)
+.vscode/
+.idea/
+.DS_Store
