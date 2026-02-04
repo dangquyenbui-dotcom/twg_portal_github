@@ -1,0 +1,10 @@
+# Security: Ignore environment variables containing secrets
+.env
+
+# Virtual Environment: Ignore the massive venv folder
+venv/
+env/
+
+# Python Cache: Ignore compiled python files
+__pycache__/
+*.pyc
