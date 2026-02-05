@@ -4,7 +4,6 @@ Waitress==2.1.2
 Flask-Session==0.5.0
 
 # Database
-# Removed strict version ==4.0.39 to allow newer wheels for Python 3.12
 pyodbc
 
 # Authentication (Microsoft Entra ID)
@@ -14,13 +13,6 @@ requests==2.31.0
 # Environment
 python-dotenv==1.0.0
 
-# Internationalization
-Flask-Babel==4.0.0
-Babel==2.13.1
-
-# Security & Utilities
-Werkzeug==3.0.1
-MarkupSafe==2.1.3
-Jinja2==3.1.2
-cryptography==41.0.4
-openpyxl==3.1.2
+# Performance & Background Jobs (NEW)
+Flask-Caching==2.1.0
+Flask-APScheduler==1.13.1

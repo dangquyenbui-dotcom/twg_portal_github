@@ -1,14 +1,17 @@
 """
 TWG Portal - Main Application
-Cloud-ready configuration with Microsoft Entra ID SSO
+With Background Caching & Scheduler
 """
 
 import logging
+import atexit
 from flask import Flask, session, redirect, url_for, request, render_template
 from flask_session import Session
 from config import Config
+from extensions import cache, scheduler
 import auth.entra_auth as auth_utils
 from routes.main import main_bp
+from services.data_worker import refresh_sales_cache # Import the worker task
 
 # Logging configuration
 logging.basicConfig(level=logging.DEBUG)
@@ -18,51 +21,60 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # Initialize Server-side Sessions
+    # 1. Init Standard Extensions
     Session(app)
-
-    # Validate Config
     Config.validate()
+    
+    # 2. Init Cache & Scheduler
+    cache.init_app(app)
+    scheduler.init_app(app)
+    scheduler.start()
 
-    # Register Blueprints
+    # 3. Schedule the Job (Run every 60 seconds)
+    # We add a job directly here
+    if not scheduler.get_job('sales_refresh_job'):
+        scheduler.add_job(
+            id='sales_refresh_job',
+            func=refresh_sales_cache,
+            trigger='interval',
+            seconds=60 # Updates cache every 1 minute
+        )
+        logger.info("🕒 Scheduled 'sales_refresh_job' to run every 60s")
+
+    # 4. Register Routes
     app.register_blueprint(main_bp)
 
+    # Shut down scheduler when app closes
+    atexit.register(lambda: scheduler.shutdown())
+
     # --- SSO ROUTES ---
-    
     @app.route("/login")
     def login():
         try:
-            # 1. Initiate the auth code flow and store in session
             session["flow"] = auth_utils._build_msal_app().initiate_auth_code_flow(
                 Config.SCOPE,
                 redirect_uri='http://localhost:5000' + Config.REDIRECT_PATH
             )
-            logger.debug(f"Auth flow initiated. Redirecting to Microsoft...")
             return redirect(session["flow"]["auth_uri"])
         except Exception as e:
-            logger.error(f"Login initiation failed: {e}")
+            logger.error(f"Login failed: {e}")
             return f"Error: {str(e)}"
 
     @app.route("/auth/redirect")
     def authorized():
-        # 2. Retrieve the flow from the session
         flow = session.get("flow")
         if not flow:
-            logger.warning("No flow found in session. Session may have expired.")
             return redirect(url_for("main.login_page"))
 
         try:
-            # 3. Exchange code for token using the flow
             result = auth_utils.get_token_from_code(
                 auth_response=request.args.to_dict(),
                 auth_code_flow=flow
             )
             
             if "error" in result:
-                logger.error(f"Authentication Error: {result.get('error_description')}")
                 return render_template("login.html", error=result.get("error_description"))
 
-            # 4. Success: Set user session
             user_claims = result.get("id_token_claims")
             session["user"] = {
                 "name": user_claims.get("name"),
@@ -70,15 +82,12 @@ def create_app():
                 "oid": user_claims.get("oid"),
                 "tid": user_claims.get("tid")
             }
-            
-            logger.info(f"User {session['user']['email']} logged in successfully.")
-            
             session.pop("flow", None)
             return redirect(url_for("main.index"))
             
         except Exception as e:
             logger.exception("Auth route crashed")
-            return f"Authentication Error: {str(e)}"
+            return f"Auth Error: {str(e)}"
 
     @app.route("/logout")
     def logout():
