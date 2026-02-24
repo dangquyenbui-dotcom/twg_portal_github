@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, session, redirect, url_for
-from services.db_service import fetch_daily_bookings
+from services.data_worker import get_bookings_from_cache
 
 sales_bp = Blueprint('sales', __name__, url_prefix='/sales')
 
@@ -16,39 +16,30 @@ def bookings():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    data = fetch_daily_bookings()
-    error = None
+    # Read from cache — instant, no SQL query
+    snapshot, last_updated = get_bookings_from_cache()
 
-    if data is None:
-        error = "Unable to connect to the database. Please try again later."
-        data = []
-
-    # Build summary stats
-    total_amount = sum(row.get('Booking Amount', 0) or 0 for row in data)
-    total_units = sum(row.get('Units Ordered', 0) or 0 for row in data)
-    total_orders = len(set(row.get('Sales Order Number', '') for row in data))
-
-    # Territory ranking: aggregate totals and rank
-    territory_totals = {}
-    for row in data:
-        terr = row.get('Territory', 'Unknown')
-        territory_totals[terr] = territory_totals.get(terr, 0) + (row.get('Booking Amount', 0) or 0)
-
-    territory_ranking = [
-        {"rank": i + 1, "location": name, "total": amount}
-        for i, (name, amount) in enumerate(
-            sorted(territory_totals.items(), key=lambda x: x[1], reverse=True)
+    if snapshot is None:
+        return render_template(
+            'sales/bookings.html',
+            user=session["user"],
+            error="Unable to load data. Please try again shortly.",
+            total_amount=0, total_units=0, total_orders=0,
+            total_territories=0, territory_ranking=[],
+            order_date=None, last_updated=None
         )
-    ]
+
+    summary = snapshot["summary"]
 
     return render_template(
         'sales/bookings.html',
         user=session["user"],
-        error=error,
-        total_amount=total_amount,
-        total_units=total_units,
-        total_orders=total_orders,
-        total_territories=len(territory_ranking),
-        territory_ranking=territory_ranking,
-        order_date=data[0].get('Order Date') if data else None
+        error=None,
+        total_amount=summary["total_amount"],
+        total_units=summary["total_units"],
+        total_orders=summary["total_orders"],
+        total_territories=summary["total_territories"],
+        territory_ranking=snapshot["ranking"],
+        order_date=summary.get("order_date"),
+        last_updated=last_updated
     )

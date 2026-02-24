@@ -10,6 +10,14 @@
 {% endblock %}
 
 {% block extra_styles %}
+/* ── Bookings Layout: fit everything in viewport ── */
+.bookings-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 56px); /* full height minus topnav */
+    overflow: hidden;
+}
+
 .back-link {
     display: inline-flex;
     align-items: center;
@@ -17,8 +25,9 @@
     color: var(--text-secondary);
     text-decoration: none;
     font-size: 13px;
-    margin-bottom: 24px;
+    margin-bottom: 12px;
     transition: color 0.15s;
+    flex-shrink: 0;
 }
 .back-link:hover { color: var(--text-primary); }
 .back-link svg { width: 16px; height: 16px; }
@@ -27,9 +36,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 28px;
+    margin-bottom: 4px;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 .page-header h1 {
@@ -39,41 +49,86 @@
 }
 
 .page-header .date-tag {
-    font-size: 12px;
-    color: var(--text-muted);
+    font-size: 16px;
+    color: var(--text-secondary);
     background: var(--bg-card);
     border: 1px solid var(--border);
-    padding: 5px 14px;
+    padding: 8px 18px;
     border-radius: 20px;
     font-family: var(--font-mono);
+    font-weight: 500;
 }
+
+.refresh-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.last-updated {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.last-updated .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    display: inline-block;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.countdown {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.countdown svg { width: 14px; height: 14px; opacity: 0.5; }
 
 /* ── Summary Cards ── */
 .stats-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 14px;
-    margin-bottom: 32px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-shrink: 0;
 }
 
 .stat-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    padding: 20px;
+    padding: 16px;
 }
 
 .stat-card .label {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.6px;
     color: var(--text-muted);
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }
 
 .stat-card .value {
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 700;
     font-family: var(--font-mono);
     letter-spacing: -0.5px;
@@ -83,40 +138,143 @@
 .stat-card .value.units { color: var(--accent-blue); }
 .stat-card .value.orders { color: var(--accent-amber); }
 
-/* ── Ranking Table ── */
+/* ── Ranking Section (fills remaining space) ── */
+.ranking-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* allows flex child to shrink */
+}
+
 .section-title {
     font-size: 14px;
     font-weight: 600;
     color: var(--text-secondary);
-    margin-bottom: 14px;
+    margin-bottom: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    flex-shrink: 0;
 }
 
+/* ── Top 3 Podium ── */
+.podium {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+}
+
+.podium-card {
+    position: relative;
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    padding: 20px 16px 16px;
+    text-align: center;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.podium-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.podium-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+}
+
+.podium-card.gold   { border: 1px solid rgba(255,187,51,0.3); }
+.podium-card.silver { border: 1px solid rgba(168,179,199,0.25); }
+.podium-card.bronze { border: 1px solid rgba(205,147,91,0.25); }
+
+.podium-card.gold::before   { background: linear-gradient(90deg, #D4A012, #FFCE44, #D4A012); }
+.podium-card.silver::before { background: linear-gradient(90deg, #7B8CA3, #C0CDE0, #7B8CA3); }
+.podium-card.bronze::before { background: linear-gradient(90deg, #96653A, #CD935B, #96653A); }
+
+.podium-medal {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 10px;
+    font-size: 16px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+}
+
+.podium-card.gold .podium-medal {
+    background: linear-gradient(145deg, #D4A012, #F5CE50);
+    color: #1A1400;
+    box-shadow: 0 0 20px rgba(212,160,18,0.3);
+}
+
+.podium-card.silver .podium-medal {
+    background: linear-gradient(145deg, #7B8CA3, #B8C8DC);
+    color: #1A2035;
+    box-shadow: 0 0 16px rgba(123,140,163,0.25);
+}
+
+.podium-card.bronze .podium-medal {
+    background: linear-gradient(145deg, #96653A, #CD935B);
+    color: #1A1208;
+    box-shadow: 0 0 16px rgba(150,101,58,0.25);
+}
+
+.podium-location {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.podium-amount {
+    font-size: 18px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    letter-spacing: -0.3px;
+}
+
+.podium-card.gold .podium-amount   { color: #FFCE44; }
+.podium-card.silver .podium-amount { color: #B8C8DC; }
+.podium-card.bronze .podium-amount { color: #CD935B; }
+
+/* ── Remaining Ranking Table (scrollable if needed) ── */
 .ranking-wrapper {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    overflow: hidden;
-    max-width: 520px;
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 .ranking-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: 15px;
 }
 
 .ranking-table thead th {
     text-align: left;
-    padding: 10px 20px;
-    font-size: 11px;
+    padding: 10px 24px;
+    font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-muted);
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1;
 }
 
 .ranking-table thead th.col-total,
@@ -125,9 +283,10 @@
 }
 
 .ranking-table tbody td {
-    padding: 10px 20px;
+    padding: 9px 24px;
     border-bottom: 1px solid rgba(42,51,82,0.4);
     color: var(--text-secondary);
+    font-size: 14px;
 }
 
 .ranking-table tbody tr:last-child td {
@@ -161,89 +320,228 @@
     font-weight: 500;
 }
 
-/* ── Error State ── */
+/* ── Error / Empty ── */
 .error-banner {
     background: rgba(239,68,68,0.08);
     border: 1px solid rgba(239,68,68,0.2);
     border-radius: var(--radius-md);
     padding: 16px 20px;
-    margin-bottom: 24px;
+    margin-bottom: 16px;
     color: var(--accent-red);
     font-size: 14px;
+    flex-shrink: 0;
 }
 
-/* ── Empty State ── */
 .empty-state {
     text-align: center;
-    padding: 60px 20px;
+    padding: 40px 20px;
     color: var(--text-muted);
 }
 .empty-state p { font-size: 14px; }
+
+/* ================================================================
+   TABLET (iPad) — everything fits in one screen
+   ================================================================ */
+@media (max-width: 1024px) {
+    .bookings-page {
+        height: calc(100vh - 48px);
+    }
+
+    .page-container { padding: 20px; }
+
+    .stats-row { gap: 10px; }
+
+    .stat-card { padding: 12px; }
+    .stat-card .value { font-size: 20px; }
+    .stat-card .label { font-size: 9px; }
+
+    .podium-card { padding: 16px 12px 12px; }
+    .podium-medal { width: 36px; height: 36px; font-size: 14px; }
+    .podium-location { font-size: 13px; }
+    .podium-amount { font-size: 16px; }
+
+    .ranking-table tbody td { padding: 8px 16px; font-size: 13px; }
+    .ranking-table thead th { padding: 8px 16px; font-size: 11px; }
+}
+
+/* ================================================================
+   PHONE (iPhone) — compact single-screen layout
+   ================================================================ */
+@media (max-width: 480px) {
+    .bookings-page {
+        height: calc(100vh - 48px);
+    }
+
+    .page-container { padding: 12px; }
+
+    .back-link { font-size: 11px; margin-bottom: 8px; }
+
+    .page-header { margin-bottom: 2px; }
+    .page-header h1 { font-size: 17px; }
+    .page-header .date-tag {
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+
+    .refresh-bar { margin-bottom: 10px; }
+    .last-updated { font-size: 10px; }
+    .countdown { font-size: 10px; }
+
+    /* 2x2 grid for stat cards on phone */
+    .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .stat-card { padding: 10px; }
+    .stat-card .label { font-size: 8px; margin-bottom: 4px; }
+    .stat-card .value { font-size: 17px; }
+
+    .section-title { font-size: 11px; margin-bottom: 8px; }
+
+    /* Smaller podium */
+    .podium { gap: 8px; margin-bottom: 8px; }
+    .podium-card { padding: 12px 8px 10px; }
+    .podium-medal { width: 28px; height: 28px; font-size: 12px; margin-bottom: 6px; }
+    .podium-location { font-size: 11px; margin-bottom: 2px; }
+    .podium-amount { font-size: 13px; }
+
+    /* Compact table */
+    .ranking-table tbody td { padding: 6px 12px; font-size: 12px; }
+    .ranking-table thead th { padding: 6px 12px; font-size: 10px; }
+}
 {% endblock %}
 
 {% block content %}
-<a href="/sales" class="back-link fade-in">
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
-    </svg>
-    Back to Sales
-</a>
+<!-- Auto-refresh: reload the page every 10 minutes (600 seconds) -->
+<meta http-equiv="refresh" content="600">
 
-<div class="page-header fade-in stagger-1">
-    <h1>Daily Bookings</h1>
-    <span class="date-tag">{{ order_date.strftime('%A, %B %d, %Y') if order_date else 'Today' }}</span>
-</div>
+<div class="bookings-page">
+    <a href="/sales" class="back-link fade-in">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
+        </svg>
+        Back to Sales
+    </a>
 
-{% if error %}
-<div class="error-banner fade-in stagger-1">{{ error }}</div>
-{% endif %}
+    <div class="page-header fade-in stagger-1">
+        <h1>Daily Bookings</h1>
+        <span class="date-tag">{{ order_date.strftime('%A, %B %d, %Y') if order_date else 'Today' }}</span>
+    </div>
 
-<!-- Summary Stats -->
-<div class="stats-row fade-in stagger-2">
-    <div class="stat-card">
-        <div class="label">Total Booking Amount</div>
-        <div class="value money">${{ "{:,.2f}".format(total_amount) }}</div>
+    <div class="refresh-bar fade-in stagger-1">
+        <div class="last-updated">
+            <span class="dot"></span>
+            {% if last_updated %}
+                Last updated: {{ last_updated.strftime('%I:%M %p') }}
+            {% else %}
+                Waiting for data...
+            {% endif %}
+        </div>
+        <div class="countdown">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/>
+            </svg>
+            Next refresh in <span id="countdownTimer">10:00</span>
+        </div>
     </div>
-    <div class="stat-card">
-        <div class="label">Total Units Ordered</div>
-        <div class="value units">{{ "{:,}".format(total_units|int) }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="label">Sales Orders</div>
-        <div class="value orders">{{ "{:,}".format(total_orders) }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="label">Territories Active</div>
-        <div class="value">{{ total_territories }}</div>
-    </div>
-</div>
 
-<!-- Territory Ranking -->
-{% if territory_ranking %}
-<div class="section-title fade-in stagger-3">By Ranking</div>
-<div class="ranking-wrapper fade-in stagger-3">
-    <table class="ranking-table">
-        <thead>
-            <tr>
-                <th>Location</th>
-                <th class="col-total">Total</th>
-                <th class="col-rank">Rank</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in territory_ranking %}
-            <tr>
-                <td class="col-location">{{ row.location }}</td>
-                <td class="col-total">{{ "{:,.2f}".format(row.total) }}</td>
-                <td class="col-rank">{{ row.rank }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    {% if error %}
+    <div class="error-banner fade-in stagger-1">{{ error }}</div>
+    {% endif %}
+
+    <!-- Summary Stats -->
+    <div class="stats-row fade-in stagger-2">
+        <div class="stat-card">
+            <div class="label">Total Booking Amount</div>
+            <div class="value money">${{ "{:,.2f}".format(total_amount) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Total Units Ordered</div>
+            <div class="value units">{{ "{:,}".format(total_units|int) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Sales Orders</div>
+            <div class="value orders">{{ "{:,}".format(total_orders) }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Territories Active</div>
+            <div class="value">{{ total_territories }}</div>
+        </div>
+    </div>
+
+    {% if territory_ranking %}
+    <!-- Ranking Section (fills remaining viewport) -->
+    <div class="ranking-section">
+        <div class="section-title fade-in stagger-3">By Ranking</div>
+
+        {% if territory_ranking|length >= 3 %}
+        <div class="podium fade-in stagger-3">
+            <div class="podium-card gold">
+                <div class="podium-medal">1</div>
+                <div class="podium-location">{{ territory_ranking[0].location }}</div>
+                <div class="podium-amount">${{ "{:,.2f}".format(territory_ranking[0].total) }}</div>
+            </div>
+            <div class="podium-card silver">
+                <div class="podium-medal">2</div>
+                <div class="podium-location">{{ territory_ranking[1].location }}</div>
+                <div class="podium-amount">${{ "{:,.2f}".format(territory_ranking[1].total) }}</div>
+            </div>
+            <div class="podium-card bronze">
+                <div class="podium-medal">3</div>
+                <div class="podium-location">{{ territory_ranking[2].location }}</div>
+                <div class="podium-amount">${{ "{:,.2f}".format(territory_ranking[2].total) }}</div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if territory_ranking|length > 3 %}
+        <div class="ranking-wrapper fade-in stagger-4">
+            <table class="ranking-table">
+                <thead>
+                    <tr>
+                        <th>Location</th>
+                        <th class="col-total">Total</th>
+                        <th class="col-rank">Rank</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in territory_ranking[3:] %}
+                    <tr>
+                        <td class="col-location">{{ row.location }}</td>
+                        <td class="col-total">{{ "{:,.2f}".format(row.total) }}</td>
+                        <td class="col-rank">{{ row.rank }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+
+    {% else %}
+    <div class="empty-state fade-in stagger-3">
+        <p>No bookings found for today.</p>
+    </div>
+    {% endif %}
 </div>
-{% else %}
-<div class="empty-state fade-in stagger-3">
-    <p>No bookings found for today.</p>
-</div>
-{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    let seconds = 600;
+    const el = document.getElementById('countdownTimer');
+    if (!el) return;
+
+    setInterval(function() {
+        seconds--;
+        if (seconds < 0) seconds = 0;
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        el.textContent = m + ':' + String(s).padStart(2, '0');
+    }, 1000);
+})();
+</script>
 {% endblock %}

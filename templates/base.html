@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{% block title %}TWG Portal{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -154,6 +154,23 @@
         .stagger-3 { animation-delay: 0.15s; animation-fill-mode: both; }
         .stagger-4 { animation-delay: 0.2s; animation-fill-mode: both; }
 
+        /* ── Mobile Responsive ── */
+        @media (max-width: 768px) {
+            .topnav {
+                padding: 0 16px;
+                height: 48px;
+            }
+
+            .topnav-brand span { display: none; }
+            .topnav-breadcrumb { display: none; }
+            .topnav-user span { display: none; }
+            .topnav-right { gap: 12px; }
+
+            .page-container {
+                padding: 16px;
+            }
+        }
+
         {% block extra_styles %}{% endblock %}
     </style>
 </head>
@@ -167,7 +184,7 @@
                     <rect width="26" height="26" rx="6" fill="#3B82F6"/>
                     <path d="M6 8h4v10H6zm5-2h4v14h-4zm5 4h4v6h-4z" fill="#fff" opacity="0.9"/>
                 </svg>
-                TWG Portal
+                <span>TWG Portal</span>
             </a>
             <div class="topnav-breadcrumb">
                 {% block breadcrumb %}{% endblock %}

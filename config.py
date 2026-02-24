@@ -44,6 +44,17 @@ class Config:
     DB_AUTH = os.getenv('DB_AUTH', 'PRO12')
     DB_ORDERS = os.getenv('DB_ORDERS', 'PRO05')
 
+    # Cache (filesystem so it survives brief restarts)
+    CACHE_TYPE = 'FileSystemCache'
+    CACHE_DIR = 'cache-data'
+    CACHE_DEFAULT_TIMEOUT = 900  # 15 min safety net
+
+    # Scheduler
+    SCHEDULER_API_ENABLED = False  # No need to expose the REST API
+
+    # Refresh interval in seconds (10 minutes)
+    DATA_REFRESH_INTERVAL = 600
+
     @classmethod
     def get_connection_string(cls, database=None):
         """Build a pyodbc connection string for the given database."""

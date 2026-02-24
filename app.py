@@ -3,11 +3,14 @@ TWG Portal - Main Application
 """
 
 import logging
+import atexit
 from flask import Flask, session, redirect, url_for, request, render_template
 from config import Config
+from extensions import cache, scheduler
 import auth.entra_auth as auth_utils
 from routes.main import main_bp
 from routes.sales import sales_bp
+from services.data_worker import refresh_bookings_cache
 
 # --- Logging: INFO level only ---
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -15,6 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message
 logging.getLogger('urllib3').setLevel(logging.WARNING)
 logging.getLogger('msal').setLevel(logging.WARNING)
 logging.getLogger('werkzeug').setLevel(logging.WARNING)
+logging.getLogger('apscheduler').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,35 @@ def create_app():
 
     Config.validate()
 
-    # Register Blueprints
+    # --- Init Cache ---
+    cache.init_app(app)
+
+    # --- Init Scheduler ---
+    if not scheduler.running:
+        scheduler.init_app(app)
+        scheduler.start()
+        logger.info("Scheduler started.")
+
+    # Schedule bookings refresh every 10 minutes
+    if not scheduler.get_job('bookings_refresh'):
+        scheduler.add_job(
+            id='bookings_refresh',
+            func=refresh_bookings_cache,
+            trigger='interval',
+            seconds=Config.DATA_REFRESH_INTERVAL,
+            misfire_grace_time=60
+        )
+        logger.info(f"Scheduled 'bookings_refresh' every {Config.DATA_REFRESH_INTERVAL}s")
+
+    # --- Immediate refresh on startup so cache is never stale ---
+    with app.app_context():
+        logger.info("Running initial data refresh...")
+        refresh_bookings_cache()
+
+    # Shut down scheduler on exit
+    atexit.register(lambda: scheduler.shutdown() if scheduler.running else None)
+
+    # --- Register Blueprints ---
     app.register_blueprint(main_bp)
     app.register_blueprint(sales_bp)
 
