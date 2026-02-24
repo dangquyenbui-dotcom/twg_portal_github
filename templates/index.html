@@ -1,36 +1,196 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Dashboard - TWG Portal</title>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; padding: 40px; background: #f5f5f5; }
-        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto; }
-        h1 { margin-top: 0; color: #333; }
-        .info-row { border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between; }
-        .label { font-weight: bold; color: #666; }
-        .value { color: #333; }
-        .btn-logout { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>✅ Authentication Successful</h1>
-        <p>You have securely signed in via Microsoft Entra ID.</p>
-        
-        <div class="info-row">
-            <span class="label">Name:</span>
-            <span class="value">{{ user.name }}</span>
+{% extends "base.html" %}
+{% block title %}TWG Portal - Home{% endblock %}
+
+{% block breadcrumb %}
+<span class="current">Home</span>
+{% endblock %}
+
+{% block extra_styles %}
+/* ── Dashboard Hub ── */
+.hub-header {
+    margin-bottom: 40px;
+}
+
+.hub-header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 6px;
+}
+
+.hub-header p {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.dept-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 20px;
+}
+
+.dept-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 28px 24px;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: relative;
+    overflow: hidden;
+}
+
+.dept-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.dept-card:hover {
+    border-color: var(--border-light);
+    background: var(--bg-card-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+}
+
+.dept-card:hover::before { opacity: 1; }
+
+.dept-card.sales::before { background: var(--accent-blue); }
+.dept-card.warehouse::before { background: var(--accent-amber); }
+.dept-card.accounting::before { background: var(--accent-green); }
+.dept-card.hr::before { background: var(--accent-purple); }
+
+.dept-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dept-icon.sales { background: rgba(59,130,246,0.12); color: var(--accent-blue); }
+.dept-icon.warehouse { background: rgba(245,158,11,0.12); color: var(--accent-amber); }
+.dept-icon.accounting { background: rgba(16,185,129,0.12); color: var(--accent-green); }
+.dept-icon.hr { background: rgba(139,92,246,0.12); color: var(--accent-purple); }
+
+.dept-icon svg { width: 24px; height: 24px; }
+
+.dept-info h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.dept-info p {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.dept-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 20px;
+    width: fit-content;
+}
+
+.dept-badge.active {
+    background: rgba(16,185,129,0.12);
+    color: var(--accent-green);
+}
+
+.dept-badge.coming-soon {
+    background: rgba(92,101,132,0.2);
+    color: var(--text-muted);
+}
+
+.dept-card.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+{% endblock %}
+
+{% block content %}
+<div class="hub-header fade-in">
+    <h1>Welcome back, {{ user.name.split(' ')[0] }}</h1>
+    <p>Select a department to view reports and analytics.</p>
+</div>
+
+<div class="dept-grid">
+
+    <!-- Sales - Active -->
+    <a href="/sales" class="dept-card sales fade-in stagger-1">
+        <div class="dept-icon sales">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/>
+            </svg>
         </div>
-        <div class="info-row">
-            <span class="label">Email:</span>
-            <span class="value">{{ user.email }}</span>
+        <div class="dept-info">
+            <h3>Sales</h3>
+            <p>Daily bookings, shipments, territory performance and order analytics.</p>
         </div>
-        <div class="info-row">
-            <span class="label">Tenant ID:</span>
-            <span class="value">{{ user.tid }}</span>
+        <div class="dept-badge active">
+            <svg width="6" height="6"><circle cx="3" cy="3" r="3" fill="currentColor"/></svg>
+            Live
         </div>
-        
-        <a href="/logout" class="btn-logout">Sign Out</a>
+    </a>
+
+    <!-- Warehouse - Coming Soon -->
+    <div class="dept-card warehouse disabled fade-in stagger-2">
+        <div class="dept-icon warehouse">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 21v-4.875c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125V21m0 0h3.375c.621 0 1.125-.504 1.125-1.125V9.75M3.375 21h17.25M12 3.375l8.625 6.375M3.375 9.75L12 3.375"/>
+            </svg>
+        </div>
+        <div class="dept-info">
+            <h3>Warehouse</h3>
+            <p>Inventory levels, shipping status, and fulfillment tracking.</p>
+        </div>
+        <div class="dept-badge coming-soon">Coming Soon</div>
     </div>
-</body>
-</html>
+
+    <!-- Accounting - Coming Soon -->
+    <div class="dept-card accounting disabled fade-in stagger-3">
+        <div class="dept-icon accounting">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+        </div>
+        <div class="dept-info">
+            <h3>Accounting</h3>
+            <p>Invoices, payments, and financial reporting.</p>
+        </div>
+        <div class="dept-badge coming-soon">Coming Soon</div>
+    </div>
+
+    <!-- HR - Coming Soon -->
+    <div class="dept-card hr disabled fade-in stagger-4">
+        <div class="dept-icon hr">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>
+            </svg>
+        </div>
+        <div class="dept-info">
+            <h3>Human Resources</h3>
+            <p>Employee directory, attendance, and team management.</p>
+        </div>
+        <div class="dept-badge coming-soon">Coming Soon</div>
+    </div>
+
+</div>
+{% endblock %}

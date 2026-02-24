@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}Daily Bookings - TWG Portal{% endblock %}
+
+{% block breadcrumb %}
+<a href="/">Home</a>
+<span class="sep">/</span>
+<a href="/sales">Sales</a>
+<span class="sep">/</span>
+<span class="current">Daily Bookings</span>
+{% endblock %}
+
+{% block extra_styles %}
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    margin-bottom: 24px;
+    transition: color 0.15s;
+}
+.back-link:hover { color: var(--text-primary); }
+.back-link svg { width: 16px; height: 16px; }
+
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.page-header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+}
+
+.page-header .date-tag {
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-family: var(--font-mono);
+}
+
+/* ── Summary Cards ── */
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin-bottom: 32px;
+}
+
+.stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 20px;
+}
+
+.stat-card .label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.stat-card .value {
+    font-size: 26px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: -0.5px;
+}
+
+.stat-card .value.money { color: var(--accent-green); }
+.stat-card .value.units { color: var(--accent-blue); }
+.stat-card .value.orders { color: var(--accent-amber); }
+
+/* ── Ranking Table ── */
+.section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ranking-wrapper {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    max-width: 520px;
+}
+
+.ranking-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.ranking-table thead th {
+    text-align: left;
+    padding: 10px 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.ranking-table thead th.col-total,
+.ranking-table thead th.col-rank {
+    text-align: right;
+}
+
+.ranking-table tbody td {
+    padding: 10px 20px;
+    border-bottom: 1px solid rgba(42,51,82,0.4);
+    color: var(--text-secondary);
+}
+
+.ranking-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.ranking-table tbody tr:hover {
+    background: rgba(59,130,246,0.04);
+}
+
+.ranking-table tbody tr:hover td {
+    color: var(--text-primary);
+}
+
+.ranking-table .col-location {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.ranking-table .col-total {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--accent-green);
+}
+
+.ranking-table .col-rank {
+    text-align: right;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* ── Error State ── */
+.error-banner {
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    color: var(--accent-red);
+    font-size: 14px;
+}
+
+/* ── Empty State ── */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+}
+.empty-state p { font-size: 14px; }
+{% endblock %}
+
+{% block content %}
+<a href="/sales" class="back-link fade-in">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
+    </svg>
+    Back to Sales
+</a>
+
+<div class="page-header fade-in stagger-1">
+    <h1>Daily Bookings</h1>
+    <span class="date-tag">{{ order_date.strftime('%A, %B %d, %Y') if order_date else 'Today' }}</span>
+</div>
+
+{% if error %}
+<div class="error-banner fade-in stagger-1">{{ error }}</div>
+{% endif %}
+
+<!-- Summary Stats -->
+<div class="stats-row fade-in stagger-2">
+    <div class="stat-card">
+        <div class="label">Total Booking Amount</div>
+        <div class="value money">${{ "{:,.2f}".format(total_amount) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Total Units Ordered</div>
+        <div class="value units">{{ "{:,}".format(total_units|int) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Sales Orders</div>
+        <div class="value orders">{{ "{:,}".format(total_orders) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Territories Active</div>
+        <div class="value">{{ total_territories }}</div>
+    </div>
+</div>
+
+<!-- Territory Ranking -->
+{% if territory_ranking %}
+<div class="section-title fade-in stagger-3">By Ranking</div>
+<div class="ranking-wrapper fade-in stagger-3">
+    <table class="ranking-table">
+        <thead>
+            <tr>
+                <th>Location</th>
+                <th class="col-total">Total</th>
+                <th class="col-rank">Rank</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in territory_ranking %}
+            <tr>
+                <td class="col-location">{{ row.location }}</td>
+                <td class="col-total">{{ "{:,.2f}".format(row.total) }}</td>
+                <td class="col-rank">{{ row.rank }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state fade-in stagger-3">
+    <p>No bookings found for today.</p>
+</div>
+{% endif %}
+{% endblock %}

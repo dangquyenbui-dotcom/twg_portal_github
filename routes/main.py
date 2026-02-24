@@ -10,13 +10,6 @@ def index():
     return render_template('index.html', user=session["user"])
 
 
-@main_bp.route('/dashboard')
-def dashboard():
-    if not session.get("user"):
-        return redirect(url_for('main.login_page'))
-    return render_template('dashboard.html', user=session["user"])
-
-
 @main_bp.route('/login_page')
 def login_page():
     if session.get("user"):

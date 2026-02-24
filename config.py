@@ -33,13 +33,33 @@ class Config:
     REDIRECT_PATH = os.getenv('REDIRECT_PATH', '/auth/redirect')
     SCOPE = [os.getenv('SCOPE', 'User.Read')]
 
-    # Database
+    # SQL Server Settings
+    DB_DRIVER = os.getenv('DB_DRIVER', '{ODBC Driver 18 for SQL Server}')
     DB_SERVER = os.getenv('DB_SERVER')
-    DB_NAME = os.getenv('DB_NAME', 'TwgPortalDB')
+    DB_UID = os.getenv('DB_UID')
+    DB_PWD = os.getenv('DB_PWD')
+    DB_TRUST_CERT = os.getenv('DB_TRUST_CERT', 'yes')
+
+    # Database Names
+    DB_AUTH = os.getenv('DB_AUTH', 'PRO12')
+    DB_ORDERS = os.getenv('DB_ORDERS', 'PRO05')
+
+    @classmethod
+    def get_connection_string(cls, database=None):
+        """Build a pyodbc connection string for the given database."""
+        db = database or cls.DB_ORDERS
+        return (
+            f"DRIVER={cls.DB_DRIVER};"
+            f"SERVER={cls.DB_SERVER};"
+            f"DATABASE={db};"
+            f"UID={cls.DB_UID};"
+            f"PWD={cls.DB_PWD};"
+            f"TrustServerCertificate={cls.DB_TRUST_CERT};"
+        )
 
     @classmethod
     def validate(cls):
-        """Validate that all required config values are present and not None."""
+        """Validate that all required config values are present."""
         required = {
             "CLIENT_ID": cls.CLIENT_ID,
             "CLIENT_SECRET": cls.CLIENT_SECRET,

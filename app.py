@@ -7,6 +7,7 @@ from flask import Flask, session, redirect, url_for, request, render_template
 from config import Config
 import auth.entra_auth as auth_utils
 from routes.main import main_bp
+from routes.sales import sales_bp
 
 # --- Logging: INFO level only ---
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -24,7 +25,9 @@ def create_app():
 
     Config.validate()
 
+    # Register Blueprints
     app.register_blueprint(main_bp)
+    app.register_blueprint(sales_bp)
 
     # --- SSO ROUTES ---
     @app.route("/login")
