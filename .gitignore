@@ -9,6 +9,8 @@ env/
 # 3. Python Compiled files (Junk files)
 __pycache__/
 *.pyc
+cache-data/
+flash_session/
 
 # 4. Editor settings (Optional, keeps repo clean)
 .vscode/
