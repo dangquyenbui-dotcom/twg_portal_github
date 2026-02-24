@@ -57,7 +57,7 @@
         .topnav-brand {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
             text-decoration: none;
             color: var(--text-primary);
             font-weight: 700;
@@ -65,9 +65,23 @@
             letter-spacing: -0.3px;
         }
 
-        .topnav-brand svg {
-            width: 26px;
-            height: 26px;
+        .topnav-brand .brand-logo {
+            height: 32px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .topnav-brand .brand-divider {
+            width: 1px;
+            height: 24px;
+            background: var(--border-light);
+        }
+
+        .topnav-brand .brand-text {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            letter-spacing: 0.3px;
         }
 
         .topnav-breadcrumb {
@@ -161,7 +175,9 @@
                 height: 48px;
             }
 
-            .topnav-brand span { display: none; }
+            .topnav-brand .brand-text { display: none; }
+            .topnav-brand .brand-divider { display: none; }
+            .topnav-brand .brand-logo { height: 28px; }
             .topnav-breadcrumb { display: none; }
             .topnav-user span { display: none; }
             .topnav-right { gap: 12px; }
@@ -180,11 +196,9 @@
     <nav class="topnav">
         <div style="display:flex; align-items:center; gap:24px;">
             <a href="/" class="topnav-brand">
-                <svg viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect width="26" height="26" rx="6" fill="#3B82F6"/>
-                    <path d="M6 8h4v10H6zm5-2h4v14h-4zm5 4h4v6h-4z" fill="#fff" opacity="0.9"/>
-                </svg>
-                <span>TWG Portal</span>
+                <img src="{{ url_for('static', filename='logo/TWG.png') }}" alt="The Wheel Group" class="brand-logo">
+                <span class="brand-divider"></span>
+                <span class="brand-text">Portal</span>
             </a>
             <div class="topnav-breadcrumb">
                 {% block breadcrumb %}{% endblock %}

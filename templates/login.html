@@ -17,59 +17,127 @@
             height: 100vh;
             margin: 0;
             -webkit-font-smoothing: antialiased;
+            overflow: hidden;
         }
 
-        .login-card {
-            background: #1A2035;
-            border: 1px solid #2A3352;
-            padding: 44px 40px;
-            border-radius: 16px;
-            text-align: center;
-            width: 360px;
-            animation: fadeIn 0.5s ease-out;
+        /* ── Subtle animated background ── */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(59,130,246,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.05) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(16,185,129,0.04) 0%, transparent 50%);
+            animation: bgDrift 20s ease-in-out infinite alternate;
+            z-index: 0;
+        }
+
+        @keyframes bgDrift {
+            0%   { transform: translate(0, 0) rotate(0deg); }
+            100% { transform: translate(-30px, -20px) rotate(3deg); }
+        }
+
+        .login-wrapper {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 32px;
+            animation: fadeIn 0.6s ease-out;
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(12px); }
-            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
         }
 
-        .logo-icon {
-            width: 48px;
-            height: 48px;
-            margin: 0 auto 16px;
+        /* ── Company Logo ── */
+        .login-logo {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
         }
 
-        .logo-text {
-            font-size: 22px;
+        .login-logo img {
+            height: 72px;
+            width: auto;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 12px rgba(59,130,246,0.15));
+        }
+
+        /* ── Login Card ── */
+        .login-card {
+            background: #1A2035;
+            border: 1px solid #2A3352;
+            padding: 40px 40px 36px;
+            border-radius: 20px;
+            text-align: center;
+            width: 380px;
+            position: relative;
+            overflow: hidden;
+            box-shadow:
+                0 4px 24px rgba(0,0,0,0.3),
+                0 0 0 1px rgba(59,130,246,0.05);
+        }
+
+        /* Top accent line */
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #3B82F6, #8B5CF6, #3B82F6);
+            background-size: 200% 100%;
+            animation: shimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .card-title {
+            font-size: 20px;
             font-weight: 700;
             color: #F1F3F8;
             margin-bottom: 6px;
-            letter-spacing: -0.4px;
+            letter-spacing: -0.3px;
         }
 
-        .sub-text {
+        .card-subtitle {
             color: #5C6584;
-            margin-bottom: 32px;
+            margin-bottom: 28px;
             font-size: 14px;
+            line-height: 1.5;
         }
 
+        /* ── Error State ── */
         .error {
             color: #EF4444;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
             font-size: 13px;
             background: rgba(239,68,68,0.08);
             border: 1px solid rgba(239,68,68,0.15);
-            padding: 10px 14px;
-            border-radius: 8px;
+            padding: 12px 16px;
+            border-radius: 10px;
             text-align: left;
+            line-height: 1.5;
         }
 
+        /* ── Microsoft Sign-In Button ── */
         .ms-btn {
             background: #3B82F6;
             color: white;
             border: none;
-            padding: 13px 24px;
+            padding: 14px 24px;
             font-size: 14px;
             font-weight: 600;
             font-family: 'DM Sans', sans-serif;
@@ -81,49 +149,145 @@
             width: 100%;
             box-sizing: border-box;
             text-decoration: none;
-            border-radius: 10px;
-            transition: all 0.15s;
+            border-radius: 12px;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ms-btn::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+            opacity: 0;
+            transition: opacity 0.2s;
         }
 
         .ms-btn:hover {
             background: #2563EB;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 16px rgba(59,130,246,0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(59,130,246,0.35);
         }
 
-        .ms-icon { height: 20px; width: 20px; }
+        .ms-btn:hover::after { opacity: 1; }
 
-        .footer-text {
-            margin-top: 24px;
+        .ms-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 8px rgba(59,130,246,0.25);
+        }
+
+        .ms-icon { height: 20px; width: 20px; flex-shrink: 0; }
+
+        /* ── Divider ── */
+        .login-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 24px 0 20px;
+        }
+
+        .login-divider::before,
+        .login-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #2A3352;
+        }
+
+        .login-divider span {
             font-size: 11px;
             color: #3D4663;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 500;
+        }
+
+        /* ── Security Badge ── */
+        .security-info {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background: rgba(59,130,246,0.05);
+            border: 1px solid rgba(59,130,246,0.08);
+            border-radius: 10px;
+        }
+
+        .security-info svg {
+            width: 14px;
+            height: 14px;
+            color: #5C6584;
+            flex-shrink: 0;
+        }
+
+        .security-info span {
+            font-size: 11px;
+            color: #5C6584;
+            letter-spacing: 0.2px;
+        }
+
+        /* ── Footer ── */
+        .login-footer {
+            font-size: 11px;
+            color: #2A3352;
+            text-align: center;
+        }
+
+        /* ── Mobile ── */
+        @media (max-width: 420px) {
+            .login-card {
+                width: calc(100vw - 32px);
+                padding: 32px 24px 28px;
+            }
+
+            .login-logo img {
+                height: 56px;
+            }
+
+            .card-title { font-size: 18px; }
         }
     </style>
 </head>
 <body>
-    <div class="login-card">
-        <svg class="logo-icon" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="48" height="48" rx="12" fill="#3B82F6"/>
-            <path d="M11 15h7v18h-7zm9-4h7v26h-7zm9 8h7v10h-7z" fill="#fff" opacity="0.9"/>
-        </svg>
-        <div class="logo-text">TWG Portal</div>
-        <div class="sub-text">Sign in to access your dashboard</div>
+    <div class="login-wrapper">
+        <!-- Company Logo -->
+        <div class="login-logo">
+            <img src="{{ url_for('static', filename='logo/TWG.png') }}" alt="The Wheel Group">
+        </div>
 
-        {% if error %}
-            <div class="error">{{ error }}</div>
-        {% endif %}
+        <!-- Login Card -->
+        <div class="login-card">
+            <div class="card-title">Welcome Back</div>
+            <div class="card-subtitle">Sign in to access the TWG Portal</div>
 
-        <a href="/login" class="ms-btn">
-            <svg class="ms-icon" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
-                <path fill="#fff" fill-opacity="0.9" d="M1 1h9v9H1z"/>
-                <path fill="#fff" fill-opacity="0.6" d="M1 11h9v9H1z"/>
-                <path fill="#fff" fill-opacity="0.7" d="M11 1h9v9H11z"/>
-                <path fill="#fff" fill-opacity="0.5" d="M11 11h9v9H11z"/>
-            </svg>
-            Sign in with Microsoft
-        </a>
+            {% if error %}
+                <div class="error">{{ error }}</div>
+            {% endif %}
 
-        <div class="footer-text">Protected by Microsoft Entra ID</div>
+            <a href="/login" class="ms-btn">
+                <svg class="ms-icon" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                    <path fill="#fff" fill-opacity="0.9" d="M1 1h9v9H1z"/>
+                    <path fill="#fff" fill-opacity="0.6" d="M1 11h9v9H1z"/>
+                    <path fill="#fff" fill-opacity="0.7" d="M11 1h9v9H11z"/>
+                    <path fill="#fff" fill-opacity="0.5" d="M11 11h9v9H11z"/>
+                </svg>
+                Sign in with Microsoft
+            </a>
+
+            <div class="login-divider"><span>Secured by</span></div>
+
+            <div class="security-info">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
+                </svg>
+                <span>Microsoft Entra ID &middot; Enterprise SSO</span>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="login-footer">&copy; {{ now().year if now is defined else '2026' }} The Wheel Group &middot; Internal Use Only</div>
     </div>
 </body>
 </html>
