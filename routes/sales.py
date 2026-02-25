@@ -1,5 +1,6 @@
 from io import BytesIO
 from datetime import date, datetime
+import math
 
 from flask import Blueprint, render_template, session, redirect, url_for, send_file
 from openpyxl import Workbook
@@ -144,7 +145,7 @@ def bookings():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    snapshot_us, snapshot_ca, last_updated = get_bookings_from_cache()
+    snapshot_us, snapshot_ca, last_updated, cad_rate = get_bookings_from_cache()
 
     # Build US data (or defaults)
     if snapshot_us is not None:
@@ -164,20 +165,25 @@ def bookings():
             "order_date": None,
         }
 
-    # Build CA data (or defaults)
+    # Build CA data (or defaults) — include USD equivalents
     if snapshot_ca is not None:
         ca_summary = snapshot_ca["summary"]
         ca_data = {
             "total_amount": ca_summary["total_amount"],
+            "total_amount_usd": math.ceil(ca_summary["total_amount"] * cad_rate),
             "total_units": ca_summary["total_units"],
             "total_orders": ca_summary["total_orders"],
             "total_territories": ca_summary["total_territories"],
             "territory_ranking": snapshot_ca["ranking"],
             "order_date": ca_summary.get("order_date"),
         }
+        # Add USD equivalent to each territory in ranking
+        for terr in ca_data["territory_ranking"]:
+            terr["total_usd"] = math.ceil(terr["total"] * cad_rate)
     else:
         ca_data = {
-            "total_amount": 0, "total_units": 0, "total_orders": 0,
+            "total_amount": 0, "total_amount_usd": 0,
+            "total_units": 0, "total_orders": 0,
             "total_territories": 0, "territory_ranking": [],
             "order_date": None,
         }
@@ -192,6 +198,7 @@ def bookings():
         error=error,
         us=us_data,
         ca=ca_data,
+        cad_rate=cad_rate,
         last_updated=last_updated
     )
 

@@ -8,6 +8,7 @@ This keeps SQL Server load low and leverages the app server's CPU instead.
 """
 
 import logging
+import math
 import pyodbc
 from collections import defaultdict
 from datetime import date
@@ -89,6 +90,7 @@ def _build_bookings_query(database):
 def _aggregate_bookings(rows, region='US'):
     """
     Aggregate raw rows into summary and ranking.
+    All amounts are rounded up (ceiling) to whole numbers.
     Returns dict with 'summary' and 'ranking', or None if no data.
     """
     total_amount = 0.0
@@ -114,9 +116,12 @@ def _aggregate_bookings(rows, region='US'):
         distinct_orders.add(sono)
         territory_totals[territory] += amt
 
+    # Round up all monetary amounts to whole numbers
+    total_amount = math.ceil(total_amount)
+
     ranking_sorted = sorted(territory_totals.items(), key=lambda x: x[1], reverse=True)
     ranking = [
-        {"location": loc, "total": total, "rank": rank}
+        {"location": loc, "total": math.ceil(total), "rank": rank}
         for rank, (loc, total) in enumerate(ranking_sorted, start=1)
     ]
 
@@ -149,7 +154,7 @@ def fetch_bookings_snapshot():
         result = _aggregate_bookings(rows, region='US')
 
         logger.info(
-            f"US Bookings snapshot: ${result['summary']['total_amount']:,.0f} "
+            f"US Bookings snapshot: ${result['summary']['total_amount']:,} "
             f"across {result['summary']['total_territories']} territories "
             f"({len(rows)} raw rows processed)"
         )
@@ -178,7 +183,7 @@ def fetch_bookings_snapshot_ca():
         result = _aggregate_bookings(rows, region='CA')
 
         logger.info(
-            f"CA Bookings snapshot: ${result['summary']['total_amount']:,.0f} "
+            f"CA Bookings snapshot: CAD ${result['summary']['total_amount']:,} "
             f"across {result['summary']['total_territories']} territories "
             f"({len(rows)} raw rows processed)"
         )
