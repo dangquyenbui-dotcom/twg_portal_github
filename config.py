@@ -42,7 +42,8 @@ class Config:
 
     # Database Names
     DB_AUTH = os.getenv('DB_AUTH', 'PRO12')
-    DB_ORDERS = os.getenv('DB_ORDERS', 'PRO05')
+    DB_ORDERS = os.getenv('DB_ORDERS', 'PRO05')        # US orders
+    DB_ORDERS_CA = os.getenv('DB_ORDERS_CA', 'PRO06')  # Canada orders
 
     # Cache (filesystem so it survives brief restarts)
     CACHE_TYPE = 'FileSystemCache'

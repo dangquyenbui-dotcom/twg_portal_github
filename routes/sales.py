@@ -7,7 +7,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from services.data_worker import get_bookings_from_cache
-from services.db_service import fetch_bookings_raw
+from services.db_service import fetch_bookings_raw, fetch_bookings_raw_ca
 
 sales_bp = Blueprint('sales', __name__, url_prefix='/sales')
 
@@ -24,46 +24,73 @@ def bookings():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    snapshot, last_updated = get_bookings_from_cache()
+    snapshot_us, snapshot_ca, last_updated = get_bookings_from_cache()
 
-    if snapshot is None:
-        return render_template(
-            'sales/bookings.html',
-            user=session["user"],
-            error="Unable to load data. Please try again shortly.",
-            total_amount=0, total_units=0, total_orders=0,
-            total_territories=0, territory_ranking=[],
-            order_date=None, last_updated=None
-        )
+    # Build US data (or defaults)
+    if snapshot_us is not None:
+        us_summary = snapshot_us["summary"]
+        us_data = {
+            "total_amount": us_summary["total_amount"],
+            "total_units": us_summary["total_units"],
+            "total_orders": us_summary["total_orders"],
+            "total_territories": us_summary["total_territories"],
+            "territory_ranking": snapshot_us["ranking"],
+            "order_date": us_summary.get("order_date"),
+        }
+    else:
+        us_data = {
+            "total_amount": 0, "total_units": 0, "total_orders": 0,
+            "total_territories": 0, "territory_ranking": [],
+            "order_date": None,
+        }
 
-    summary = snapshot["summary"]
+    # Build CA data (or defaults)
+    if snapshot_ca is not None:
+        ca_summary = snapshot_ca["summary"]
+        ca_data = {
+            "total_amount": ca_summary["total_amount"],
+            "total_units": ca_summary["total_units"],
+            "total_orders": ca_summary["total_orders"],
+            "total_territories": ca_summary["total_territories"],
+            "territory_ranking": snapshot_ca["ranking"],
+            "order_date": ca_summary.get("order_date"),
+        }
+    else:
+        ca_data = {
+            "total_amount": 0, "total_units": 0, "total_orders": 0,
+            "total_territories": 0, "territory_ranking": [],
+            "order_date": None,
+        }
+
+    error = None
+    if snapshot_us is None and snapshot_ca is None:
+        error = "Unable to load data. Please try again shortly."
 
     return render_template(
         'sales/bookings.html',
         user=session["user"],
-        error=None,
-        total_amount=summary["total_amount"],
-        total_units=summary["total_units"],
-        total_orders=summary["total_orders"],
-        total_territories=summary["total_territories"],
-        territory_ranking=snapshot["ranking"],
-        order_date=summary.get("order_date"),
+        error=error,
+        us=us_data,
+        ca=ca_data,
         last_updated=last_updated
     )
 
 
 @sales_bp.route('/bookings/export')
 def bookings_export():
-    """Export today's raw bookings data as a formatted Excel file."""
+    """Export today's raw bookings data (US + Canada) as a formatted Excel file."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    rows = fetch_bookings_raw()
-    if not rows:
+    rows_us = fetch_bookings_raw() or []
+    rows_ca = fetch_bookings_raw_ca() or []
+
+    if not rows_us and not rows_ca:
         return redirect(url_for('sales.bookings'))
 
     # ── Column config: (header, dict key, width, fmt) ──
     columns = [
+        ('Region',                    'Region',        10, None),
         ('Sales Order (sono)',        'SalesOrder',    20, None),
         ('Line# (tranlineno)',        'LineNo',        18, '#,##0'),
         ('Order Date (ordate)',       'OrderDate',     18, 'MM/DD/YYYY'),
@@ -91,6 +118,14 @@ def bookings_export():
         ('Ship Via (shipvia)',        'ShipVia',       16, None),
     ]
 
+    # Tag each row with region
+    for row in rows_us:
+        row['Region'] = 'US'
+    for row in rows_ca:
+        row['Region'] = 'CA'
+
+    all_rows = rows_us + rows_ca
+
     wb = Workbook()
     ws = wb.active
     ws.title = 'Bookings Raw Data'
@@ -109,7 +144,7 @@ def bookings_export():
     # ── Title row ──
     today_str = date.today().strftime('%B %d, %Y')
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(columns))
-    title_cell = ws.cell(row=1, column=1, value=f'Daily Bookings Raw Data — {today_str}')
+    title_cell = ws.cell(row=1, column=1, value=f'Daily Bookings Raw Data (US + Canada) — {today_str}')
     title_cell.font = Font(name='Arial', bold=True, size=13, color='1F2937')
     title_cell.alignment = Alignment(vertical='center')
     ws.row_dimensions[1].height = 32
@@ -135,10 +170,10 @@ def bookings_export():
 
     ws.row_dimensions[header_row].height = 28
     ws.freeze_panes = f'A{header_row + 1}'
-    ws.auto_filter.ref = f'A{header_row}:{get_column_letter(len(columns))}{header_row + len(rows)}'
+    ws.auto_filter.ref = f'A{header_row}:{get_column_letter(len(columns))}{header_row + len(all_rows)}'
 
     # ── Data rows ──
-    for row_idx, record in enumerate(rows, start=header_row + 1):
+    for row_idx, record in enumerate(all_rows, start=header_row + 1):
         is_alt = (row_idx - header_row) % 2 == 0
         for col_idx, (_, key, _, fmt) in enumerate(columns, start=1):
             value = record.get(key)
@@ -161,7 +196,7 @@ def bookings_export():
     wb.save(buffer)
     buffer.seek(0)
 
-    filename = f'Bookings_Raw_{date.today().strftime("%Y%m%d")}.xlsx'
+    filename = f'Bookings_Raw_US_CA_{date.today().strftime("%Y%m%d")}.xlsx'
 
     return send_file(
         buffer,

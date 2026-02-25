@@ -10,12 +10,11 @@
 {% endblock %}
 
 {% block extra_styles %}
-/* ── Bookings Layout: fit everything in viewport ── */
+/* ── Bookings Layout: scrollable full page ── */
 .bookings-page {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 56px);
-    overflow: hidden;
+    min-height: calc(100vh - 56px);
 }
 
 .back-link {
@@ -146,6 +145,43 @@
 
 .countdown svg { width: 14px; height: 14px; opacity: 0.5; }
 
+/* ── Region Section ── */
+.region-section {
+    margin-bottom: 28px;
+}
+
+.region-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.region-flag {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.region-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    color: var(--text-primary);
+}
+
+.region-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-left: 4px;
+}
+
+.region-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0 20px;
+}
+
 /* ── Summary Cards ── */
 .stats-row {
     display: grid;
@@ -182,12 +218,10 @@
 .stat-card .value.units { color: var(--accent-blue); }
 .stat-card .value.orders { color: var(--accent-amber); }
 
-/* ── Ranking Section (fills remaining space) ── */
+/* ── Ranking Section ── */
 .ranking-section {
-    flex: 1;
     display: flex;
     flex-direction: column;
-    min-height: 0;
 }
 
 .section-title {
@@ -290,14 +324,13 @@
 .podium-card.silver .podium-amount { color: #B8C8DC; }
 .podium-card.bronze .podium-amount { color: #CD935B; }
 
-/* ── Remaining Ranking Table (scrollable if needed) ── */
+/* ── Remaining Ranking Table ── */
 .ranking-wrapper {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     overflow: auto;
-    flex: 1;
-    min-height: 0;
+    max-height: 300px;
 }
 
 .ranking-table {
@@ -378,19 +411,15 @@
 
 .empty-state {
     text-align: center;
-    padding: 40px 20px;
+    padding: 24px 20px;
     color: var(--text-muted);
 }
 .empty-state p { font-size: 14px; }
 
 /* ================================================================
-   TABLET (iPad) — everything fits in one screen
+   TABLET (iPad)
    ================================================================ */
 @media (max-width: 1024px) {
-    .bookings-page {
-        height: calc(100vh - 48px);
-    }
-
     .page-container { padding: 20px; }
 
     .stats-row { gap: 10px; }
@@ -406,16 +435,14 @@
 
     .ranking-table tbody td { padding: 8px 16px; font-size: 13px; }
     .ranking-table thead th { padding: 8px 16px; font-size: 11px; }
+
+    .ranking-wrapper { max-height: 220px; }
 }
 
 /* ================================================================
-   PHONE (iPhone) — compact single-screen layout
+   PHONE (iPhone) — compact layout
    ================================================================ */
 @media (max-width: 480px) {
-    .bookings-page {
-        height: calc(100vh - 48px);
-    }
-
     .page-container { padding: 12px; }
 
     .back-link { font-size: 11px; margin-bottom: 8px; }
@@ -439,6 +466,12 @@
     .last-updated { font-size: 10px; }
     .countdown { font-size: 10px; }
 
+    .region-header { margin-bottom: 10px; }
+    .region-flag { font-size: 16px; }
+    .region-title { font-size: 14px; }
+    .region-subtitle { font-size: 10px; }
+    .region-section { margin-bottom: 20px; }
+
     /* 2x2 grid for stat cards on phone */
     .stats-row {
         grid-template-columns: repeat(2, 1fr);
@@ -460,6 +493,7 @@
     .podium-amount { font-size: 13px; }
 
     /* Compact table */
+    .ranking-wrapper { max-height: 160px; }
     .ranking-table tbody td { padding: 6px 12px; font-size: 12px; }
     .ranking-table thead th { padding: 6px 12px; font-size: 10px; }
 }
@@ -480,7 +514,7 @@
     <div class="page-header fade-in stagger-1">
         <div class="page-header-left">
             <h1>Daily Bookings</h1>
-            <span class="date-tag">{{ order_date.strftime('%A, %B %d, %Y') if order_date else 'Today' }}</span>
+            <span class="date-tag">{{ (us.order_date or ca.order_date).strftime('%A, %B %d, %Y') if (us.order_date or ca.order_date) else 'Today' }}</span>
         </div>
         <a href="{{ url_for('sales.bookings_export') }}" class="btn-download" title="Download raw data as Excel">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -511,80 +545,196 @@
     <div class="error-banner fade-in stagger-1">{{ error }}</div>
     {% endif %}
 
-    <!-- Summary Stats -->
-    <div class="stats-row fade-in stagger-2">
-        <div class="stat-card">
-            <div class="label">Total Booking Amount</div>
-            <div class="value money">${{ "{:,.2f}".format(total_amount) }}</div>
+    {# ════════════════════════════════════════════════════════════
+       US SECTION
+       ════════════════════════════════════════════════════════════ #}
+    <div class="region-section fade-in stagger-2">
+        <div class="region-header">
+            <span class="region-flag">🇺🇸</span>
+            <span class="region-title">United States<span class="region-subtitle">(PRO05)</span></span>
         </div>
-        <div class="stat-card">
-            <div class="label">Total Units Ordered</div>
-            <div class="value units">{{ "{:,}".format(total_units|int) }}</div>
-        </div>
-        <div class="stat-card">
-            <div class="label">Sales Orders</div>
-            <div class="value orders">{{ "{:,}".format(total_orders) }}</div>
-        </div>
-        <div class="stat-card">
-            <div class="label">Territories Active</div>
-            <div class="value">{{ total_territories }}</div>
-        </div>
-    </div>
+        <div class="region-divider"></div>
 
-    {% if territory_ranking %}
-    <!-- Ranking Section (fills remaining viewport) -->
-    <div class="ranking-section">
-        <div class="section-title fade-in stagger-3">By Ranking</div>
+        <!-- US Summary Stats -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="label">Total Booking Amount</div>
+                <div class="value money">${{ "{:,.2f}".format(us.total_amount) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Units Ordered</div>
+                <div class="value units">{{ "{:,}".format(us.total_units|int) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Sales Orders</div>
+                <div class="value orders">{{ "{:,}".format(us.total_orders) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Territories Active</div>
+                <div class="value">{{ us.total_territories }}</div>
+            </div>
+        </div>
 
-        {% if territory_ranking|length >= 3 %}
-        <div class="podium fade-in stagger-3">
-            <div class="podium-card gold">
-                <div class="podium-medal">1</div>
-                <div class="podium-location">{{ territory_ranking[0].location }}</div>
-                <div class="podium-amount">${{ "{:,.2f}".format(territory_ranking[0].total) }}</div>
+        {% if us.territory_ranking %}
+        <div class="ranking-section">
+            <div class="section-title">Territory Ranking</div>
+
+            {% if us.territory_ranking|length >= 3 %}
+            <div class="podium">
+                <div class="podium-card gold">
+                    <div class="podium-medal">1</div>
+                    <div class="podium-location">{{ us.territory_ranking[0].location }}</div>
+                    <div class="podium-amount">${{ "{:,.2f}".format(us.territory_ranking[0].total) }}</div>
+                </div>
+                <div class="podium-card silver">
+                    <div class="podium-medal">2</div>
+                    <div class="podium-location">{{ us.territory_ranking[1].location }}</div>
+                    <div class="podium-amount">${{ "{:,.2f}".format(us.territory_ranking[1].total) }}</div>
+                </div>
+                <div class="podium-card bronze">
+                    <div class="podium-medal">3</div>
+                    <div class="podium-location">{{ us.territory_ranking[2].location }}</div>
+                    <div class="podium-amount">${{ "{:,.2f}".format(us.territory_ranking[2].total) }}</div>
+                </div>
             </div>
-            <div class="podium-card silver">
-                <div class="podium-medal">2</div>
-                <div class="podium-location">{{ territory_ranking[1].location }}</div>
-                <div class="podium-amount">${{ "{:,.2f}".format(territory_ranking[1].total) }}</div>
+            {% endif %}
+
+            {% if us.territory_ranking|length > 3 %}
+            <div class="ranking-wrapper">
+                <table class="ranking-table">
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th class="col-total">Total</th>
+                            <th class="col-rank">Rank</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in us.territory_ranking[3:] %}
+                        <tr>
+                            <td class="col-location">{{ row.location }}</td>
+                            <td class="col-total">{{ "{:,.2f}".format(row.total) }}</td>
+                            <td class="col-rank">{{ row.rank }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-            <div class="podium-card bronze">
-                <div class="podium-medal">3</div>
-                <div class="podium-location">{{ territory_ranking[2].location }}</div>
-                <div class="podium-amount">${{ "{:,.2f}".format(territory_ranking[2].total) }}</div>
-            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>No US bookings found for today.</p>
         </div>
         {% endif %}
+    </div>
 
-        {% if territory_ranking|length > 3 %}
-        <div class="ranking-wrapper fade-in stagger-4">
-            <table class="ranking-table">
-                <thead>
-                    <tr>
-                        <th>Location</th>
-                        <th class="col-total">Total</th>
-                        <th class="col-rank">Rank</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in territory_ranking[3:] %}
-                    <tr>
-                        <td class="col-location">{{ row.location }}</td>
-                        <td class="col-total">{{ "{:,.2f}".format(row.total) }}</td>
-                        <td class="col-rank">{{ row.rank }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    {# ════════════════════════════════════════════════════════════
+       CANADA SECTION
+       ════════════════════════════════════════════════════════════ #}
+    <div class="region-section fade-in stagger-3">
+        <div class="region-header">
+            <span class="region-flag">🇨🇦</span>
+            <span class="region-title">Canada<span class="region-subtitle">(PRO06)</span></span>
+        </div>
+        <div class="region-divider"></div>
+
+        <!-- CA Summary Stats -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="label">Total Booking Amount</div>
+                <div class="value money">${{ "{:,.2f}".format(ca.total_amount) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Units Ordered</div>
+                <div class="value units">{{ "{:,}".format(ca.total_units|int) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Sales Orders</div>
+                <div class="value orders">{{ "{:,}".format(ca.total_orders) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Territories Active</div>
+                <div class="value">{{ ca.total_territories }}</div>
+            </div>
+        </div>
+
+        {% if ca.territory_ranking %}
+        <div class="ranking-section">
+            <div class="section-title">Territory Ranking</div>
+
+            {% if ca.territory_ranking|length >= 3 %}
+            <div class="podium">
+                <div class="podium-card gold">
+                    <div class="podium-medal">1</div>
+                    <div class="podium-location">{{ ca.territory_ranking[0].location }}</div>
+                    <div class="podium-amount">${{ "{:,.2f}".format(ca.territory_ranking[0].total) }}</div>
+                </div>
+                <div class="podium-card silver">
+                    <div class="podium-medal">2</div>
+                    <div class="podium-location">{{ ca.territory_ranking[1].location }}</div>
+                    <div class="podium-amount">${{ "{:,.2f}".format(ca.territory_ranking[1].total) }}</div>
+                </div>
+                <div class="podium-card bronze">
+                    <div class="podium-medal">3</div>
+                    <div class="podium-location">{{ ca.territory_ranking[2].location }}</div>
+                    <div class="podium-amount">${{ "{:,.2f}".format(ca.territory_ranking[2].total) }}</div>
+                </div>
+            </div>
+            {% elif ca.territory_ranking|length >= 1 %}
+            {# Less than 3 territories - show as simple table instead of podium #}
+            <div class="ranking-wrapper">
+                <table class="ranking-table">
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th class="col-total">Total</th>
+                            <th class="col-rank">Rank</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in ca.territory_ranking %}
+                        <tr>
+                            <td class="col-location">{{ row.location }}</td>
+                            <td class="col-total">{{ "{:,.2f}".format(row.total) }}</td>
+                            <td class="col-rank">{{ row.rank }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if ca.territory_ranking|length > 3 %}
+            <div class="ranking-wrapper">
+                <table class="ranking-table">
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th class="col-total">Total</th>
+                            <th class="col-rank">Rank</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in ca.territory_ranking[3:] %}
+                        <tr>
+                            <td class="col-location">{{ row.location }}</td>
+                            <td class="col-total">{{ "{:,.2f}".format(row.total) }}</td>
+                            <td class="col-rank">{{ row.rank }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>No Canada bookings found for today.</p>
         </div>
         {% endif %}
     </div>
 
-    {% else %}
-    <div class="empty-state fade-in stagger-3">
-        <p>No bookings found for today.</p>
-    </div>
-    {% endif %}
 </div>
 {% endblock %}
 
