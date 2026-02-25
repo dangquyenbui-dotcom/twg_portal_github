@@ -65,7 +65,7 @@
     font-weight: 500;
 }
 
-/* ── Download Button ── */
+/* ── Download Buttons ── */
 .btn-download {
     display: inline-flex;
     align-items: center;
@@ -100,6 +100,19 @@
 
 .btn-download:active {
     transform: translateY(0);
+}
+
+/* Smaller variant for region-level export */
+.btn-download-sm {
+    padding: 5px 12px;
+    font-size: 11px;
+    gap: 5px;
+    border-radius: var(--radius-sm);
+}
+
+.btn-download-sm svg {
+    width: 13px;
+    height: 13px;
 }
 
 .refresh-bar {
@@ -153,8 +166,14 @@
 .region-header {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: space-between;
     margin-bottom: 14px;
+}
+
+.region-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .region-flag {
@@ -329,8 +348,7 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    overflow: auto;
-    max-height: 300px;
+    overflow: hidden;
 }
 
 .ranking-table {
@@ -435,8 +453,6 @@
 
     .ranking-table tbody td { padding: 8px 16px; font-size: 13px; }
     .ranking-table thead th { padding: 8px 16px; font-size: 11px; }
-
-    .ranking-wrapper { max-height: 220px; }
 }
 
 /* ================================================================
@@ -461,6 +477,14 @@
     }
     .btn-download svg { width: 14px; height: 14px; }
     .btn-download .btn-download-text { display: none; }
+
+    .btn-download-sm {
+        padding: 4px 8px;
+        font-size: 10px;
+        gap: 4px;
+    }
+    .btn-download-sm svg { width: 12px; height: 12px; }
+    .btn-download-sm .btn-download-text { display: none; }
 
     .refresh-bar { margin-bottom: 10px; }
     .last-updated { font-size: 10px; }
@@ -493,7 +517,6 @@
     .podium-amount { font-size: 13px; }
 
     /* Compact table */
-    .ranking-wrapper { max-height: 160px; }
     .ranking-table tbody td { padding: 6px 12px; font-size: 12px; }
     .ranking-table thead th { padding: 6px 12px; font-size: 10px; }
 }
@@ -516,11 +539,11 @@
             <h1>Daily Bookings</h1>
             <span class="date-tag">{{ (us.order_date or ca.order_date).strftime('%A, %B %d, %Y') if (us.order_date or ca.order_date) else 'Today' }}</span>
         </div>
-        <a href="{{ url_for('sales.bookings_export') }}" class="btn-download" title="Download raw data as Excel">
+        <a href="{{ url_for('sales.bookings_export') }}" class="btn-download" title="Download combined US + Canada raw data as Excel">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
             </svg>
-            <span class="btn-download-text">Export Excel</span>
+            <span class="btn-download-text">Export All</span>
         </a>
     </div>
 
@@ -550,8 +573,16 @@
        ════════════════════════════════════════════════════════════ #}
     <div class="region-section fade-in stagger-2">
         <div class="region-header">
-            <span class="region-flag">🇺🇸</span>
-            <span class="region-title">United States<span class="region-subtitle">(PRO05)</span></span>
+            <div class="region-header-left">
+                <span class="region-flag">🇺🇸</span>
+                <span class="region-title">United States<span class="region-subtitle">(PRO05)</span></span>
+            </div>
+            <a href="{{ url_for('sales.bookings_export_us') }}" class="btn-download btn-download-sm" title="Export US raw data">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+                <span class="btn-download-text">Export US</span>
+            </a>
         </div>
         <div class="region-divider"></div>
 
@@ -634,8 +665,16 @@
        ════════════════════════════════════════════════════════════ #}
     <div class="region-section fade-in stagger-3">
         <div class="region-header">
-            <span class="region-flag">🇨🇦</span>
-            <span class="region-title">Canada<span class="region-subtitle">(PRO06)</span></span>
+            <div class="region-header-left">
+                <span class="region-flag">🇨🇦</span>
+                <span class="region-title">Canada<span class="region-subtitle">(PRO06)</span></span>
+            </div>
+            <a href="{{ url_for('sales.bookings_export_ca') }}" class="btn-download btn-download-sm" title="Export Canada raw data">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+                <span class="btn-download-text">Export CA</span>
+            </a>
         </div>
         <div class="region-divider"></div>
 
@@ -663,26 +702,6 @@
         <div class="ranking-section">
             <div class="section-title">Territory Ranking</div>
 
-            {% if ca.territory_ranking|length >= 3 %}
-            <div class="podium">
-                <div class="podium-card gold">
-                    <div class="podium-medal">1</div>
-                    <div class="podium-location">{{ ca.territory_ranking[0].location }}</div>
-                    <div class="podium-amount">${{ "{:,.2f}".format(ca.territory_ranking[0].total) }}</div>
-                </div>
-                <div class="podium-card silver">
-                    <div class="podium-medal">2</div>
-                    <div class="podium-location">{{ ca.territory_ranking[1].location }}</div>
-                    <div class="podium-amount">${{ "{:,.2f}".format(ca.territory_ranking[1].total) }}</div>
-                </div>
-                <div class="podium-card bronze">
-                    <div class="podium-medal">3</div>
-                    <div class="podium-location">{{ ca.territory_ranking[2].location }}</div>
-                    <div class="podium-amount">${{ "{:,.2f}".format(ca.territory_ranking[2].total) }}</div>
-                </div>
-            </div>
-            {% elif ca.territory_ranking|length >= 1 %}
-            {# Less than 3 territories - show as simple table instead of podium #}
             <div class="ranking-wrapper">
                 <table class="ranking-table">
                     <thead>
@@ -703,30 +722,6 @@
                     </tbody>
                 </table>
             </div>
-            {% endif %}
-
-            {% if ca.territory_ranking|length > 3 %}
-            <div class="ranking-wrapper">
-                <table class="ranking-table">
-                    <thead>
-                        <tr>
-                            <th>Location</th>
-                            <th class="col-total">Total</th>
-                            <th class="col-rank">Rank</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in ca.territory_ranking[3:] %}
-                        <tr>
-                            <td class="col-location">{{ row.location }}</td>
-                            <td class="col-total">{{ "{:,.2f}".format(row.total) }}</td>
-                            <td class="col-rank">{{ row.rank }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
         </div>
         {% else %}
         <div class="empty-state">

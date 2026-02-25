@@ -38,12 +38,9 @@ TERRITORY_MAP = {
 
 # ── Canada territory mapping (code → display name) ──
 TERRITORY_MAP_CA = {
-    '000': 'Toronto',
-    '001': 'Toronto',
-    '100': 'Vancouver',
-    '200': 'Montreal',
-    '300': 'Calgary',
-    '900': 'Central Billing',
+    '501': 'Vancouver',
+    '502': 'Toronto',
+    '503': 'Montreal',
 }
 
 # ── Excluded customers ──
