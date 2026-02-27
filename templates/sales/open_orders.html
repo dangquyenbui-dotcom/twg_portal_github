@@ -99,14 +99,10 @@
 }
 .btn-download-sm svg { width: 13px; height: 13px; }
 
-/* ── Refresh Bar ── */
 .refresh-bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     margin-bottom: 16px;
-    flex-wrap: wrap;
-    gap: 8px;
     flex-shrink: 0;
 }
 
@@ -125,20 +121,17 @@
     animation: pulse 2s ease-in-out infinite;
 }
 
+.last-updated .refresh-note {
+    color: var(--text-muted);
+    font-size: 11px;
+    opacity: 0.7;
+    margin-left: 8px;
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
 }
-
-.countdown {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-.countdown svg { width: 14px; height: 14px; opacity: 0.5; }
 
 /* ── Region Section ── */
 .region-section { margin-bottom: 28px; }
@@ -411,7 +404,7 @@
 
     .refresh-bar { margin-bottom: 10px; }
     .last-updated { font-size: 10px; }
-    .countdown { font-size: 10px; }
+    .last-updated .refresh-note { font-size: 9px; }
 
     .region-header { margin-bottom: 10px; }
     .region-flag { width: 22px; height: 14px; }
@@ -445,9 +438,6 @@
 {% endblock %}
 
 {% block content %}
-<!-- Auto-refresh every 10 minutes -->
-<meta http-equiv="refresh" content="600">
-
 <div class="report-page">
     <a href="/sales" class="back-link fade-in">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
@@ -474,15 +464,10 @@
             <span class="dot"></span>
             {% if last_updated %}
                 Last updated: {{ last_updated.strftime('%I:%M %p') }}
+                <span class="refresh-note">· Refreshes every hour</span>
             {% else %}
                 Waiting for data...
             {% endif %}
-        </div>
-        <div class="countdown">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/>
-            </svg>
-            Next refresh in <span id="countdownTimer">10:00</span>
         </div>
     </div>
 
@@ -610,7 +595,7 @@
                     </svg>
                 </span>
                 <span class="region-title">Canada<span class="region-subtitle">(PRO06)</span></span>
-                <span class="exchange-rate-badge" title="Live exchange rate, refreshed every 10 minutes">
+                <span class="exchange-rate-badge" title="Live exchange rate, refreshed hourly">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/>
                     </svg>
@@ -711,18 +696,4 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-(function() {
-    let seconds = 600;
-    const el = document.getElementById('countdownTimer');
-    if (!el) return;
-    setInterval(function() {
-        seconds--;
-        if (seconds < 0) seconds = 0;
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        el.textContent = m + ':' + String(s).padStart(2, '0');
-    }, 1000);
-})();
-</script>
 {% endblock %}

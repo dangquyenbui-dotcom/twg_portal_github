@@ -185,6 +185,7 @@ def _build_open_orders_raw_query(database):
         tr.qtyord * tr.price AS OpenAmount,
         tr.sostat            AS LineStatus,
         tr.sotype            AS OrderType,
+        sm.release           AS Release,
         tr.salesmn           AS Salesman,
         sm.terr              AS SOMastTerr,
         cu.terr              AS CustTerr,
@@ -229,7 +230,7 @@ def _process_open_orders_raw_rows(cursor, rows, region='US'):
 
         # Clean string fields
         for key in ('CustomerNo', 'CustomerName', 'Item', 'Description',
-                    'ProductLine', 'Salesman', 'Location', 'ShipVia'):
+                    'ProductLine', 'Release', 'Salesman', 'Location', 'ShipVia'):
             if record.get(key):
                 record[key] = str(record[key]).strip()
 

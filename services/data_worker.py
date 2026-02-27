@@ -131,26 +131,33 @@ def get_bookings_from_cache():
 # ─────────────────────────────────────────────────────────────
 
 def refresh_open_orders_cache():
-    """Fetch fresh open orders data from SQL for both US and Canada, store in cache."""
+    """
+    Fetch fresh open orders data from SQL for both US and Canada, store in cache.
+    Uses a longer cache timeout (65 min) since open orders refresh hourly,
+    keeping SQL Server load minimal.
+    """
     logger.info("Worker: Refreshing open orders cache (US + CA)...")
+
+    # 65-minute timeout — gives a 5-min safety buffer beyond the 60-min refresh cycle
+    OO_CACHE_TIMEOUT = 3900
 
     try:
         result_us = fetch_open_orders_snapshot_us()
         if result_us is not None:
-            cache.set(CACHE_KEY_OPEN_ORDERS_US, result_us, timeout=900)
+            cache.set(CACHE_KEY_OPEN_ORDERS_US, result_us, timeout=OO_CACHE_TIMEOUT)
             logger.info("Worker: US open orders cache updated.")
         else:
             logger.warning("Worker: US open orders query returned None — keeping stale cache.")
 
         result_ca = fetch_open_orders_snapshot_ca()
         if result_ca is not None:
-            cache.set(CACHE_KEY_OPEN_ORDERS_CA, result_ca, timeout=900)
+            cache.set(CACHE_KEY_OPEN_ORDERS_CA, result_ca, timeout=OO_CACHE_TIMEOUT)
             logger.info("Worker: CA open orders cache updated.")
         else:
             logger.warning("Worker: CA open orders query returned None — keeping stale cache.")
 
         if result_us is not None or result_ca is not None:
-            cache.set(CACHE_KEY_OPEN_ORDERS_UPDATED, datetime.now(), timeout=900)
+            cache.set(CACHE_KEY_OPEN_ORDERS_UPDATED, datetime.now(), timeout=OO_CACHE_TIMEOUT)
 
     except Exception as e:
         logger.error(f"Worker: Failed to refresh open orders cache: {e}")
@@ -180,19 +187,49 @@ def get_open_orders_from_cache():
 
 
 # ─────────────────────────────────────────────────────────────
-# Master Refresh (called by scheduler)
+# Scheduled Refresh Functions
 # ─────────────────────────────────────────────────────────────
 
-def refresh_all_caches():
+def refresh_bookings_and_rate():
     """
-    Master refresh function called by the scheduler every 10 minutes.
-    Refreshes all data sources in one pass.
+    Called by scheduler every 10 minutes.
+    Refreshes bookings (US + CA) and the exchange rate.
+    Open orders are NOT included — they have their own hourly schedule
+    to keep SQL Server load low.
     """
-    logger.info("Worker: ═══ Starting full data refresh ═══")
+    logger.info("Worker: ═══ Bookings refresh (every 10 min) ═══")
 
     # Exchange rate (shared by bookings + open orders)
     rate = _fetch_cad_to_usd_rate()
-    cache.set(CACHE_KEY_CAD_RATE, rate, timeout=900)
+    cache.set(CACHE_KEY_CAD_RATE, rate, timeout=3900)
+
+    # Bookings only
+    refresh_bookings_cache()
+
+    logger.info("Worker: ═══ Bookings refresh complete ═══")
+
+
+def refresh_open_orders_scheduled():
+    """
+    Called by scheduler every 60 minutes.
+    Refreshes open orders (US + CA) on a slower cadence
+    to minimize SQL Server load — open orders data doesn't change frequently.
+    """
+    logger.info("Worker: ═══ Open orders refresh (every 60 min) ═══")
+    refresh_open_orders_cache()
+    logger.info("Worker: ═══ Open orders refresh complete ═══")
+
+
+def refresh_all_on_startup():
+    """
+    Called once on app startup to populate all caches immediately.
+    After this, bookings refreshes every 10 min and open orders every 60 min.
+    """
+    logger.info("Worker: ═══ Initial startup refresh (all data) ═══")
+
+    # Exchange rate
+    rate = _fetch_cad_to_usd_rate()
+    cache.set(CACHE_KEY_CAD_RATE, rate, timeout=3900)
 
     # Bookings
     refresh_bookings_cache()
@@ -200,4 +237,4 @@ def refresh_all_caches():
     # Open Orders
     refresh_open_orders_cache()
 
-    logger.info("Worker: ═══ Full data refresh complete ═══")
+    logger.info("Worker: ═══ Initial startup refresh complete ═══")

@@ -64,6 +64,7 @@ OPEN_ORDERS_EXPORT_COLUMNS = [
     ('Open Amount',               'OpenAmount',    18, '$#,##0.00'),
     ('Line Status',               'LineStatus',    14, None),
     ('Order Type',                'OrderType',     14, None),
+    ('Release',                   'Release',       14, None),
     ('Salesman',                  'Salesman',      14, None),
     ('Territory (mapped)',        'Territory',     18, None),
     ('Terr Code',                 'TerrCode',      14, None),

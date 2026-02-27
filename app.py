@@ -10,7 +10,7 @@ from extensions import cache, scheduler
 import auth.entra_auth as auth_utils
 from routes.main import main_bp
 from routes.sales import sales_bp
-from services.data_worker import refresh_all_caches
+from services.data_worker import refresh_bookings_and_rate, refresh_open_orders_scheduled, refresh_all_on_startup
 
 # --- Logging: INFO level only ---
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -38,21 +38,32 @@ def create_app():
         scheduler.start()
         logger.info("Scheduler started.")
 
-    # Schedule master refresh every 10 minutes
-    if not scheduler.get_job('data_refresh'):
+    # Schedule bookings + exchange rate refresh every 10 minutes
+    if not scheduler.get_job('bookings_refresh'):
         scheduler.add_job(
-            id='data_refresh',
-            func=refresh_all_caches,
+            id='bookings_refresh',
+            func=refresh_bookings_and_rate,
             trigger='interval',
             seconds=Config.DATA_REFRESH_INTERVAL,
             misfire_grace_time=60
         )
-        logger.info(f"Scheduled 'data_refresh' every {Config.DATA_REFRESH_INTERVAL}s")
+        logger.info(f"Scheduled 'bookings_refresh' every {Config.DATA_REFRESH_INTERVAL}s")
 
-    # --- Immediate refresh on startup so cache is never stale ---
+    # Schedule open orders refresh every 60 minutes (separate, lighter on SQL Server)
+    if not scheduler.get_job('open_orders_refresh'):
+        scheduler.add_job(
+            id='open_orders_refresh',
+            func=refresh_open_orders_scheduled,
+            trigger='interval',
+            seconds=Config.OPEN_ORDERS_REFRESH_INTERVAL,
+            misfire_grace_time=120
+        )
+        logger.info(f"Scheduled 'open_orders_refresh' every {Config.OPEN_ORDERS_REFRESH_INTERVAL}s")
+
+    # --- Immediate refresh on startup so cache is never empty ---
     with app.app_context():
-        logger.info("Running initial data refresh...")
-        refresh_all_caches()
+        logger.info("Running initial data refresh (all sources)...")
+        refresh_all_on_startup()
 
     # Shut down scheduler on exit
     atexit.register(lambda: scheduler.shutdown() if scheduler.running else None)
