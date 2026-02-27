@@ -287,7 +287,7 @@ The following customers are filtered out of **both bookings and open orders**:
 
 | Field      | Excluded Values | Reason                     | Applies To       |
 |------------|-----------------|----------------------------|------------------|
-| `currhist` | `X`             | Cancelled/historical       | Both             |
+| `currhist` | `X`             | Cancelled/historical       | Bookings only    |
 | `sostat` (line) | `V`, `X`   | Voided, cancelled lines    | Bookings         |
 | `sostat` (line) | `C`, `V`, `X` | Closed, voided, cancelled lines | Open Orders |
 | `sostat` (order)| `C`        | Fully closed order         | Open Orders      |
@@ -454,8 +454,9 @@ Displays the total value of all open (unfulfilled) sales order lines across both
 WHERE tr.qtyord > 0                          -- still has remaining open quantity
   AND tr.sostat  NOT IN ('C', 'V', 'X')     -- line not closed, voided, or cancelled
   AND sm.sostat  <> 'C'                      -- order not fully closed
-  AND tr.currhist <> 'X'                     -- not historical/cancelled
   AND tr.sotype  NOT IN ('B', 'R')           -- no blankets or returns
+  -- NO date filter (all open orders regardless of age)
+  -- NO currhist filter (not relevant for open orders)
 ```
 
 Plus Python-side filtering: excluded customers (same 7 internal accounts as bookings) and TAX product lines.
@@ -465,6 +466,8 @@ Plus Python-side filtering: excluded customers (same 7 internal accounts as book
 - `qtyord > 0` — The ERP updates `qtyord` as shipments go out. It represents the **remaining open quantity**, not the original quantity ordered. When `qtyord` reaches 0, the line is fully shipped.
 - `sostat NOT IN ('C', 'V', 'X')` — Excludes lines that are closed (fully invoiced), voided, or cancelled at the line level.
 - `somast.sostat <> 'C'` — Excludes lines belonging to orders that are fully closed at the header level (uses `INNER JOIN` to enforce this).
+- **No `currhist` filter** — Unlike bookings, open orders does not filter on `currhist`. The `qtyord > 0` and `sostat` filters are sufficient to identify genuinely open lines.
+- **No date filter** — All open orders are included regardless of when they were placed.
 
 **Open Amount Formula:**
 
@@ -482,6 +485,7 @@ Open $ = qtyord × price × (1 - disc / 100)
 | Customer exclusions| 7 internal accounts excluded| Same 7 internal accounts excluded |
 | Qty field          | `origqtyord` (original qty) | `qtyord` (remaining open qty)  |
 | sostat exclusion   | `V`, `X`                    | `C`, `V`, `X`                  |
+| currhist filter    | `currhist <> 'X'`           | Not applied                    |
 | Rankings           | Territory only              | Territory + Salesman side-by-side |
 | Release column     | Not included                | Included (`somast.release`)    |
 | `somast` join      | `LEFT JOIN`                 | `INNER JOIN` (enforces order-level filter) |

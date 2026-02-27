@@ -6,10 +6,11 @@ Open line definition:
   - sotran.qtyord > 0            (still has remaining/open quantity)
   - sotran.sostat NOT IN ('C','V','X') (not closed/voided/cancelled at line level)
   - somast.sostat <> 'C'          (order not fully closed)
-  - sotran.currhist <> 'X'        (not historical/cancelled)
   - sotran.sotype NOT IN ('B','R') (no blankets/returns)
   - icitem.plinid <> 'TAX'        (no tax line items)
   - Excluded customers             (same as bookings: W1VAN, W1TOR, W1MON, MISC, TWGMARKET, EMP-US, TEST123)
+  - NO date filter                 (all open orders regardless of age)
+  - NO currhist filter             (currhist is not relevant for open orders)
 
 Open $ = sotran.qtyord × sotran.price × (1 - sotran.disc / 100)  (qtyord = remaining open qty after shipments)
 """
@@ -54,7 +55,6 @@ def _build_open_orders_query(database):
     WHERE tr.qtyord > 0
       AND tr.sostat  NOT IN ('C', 'V', 'X')
       AND sm.sostat  <> 'C'
-      AND tr.currhist <> 'X'
       AND tr.sotype  NOT IN ('B', 'R')
     """
 
@@ -216,7 +216,6 @@ def _build_open_orders_raw_query(database):
     WHERE tr.qtyord > 0
       AND tr.sostat  NOT IN ('C', 'V', 'X')
       AND sm.sostat  <> 'C'
-      AND tr.currhist <> 'X'
       AND tr.sotype  NOT IN ('B', 'R')
     """
 
