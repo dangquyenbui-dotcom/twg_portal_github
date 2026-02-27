@@ -94,6 +94,7 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
         # Return empty defaults — works for both bookings and open orders
         return {
             "total_amount": 0, "total_amount_usd": 0,
+            "total_released_amount": 0, "total_released_amount_usd": 0,
             "total_units": 0, "total_orders": 0,
             "total_territories": 0, "total_lines": 0,
             "territory_ranking": [],
@@ -104,6 +105,7 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
     summary = snapshot["summary"]
     data = {
         "total_amount": summary["total_amount"],
+        "total_released_amount": summary.get("total_released_amount", 0),
         "total_units": summary["total_units"],
         "total_orders": summary["total_orders"],
         "total_territories": summary.get("total_territories", 0),
@@ -115,12 +117,16 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
 
     if is_canada and cad_rate:
         data["total_amount_usd"] = math.ceil(summary["total_amount"] * cad_rate)
+        data["total_released_amount_usd"] = math.ceil(summary.get("total_released_amount", 0) * cad_rate)
         for terr in data["territory_ranking"]:
             terr["total_usd"] = math.ceil(terr["total"] * cad_rate)
+            terr["released_usd"] = math.ceil(terr.get("released", 0) * cad_rate)
         for sm in data["salesman_ranking"]:
             sm["total_usd"] = math.ceil(sm["total"] * cad_rate)
+            sm["released_usd"] = math.ceil(sm.get("released", 0) * cad_rate)
     else:
         data["total_amount_usd"] = 0
+        data["total_released_amount_usd"] = 0
 
     return data
 

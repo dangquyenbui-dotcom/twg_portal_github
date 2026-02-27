@@ -13,6 +13,8 @@ Open line definition:
   - NO currhist filter             (currhist is not relevant for open orders)
 
 Open $ = sotran.qtyord × sotran.price × (1 - sotran.disc / 100)  (qtyord = remaining open qty after shipments)
+
+Released $ = subset of Open $ where somast.release = 'Y'
 """
 
 import logging
@@ -44,7 +46,8 @@ def _build_open_orders_query(database):
         END                                     AS terr_code,
         tr.salesmn,
         ic.plinid,
-        tr.custno
+        tr.custno,
+        sm.release                              AS release_flag
     FROM {database}.dbo.sotran tr WITH (NOLOCK)
     INNER JOIN {database}.dbo.somast sm WITH (NOLOCK)
         ON sm.sono = tr.sono
@@ -64,16 +67,21 @@ def _aggregate_open_orders(rows, region='US'):
     Aggregate open order rows into summary, territory ranking, and salesman ranking.
     All amounts are rounded up (ceiling) to whole numbers.
 
+    Tracks both total open amount AND released amount (where somast.release = 'Y').
+
     Returns dict with 'summary', 'territory_ranking', and 'salesman_ranking'.
     """
     total_amount = 0.0
+    total_released_amount = 0.0
     total_units = 0
     total_lines = 0
     distinct_orders = set()
     territory_totals = defaultdict(float)
+    territory_released = defaultdict(float)
     salesman_totals = defaultdict(float)
+    salesman_released = defaultdict(float)
 
-    for sono, open_qty, open_amount, terr_code, salesmn, plinid, custno in rows:
+    for sono, open_qty, open_amount, terr_code, salesmn, plinid, custno, release_flag in rows:
         # Exclude internal/test customers
         custno_clean = (custno or '').strip().upper()
         if custno_clean in BOOKINGS_EXCLUDED_CUSTOMERS:
@@ -87,6 +95,7 @@ def _aggregate_open_orders(rows, region='US'):
         salesman = (salesmn or '').strip() or 'Unassigned'
         amt = float(open_amount or 0)
         qty = int(open_qty or 0)
+        is_released = (release_flag or '').strip().upper() == 'Y'
 
         total_amount += amt
         total_units += qty
@@ -95,24 +104,41 @@ def _aggregate_open_orders(rows, region='US'):
         territory_totals[territory] += amt
         salesman_totals[salesman] += amt
 
+        if is_released:
+            total_released_amount += amt
+            territory_released[territory] += amt
+            salesman_released[salesman] += amt
+
     total_amount = math.ceil(total_amount)
+    total_released_amount = math.ceil(total_released_amount)
 
     # Territory ranking
     terr_sorted = sorted(territory_totals.items(), key=lambda x: x[1], reverse=True)
     territory_ranking = [
-        {"location": loc, "total": math.ceil(total), "rank": rank}
+        {
+            "location": loc,
+            "total": math.ceil(total),
+            "released": math.ceil(territory_released.get(loc, 0)),
+            "rank": rank,
+        }
         for rank, (loc, total) in enumerate(terr_sorted, start=1)
     ]
 
     # Salesman ranking
     sm_sorted = sorted(salesman_totals.items(), key=lambda x: x[1], reverse=True)
     salesman_ranking = [
-        {"salesman": sm, "total": math.ceil(total), "rank": rank}
+        {
+            "salesman": sm,
+            "total": math.ceil(total),
+            "released": math.ceil(salesman_released.get(sm, 0)),
+            "rank": rank,
+        }
         for rank, (sm, total) in enumerate(sm_sorted, start=1)
     ]
 
     summary = {
         "total_amount": total_amount,
+        "total_released_amount": total_released_amount,
         "total_units": total_units,
         "total_lines": total_lines,
         "total_orders": len(distinct_orders),
@@ -147,6 +173,7 @@ def fetch_open_orders_snapshot(database=None, region='US'):
         label = "US" if region == "US" else "CA"
         logger.info(
             f"{label} Open Orders snapshot: ${result['summary']['total_amount']:,} "
+            f"(${result['summary']['total_released_amount']:,} released) "
             f"across {result['summary']['total_orders']} orders, "
             f"{result['summary']['total_lines']} lines "
             f"({len(rows)} raw rows processed)"
