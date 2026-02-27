@@ -1,0 +1,728 @@
+{% extends "base.html" %}
+{% block title %}Open Sales Orders - TWG Portal{% endblock %}
+
+{% block breadcrumb %}
+<a href="/">Home</a>
+<span class="sep">/</span>
+<a href="/sales">Sales</a>
+<span class="sep">/</span>
+<span class="current">Open Orders</span>
+{% endblock %}
+
+{% block extra_styles %}
+/* ── Open Orders Layout ── */
+.report-page {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 56px);
+}
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    margin-bottom: 12px;
+    transition: color 0.15s;
+    flex-shrink: 0;
+}
+.back-link:hover { color: var(--text-primary); }
+.back-link svg { width: 16px; height: 16px; }
+
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.page-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.page-header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+}
+
+.page-header .page-tag {
+    font-size: 12px;
+    color: var(--accent-amber);
+    background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.2);
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-weight: 600;
+}
+
+/* ── Download Buttons ── */
+.btn-download {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-body);
+    color: var(--accent-green);
+    background: rgba(16,185,129,0.08);
+    border: 1px solid rgba(16,185,129,0.2);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.btn-download svg { width: 16px; height: 16px; flex-shrink: 0; }
+.btn-download:hover {
+    background: rgba(16,185,129,0.15);
+    border-color: rgba(16,185,129,0.35);
+    color: #34D399;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16,185,129,0.15);
+}
+
+.btn-download-sm {
+    padding: 5px 12px;
+    font-size: 11px;
+    gap: 5px;
+    border-radius: var(--radius-sm);
+}
+.btn-download-sm svg { width: 13px; height: 13px; }
+
+/* ── Refresh Bar ── */
+.refresh-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.last-updated {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.last-updated .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent-green);
+    display: inline-block;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.countdown {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.countdown svg { width: 14px; height: 14px; opacity: 0.5; }
+
+/* ── Region Section ── */
+.region-section { margin-bottom: 28px; }
+
+.region-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.region-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.region-flag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 18px;
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.1);
+}
+.region-flag svg { width: 100%; height: 100%; display: block; }
+
+.region-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    color: var(--text-primary);
+}
+
+.region-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-left: 4px;
+}
+
+.region-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0 20px;
+}
+
+/* ── Exchange Rate Badge ── */
+.exchange-rate-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: rgba(139,92,246,0.08);
+    border: 1px solid rgba(139,92,246,0.15);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    margin-left: 8px;
+}
+.exchange-rate-badge svg { width: 12px; height: 12px; color: var(--accent-purple); }
+
+/* ── Summary Cards ── */
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-shrink: 0;
+}
+
+.stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px;
+}
+
+.stat-card .label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.stat-card .value {
+    font-size: 24px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: -0.5px;
+}
+
+.stat-card .value.money { color: var(--accent-green); }
+.stat-card .value.units { color: var(--accent-blue); }
+.stat-card .value.orders { color: var(--accent-amber); }
+.stat-card .value.lines { color: var(--accent-purple); }
+
+.stat-card .usd-equiv {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+.currency-prefix {
+    font-size: 0.65em;
+    font-weight: 600;
+    opacity: 0.7;
+    vertical-align: baseline;
+    margin-right: 1px;
+}
+
+/* ── Rankings Grid (side by side) ── */
+.rankings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.ranking-section {
+    display: flex;
+    flex-direction: column;
+}
+
+.section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+/* ── Ranking Table ── */
+.ranking-wrapper {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    flex: 1;
+}
+
+.ranking-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+}
+
+.ranking-table thead th {
+    text-align: left;
+    padding: 10px 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.ranking-table thead th.col-total,
+.ranking-table thead th.col-usd,
+.ranking-table thead th.col-rank {
+    text-align: right;
+}
+
+.ranking-table tbody td {
+    padding: 9px 20px;
+    border-bottom: 1px solid rgba(42,51,82,0.4);
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.ranking-table tbody tr:last-child td { border-bottom: none; }
+
+.ranking-table tbody tr:hover {
+    background: rgba(59,130,246,0.04);
+}
+.ranking-table tbody tr:hover td { color: var(--text-primary); }
+
+.ranking-table .col-name {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.ranking-table .col-total {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--accent-green);
+}
+
+.ranking-table .col-usd {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.ranking-table .col-rank {
+    text-align: right;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+/* ── Error / Empty ── */
+.error-banner {
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    color: var(--accent-red);
+    font-size: 14px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 24px 20px;
+    color: var(--text-muted);
+}
+.empty-state p { font-size: 14px; }
+
+/* ════════════════════════════════════════════════
+   TABLET
+   ════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+    .page-container { padding: 20px; }
+    .stats-row { gap: 10px; }
+    .stat-card { padding: 12px; }
+    .stat-card .value { font-size: 20px; }
+    .stat-card .label { font-size: 9px; }
+    .stat-card .usd-equiv { font-size: 11px; }
+    .rankings-grid { gap: 12px; }
+    .ranking-table tbody td { padding: 8px 16px; font-size: 13px; }
+    .ranking-table thead th { padding: 8px 16px; font-size: 11px; }
+    .exchange-rate-badge { font-size: 10px; padding: 3px 10px; }
+}
+
+/* ════════════════════════════════════════════════
+   PHONE
+   ════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+    .page-container { padding: 12px; }
+    .back-link { font-size: 11px; margin-bottom: 8px; }
+    .page-header { margin-bottom: 2px; }
+    .page-header h1 { font-size: 17px; }
+    .page-header .page-tag { font-size: 10px; padding: 4px 10px; }
+
+    .btn-download { padding: 6px 10px; font-size: 11px; gap: 5px; }
+    .btn-download svg { width: 14px; height: 14px; }
+    .btn-download .btn-download-text { display: none; }
+    .btn-download-sm { padding: 4px 8px; font-size: 10px; gap: 4px; }
+    .btn-download-sm svg { width: 12px; height: 12px; }
+    .btn-download-sm .btn-download-text { display: none; }
+
+    .refresh-bar { margin-bottom: 10px; }
+    .last-updated { font-size: 10px; }
+    .countdown { font-size: 10px; }
+
+    .region-header { margin-bottom: 10px; }
+    .region-flag { width: 22px; height: 14px; }
+    .region-title { font-size: 14px; }
+    .region-subtitle { font-size: 10px; }
+    .region-section { margin-bottom: 20px; }
+
+    .exchange-rate-badge { font-size: 9px; padding: 3px 8px; margin-left: 0; margin-top: 6px; }
+
+    .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+    .stat-card { padding: 10px; }
+    .stat-card .label { font-size: 8px; margin-bottom: 4px; }
+    .stat-card .value { font-size: 17px; }
+    .stat-card .usd-equiv { font-size: 10px; margin-top: 2px; }
+
+    /* Stack rankings vertically on phone */
+    .rankings-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .section-title { font-size: 11px; margin-bottom: 8px; }
+    .ranking-table tbody td { padding: 6px 12px; font-size: 12px; }
+    .ranking-table thead th { padding: 6px 12px; font-size: 10px; }
+    .ranking-table .col-usd { font-size: 11px; }
+}
+{% endblock %}
+
+{% block content %}
+<!-- Auto-refresh every 10 minutes -->
+<meta http-equiv="refresh" content="600">
+
+<div class="report-page">
+    <a href="/sales" class="back-link fade-in">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
+        </svg>
+        Back to Sales
+    </a>
+
+    <div class="page-header fade-in stagger-1">
+        <div class="page-header-left">
+            <h1>Open Sales Orders</h1>
+            <span class="page-tag">All Open Lines</span>
+        </div>
+        <a href="{{ url_for('sales.open_orders_export') }}" class="btn-download" title="Download combined US + Canada open orders as Excel">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+            </svg>
+            <span class="btn-download-text">Export All</span>
+        </a>
+    </div>
+
+    <div class="refresh-bar fade-in stagger-1">
+        <div class="last-updated">
+            <span class="dot"></span>
+            {% if last_updated %}
+                Last updated: {{ last_updated.strftime('%I:%M %p') }}
+            {% else %}
+                Waiting for data...
+            {% endif %}
+        </div>
+        <div class="countdown">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/>
+            </svg>
+            Next refresh in <span id="countdownTimer">10:00</span>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="error-banner fade-in stagger-1">{{ error }}</div>
+    {% endif %}
+
+    {# ════════════════════════════════════════════════════════════
+       US SECTION
+       ════════════════════════════════════════════════════════════ #}
+    <div class="region-section fade-in stagger-2">
+        <div class="region-header">
+            <div class="region-header-left">
+                <span class="region-flag">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 30" width="24" height="12">
+                        <rect width="60" height="30" fill="#B22234"/>
+                        <rect y="2.31" width="60" height="2.31" fill="#fff"/>
+                        <rect y="6.92" width="60" height="2.31" fill="#fff"/>
+                        <rect y="11.54" width="60" height="2.31" fill="#fff"/>
+                        <rect y="16.15" width="60" height="2.31" fill="#fff"/>
+                        <rect y="20.77" width="60" height="2.31" fill="#fff"/>
+                        <rect y="25.38" width="60" height="2.31" fill="#fff"/>
+                        <rect width="24" height="16.15" fill="#3C3B6E"/>
+                    </svg>
+                </span>
+                <span class="region-title">United States<span class="region-subtitle">(PRO05)</span></span>
+            </div>
+            <a href="{{ url_for('sales.open_orders_export_us') }}" class="btn-download btn-download-sm" title="Export US open orders">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+                <span class="btn-download-text">Export US</span>
+            </a>
+        </div>
+        <div class="region-divider"></div>
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="label">Total Open Amount</div>
+                <div class="value money">${{ "{:,}".format(us.total_amount|int) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Open Units</div>
+                <div class="value units">{{ "{:,}".format(us.total_units|int) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Open Orders</div>
+                <div class="value orders">{{ "{:,}".format(us.total_orders) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Open Lines</div>
+                <div class="value lines">{{ "{:,}".format(us.total_lines) }}</div>
+            </div>
+        </div>
+
+        {% if us.territory_ranking or us.salesman_ranking %}
+        <div class="rankings-grid">
+            <!-- Territory Ranking -->
+            <div class="ranking-section">
+                <div class="section-title">By Territory</div>
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead>
+                            <tr>
+                                <th>Territory</th>
+                                <th class="col-total">Open $</th>
+                                <th class="col-rank">#</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in us.territory_ranking %}
+                            <tr>
+                                <td class="col-name">{{ row.location }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Salesman Ranking -->
+            <div class="ranking-section">
+                <div class="section-title">By Salesman</div>
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead>
+                            <tr>
+                                <th>Salesman</th>
+                                <th class="col-total">Open $</th>
+                                <th class="col-rank">#</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in us.salesman_ranking %}
+                            <tr>
+                                <td class="col-name">{{ row.salesman }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state"><p>No open US orders found.</p></div>
+        {% endif %}
+    </div>
+
+    {# ════════════════════════════════════════════════════════════
+       CANADA SECTION
+       ════════════════════════════════════════════════════════════ #}
+    <div class="region-section fade-in stagger-3">
+        <div class="region-header">
+            <div class="region-header-left">
+                <span class="region-flag">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 30" width="24" height="12">
+                        <rect width="60" height="30" fill="#fff"/>
+                        <rect width="15" height="30" fill="#D52B1E"/>
+                        <rect x="45" width="15" height="30" fill="#D52B1E"/>
+                        <path d="M30 5 l1.5 4.5 -4-2.8h5l-4 2.8z" fill="#D52B1E" transform="scale(1.8) translate(-13.5, -1)"/>
+                    </svg>
+                </span>
+                <span class="region-title">Canada<span class="region-subtitle">(PRO06)</span></span>
+                <span class="exchange-rate-badge" title="Live exchange rate, refreshed every 10 minutes">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/>
+                    </svg>
+                    1 CAD = {{ "%.4f"|format(cad_rate) }} USD
+                </span>
+            </div>
+            <a href="{{ url_for('sales.open_orders_export_ca') }}" class="btn-download btn-download-sm" title="Export Canada open orders">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+                <span class="btn-download-text">Export CA</span>
+            </a>
+        </div>
+        <div class="region-divider"></div>
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="label">Total Open Amount</div>
+                <div class="value money"><span class="currency-prefix">CAD</span> ${{ "{:,}".format(ca.total_amount|int) }}</div>
+                <div class="usd-equiv">≈ USD ${{ "{:,}".format(ca.total_amount_usd|int) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Open Units</div>
+                <div class="value units">{{ "{:,}".format(ca.total_units|int) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Open Orders</div>
+                <div class="value orders">{{ "{:,}".format(ca.total_orders) }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Open Lines</div>
+                <div class="value lines">{{ "{:,}".format(ca.total_lines) }}</div>
+            </div>
+        </div>
+
+        {% if ca.territory_ranking or ca.salesman_ranking %}
+        <div class="rankings-grid">
+            <!-- Territory Ranking -->
+            <div class="ranking-section">
+                <div class="section-title">By Territory</div>
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead>
+                            <tr>
+                                <th>Territory</th>
+                                <th class="col-total">Open $ (CAD)</th>
+                                <th class="col-usd">≈ USD</th>
+                                <th class="col-rank">#</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in ca.territory_ranking %}
+                            <tr>
+                                <td class="col-name">{{ row.location }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Salesman Ranking -->
+            <div class="ranking-section">
+                <div class="section-title">By Salesman</div>
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead>
+                            <tr>
+                                <th>Salesman</th>
+                                <th class="col-total">Open $ (CAD)</th>
+                                <th class="col-usd">≈ USD</th>
+                                <th class="col-rank">#</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in ca.salesman_ranking %}
+                            <tr>
+                                <td class="col-name">{{ row.salesman }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state"><p>No open Canada orders found.</p></div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    let seconds = 600;
+    const el = document.getElementById('countdownTimer');
+    if (!el) return;
+    setInterval(function() {
+        seconds--;
+        if (seconds < 0) seconds = 0;
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        el.textContent = m + ':' + String(s).padStart(2, '0');
+    }, 1000);
+})();
+</script>
+{% endblock %}

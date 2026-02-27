@@ -10,7 +10,7 @@ from extensions import cache, scheduler
 import auth.entra_auth as auth_utils
 from routes.main import main_bp
 from routes.sales import sales_bp
-from services.data_worker import refresh_bookings_cache
+from services.data_worker import refresh_all_caches
 
 # --- Logging: INFO level only ---
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -38,21 +38,21 @@ def create_app():
         scheduler.start()
         logger.info("Scheduler started.")
 
-    # Schedule bookings refresh every 10 minutes
-    if not scheduler.get_job('bookings_refresh'):
+    # Schedule master refresh every 10 minutes
+    if not scheduler.get_job('data_refresh'):
         scheduler.add_job(
-            id='bookings_refresh',
-            func=refresh_bookings_cache,
+            id='data_refresh',
+            func=refresh_all_caches,
             trigger='interval',
             seconds=Config.DATA_REFRESH_INTERVAL,
             misfire_grace_time=60
         )
-        logger.info(f"Scheduled 'bookings_refresh' every {Config.DATA_REFRESH_INTERVAL}s")
+        logger.info(f"Scheduled 'data_refresh' every {Config.DATA_REFRESH_INTERVAL}s")
 
     # --- Immediate refresh on startup so cache is never stale ---
     with app.app_context():
         logger.info("Running initial data refresh...")
-        refresh_bookings_cache()
+        refresh_all_caches()
 
     # Shut down scheduler on exit
     atexit.register(lambda: scheduler.shutdown() if scheduler.running else None)

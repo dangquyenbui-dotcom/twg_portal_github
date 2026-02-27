@@ -1,20 +1,26 @@
-from io import BytesIO
-from datetime import date, datetime
+"""
+Sales Blueprint
+Routes for all sales reports: bookings dashboard, open orders dashboard, and Excel exports.
+"""
+
 import math
+from datetime import date
 
-from flask import Blueprint, render_template, session, redirect, url_for, send_file
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
+from flask import Blueprint, render_template, session, redirect, url_for
 
-from services.data_worker import get_bookings_from_cache
-from services.db_service import fetch_bookings_raw, fetch_bookings_raw_ca
+from services.data_worker import get_bookings_from_cache, get_open_orders_from_cache
+from services.bookings_service import fetch_bookings_raw_us, fetch_bookings_raw_ca
+from services.open_orders_service import fetch_open_orders_raw_us, fetch_open_orders_raw_ca
+from services.excel_helper import build_export_workbook, send_workbook
 
 sales_bp = Blueprint('sales', __name__, url_prefix='/sales')
 
 
-# ── Column config shared by all exports: (header, dict key, width, fmt) ──
-EXPORT_COLUMNS = [
+# ═══════════════════════════════════════════════════════════════
+# Column definitions for Excel exports
+# ═══════════════════════════════════════════════════════════════
+
+BOOKINGS_EXPORT_COLUMNS = [
     ('Sales Order (sono)',        'SalesOrder',    20, None),
     ('Line# (tranlineno)',        'LineNo',        18, '#,##0'),
     ('Order Date (ordate)',       'OrderDate',     18, 'MM/DD/YYYY'),
@@ -42,96 +48,82 @@ EXPORT_COLUMNS = [
     ('Ship Via (shipvia)',        'ShipVia',       16, None),
 ]
 
+OPEN_ORDERS_EXPORT_COLUMNS = [
+    ('Sales Order',               'SalesOrder',    20, None),
+    ('Line#',                     'LineNo',        10, '#,##0'),
+    ('Order Date',                'OrderDate',     16, 'MM/DD/YYYY'),
+    ('Customer No',               'CustomerNo',    18, None),
+    ('Customer Name',             'CustomerName',  30, None),
+    ('Item',                      'Item',          18, None),
+    ('Description',               'Description',   32, None),
+    ('Product Line',              'ProductLine',   16, None),
+    ('Orig Qty Ordered',          'OrigQtyOrd',    18, '#,##0'),
+    ('Open Qty',                  'OpenQty',       14, '#,##0'),
+    ('Qty Shipped',               'QtyShipped',    14, '#,##0'),
+    ('Unit Price',                'UnitPrice',     16, '$#,##0.00'),
+    ('Open Amount',               'OpenAmount',    18, '$#,##0.00'),
+    ('Line Status',               'LineStatus',    14, None),
+    ('Order Type',                'OrderType',     14, None),
+    ('Salesman',                  'Salesman',      14, None),
+    ('Territory (mapped)',        'Territory',     18, None),
+    ('Terr Code',                 'TerrCode',      14, None),
+    ('SO Mast Terr',              'SOMastTerr',    16, None),
+    ('Cust Terr',                 'CustTerr',      14, None),
+    ('Location',                  'Location',      14, None),
+    ('Request Date',              'RequestDate',   16, 'MM/DD/YYYY'),
+    ('Ship Date',                 'ShipDate',      16, 'MM/DD/YYYY'),
+    ('Ship Via',                  'ShipVia',       14, None),
+]
 
-def _build_export_workbook(rows, title_label, columns, include_region_col=False):
-    """
-    Build a formatted Excel workbook from a list of row dicts.
-    Returns an openpyxl Workbook.
-    """
-    wb = Workbook()
-    ws = wb.active
-    ws.title = 'Bookings Raw Data'
 
-    # If combined export, prepend Region column
-    if include_region_col:
-        cols = [('Region', 'Region', 10, None)] + list(columns)
+# ═══════════════════════════════════════════════════════════════
+# Helper: build region data dict with USD conversion for Canada
+# ═══════════════════════════════════════════════════════════════
+
+def _build_region_data(snapshot, cad_rate=None, is_canada=False):
+    """
+    Build a template-ready data dict from a cache snapshot.
+    Handles both bookings and open orders shapes.
+    For Canada, adds USD equivalents to monetary fields.
+    """
+    if snapshot is None:
+        # Return empty defaults — works for both bookings and open orders
+        return {
+            "total_amount": 0, "total_amount_usd": 0,
+            "total_units": 0, "total_orders": 0,
+            "total_territories": 0, "total_lines": 0,
+            "territory_ranking": [],
+            "salesman_ranking": [],
+            "order_date": None,
+        }
+
+    summary = snapshot["summary"]
+    data = {
+        "total_amount": summary["total_amount"],
+        "total_units": summary["total_units"],
+        "total_orders": summary["total_orders"],
+        "total_territories": summary.get("total_territories", 0),
+        "total_lines": summary.get("total_lines", 0),
+        "territory_ranking": snapshot.get("ranking", snapshot.get("territory_ranking", [])),
+        "salesman_ranking": snapshot.get("salesman_ranking", []),
+        "order_date": summary.get("order_date"),
+    }
+
+    if is_canada and cad_rate:
+        data["total_amount_usd"] = math.ceil(summary["total_amount"] * cad_rate)
+        for terr in data["territory_ranking"]:
+            terr["total_usd"] = math.ceil(terr["total"] * cad_rate)
+        for sm in data["salesman_ranking"]:
+            sm["total_usd"] = math.ceil(sm["total"] * cad_rate)
     else:
-        cols = list(columns)
+        data["total_amount_usd"] = 0
 
-    # ── Styles ──
-    header_font = Font(name='Arial', bold=True, size=11, color='FFFFFF')
-    header_fill = PatternFill('solid', fgColor='1F2937')
-    header_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    cell_font = Font(name='Arial', size=10)
-    money_font = Font(name='Arial', size=10, color='0A7A4F')
-    thin_border = Border(bottom=Side(style='thin', color='E5E7EB'))
-    alt_fill = PatternFill('solid', fgColor='F9FAFB')
-
-    # ── Title row ──
-    today_str = date.today().strftime('%B %d, %Y')
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(cols))
-    title_cell = ws.cell(row=1, column=1, value=f'{title_label} — {today_str}')
-    title_cell.font = Font(name='Arial', bold=True, size=13, color='1F2937')
-    title_cell.alignment = Alignment(vertical='center')
-    ws.row_dimensions[1].height = 32
-
-    # ── Exported by / timestamp ──
-    user_name = session.get("user", {}).get("name", "Unknown")
-    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(cols))
-    meta_cell = ws.cell(row=2, column=1,
-                        value=f'Exported by {user_name} on {datetime.now().strftime("%m/%d/%Y %I:%M %p")}')
-    meta_cell.font = Font(name='Arial', size=9, italic=True, color='6B7280')
-    ws.row_dimensions[2].height = 20
-
-    header_row = 4
-
-    # ── Headers ──
-    for col_idx, (header, _, width, _) in enumerate(cols, start=1):
-        cell = ws.cell(row=header_row, column=col_idx, value=header)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_align
-        cell.border = Border(bottom=Side(style='medium', color='1F2937'))
-        ws.column_dimensions[get_column_letter(col_idx)].width = width
-
-    ws.row_dimensions[header_row].height = 28
-    ws.freeze_panes = f'A{header_row + 1}'
-    ws.auto_filter.ref = f'A{header_row}:{get_column_letter(len(cols))}{header_row + len(rows)}'
-
-    # ── Data rows ──
-    for row_idx, record in enumerate(rows, start=header_row + 1):
-        is_alt = (row_idx - header_row) % 2 == 0
-        for col_idx, (_, key, _, fmt) in enumerate(cols, start=1):
-            value = record.get(key)
-            cell = ws.cell(row=row_idx, column=col_idx, value=value)
-            cell.font = cell_font
-            cell.border = thin_border
-            cell.alignment = Alignment(vertical='center')
-
-            if is_alt:
-                cell.fill = alt_fill
-
-            if fmt:
-                cell.number_format = fmt
-
-            if key in ('ExtAmount', 'UnitPrice'):
-                cell.font = money_font
-
-    return wb
+    return data
 
 
-def _send_workbook(wb, filename):
-    """Save workbook to buffer and return as a downloadable response."""
-    buffer = BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name=filename,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.xml'
-    )
-
+# ═══════════════════════════════════════════════════════════════
+# Sales Home
+# ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/')
 def sales_home():
@@ -140,6 +132,10 @@ def sales_home():
     return render_template('sales/index.html', user=session["user"])
 
 
+# ═══════════════════════════════════════════════════════════════
+# BOOKINGS — Dashboard + Exports
+# ═══════════════════════════════════════════════════════════════
+
 @sales_bp.route('/bookings')
 def bookings():
     if not session.get("user"):
@@ -147,46 +143,8 @@ def bookings():
 
     snapshot_us, snapshot_ca, last_updated, cad_rate = get_bookings_from_cache()
 
-    # Build US data (or defaults)
-    if snapshot_us is not None:
-        us_summary = snapshot_us["summary"]
-        us_data = {
-            "total_amount": us_summary["total_amount"],
-            "total_units": us_summary["total_units"],
-            "total_orders": us_summary["total_orders"],
-            "total_territories": us_summary["total_territories"],
-            "territory_ranking": snapshot_us["ranking"],
-            "order_date": us_summary.get("order_date"),
-        }
-    else:
-        us_data = {
-            "total_amount": 0, "total_units": 0, "total_orders": 0,
-            "total_territories": 0, "territory_ranking": [],
-            "order_date": None,
-        }
-
-    # Build CA data (or defaults) — include USD equivalents
-    if snapshot_ca is not None:
-        ca_summary = snapshot_ca["summary"]
-        ca_data = {
-            "total_amount": ca_summary["total_amount"],
-            "total_amount_usd": math.ceil(ca_summary["total_amount"] * cad_rate),
-            "total_units": ca_summary["total_units"],
-            "total_orders": ca_summary["total_orders"],
-            "total_territories": ca_summary["total_territories"],
-            "territory_ranking": snapshot_ca["ranking"],
-            "order_date": ca_summary.get("order_date"),
-        }
-        # Add USD equivalent to each territory in ranking
-        for terr in ca_data["territory_ranking"]:
-            terr["total_usd"] = math.ceil(terr["total"] * cad_rate)
-    else:
-        ca_data = {
-            "total_amount": 0, "total_amount_usd": 0,
-            "total_units": 0, "total_orders": 0,
-            "total_territories": 0, "territory_ranking": [],
-            "order_date": None,
-        }
+    us_data = _build_region_data(snapshot_us, cad_rate, is_canada=False)
+    ca_data = _build_region_data(snapshot_ca, cad_rate, is_canada=True)
 
     error = None
     if snapshot_us is None and snapshot_ca is None:
@@ -199,17 +157,17 @@ def bookings():
         us=us_data,
         ca=ca_data,
         cad_rate=cad_rate,
-        last_updated=last_updated
+        last_updated=last_updated,
     )
 
 
 @sales_bp.route('/bookings/export')
 def bookings_export():
-    """Export today's raw bookings data (US + Canada combined) as a formatted Excel file."""
+    """Export today's raw bookings data (US + Canada combined)."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    rows_us = fetch_bookings_raw() or []
+    rows_us = fetch_bookings_raw_us() or []
     rows_ca = fetch_bookings_raw_ca() or []
 
     if not rows_us and not rows_ca:
@@ -220,43 +178,36 @@ def bookings_export():
     for row in rows_ca:
         row['Region'] = 'CA'
 
-    all_rows = rows_us + rows_ca
-
-    wb = _build_export_workbook(
-        rows=all_rows,
+    wb = build_export_workbook(
+        rows=rows_us + rows_ca,
         title_label='Daily Bookings Raw Data (US + Canada)',
-        columns=EXPORT_COLUMNS,
-        include_region_col=True
+        columns=BOOKINGS_EXPORT_COLUMNS,
+        include_region_col=True,
     )
-
-    filename = f'Bookings_Raw_US_CA_{date.today().strftime("%Y%m%d")}.xlsx'
-    return _send_workbook(wb, filename)
+    return send_workbook(wb, f'Bookings_Raw_US_CA_{date.today().strftime("%Y%m%d")}.xlsx')
 
 
 @sales_bp.route('/bookings/export/us')
 def bookings_export_us():
-    """Export today's raw US bookings data as a formatted Excel file."""
+    """Export today's raw US bookings data."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    rows = fetch_bookings_raw()
+    rows = fetch_bookings_raw_us()
     if not rows:
         return redirect(url_for('sales.bookings'))
 
-    wb = _build_export_workbook(
+    wb = build_export_workbook(
         rows=rows,
         title_label='Daily Bookings Raw Data — United States',
-        columns=EXPORT_COLUMNS,
-        include_region_col=False
+        columns=BOOKINGS_EXPORT_COLUMNS,
     )
-
-    filename = f'Bookings_Raw_US_{date.today().strftime("%Y%m%d")}.xlsx'
-    return _send_workbook(wb, filename)
+    return send_workbook(wb, f'Bookings_Raw_US_{date.today().strftime("%Y%m%d")}.xlsx')
 
 
 @sales_bp.route('/bookings/export/ca')
 def bookings_export_ca():
-    """Export today's raw Canada bookings data as a formatted Excel file."""
+    """Export today's raw Canada bookings data."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
@@ -264,12 +215,100 @@ def bookings_export_ca():
     if not rows:
         return redirect(url_for('sales.bookings'))
 
-    wb = _build_export_workbook(
+    wb = build_export_workbook(
         rows=rows,
         title_label='Daily Bookings Raw Data — Canada',
-        columns=EXPORT_COLUMNS,
-        include_region_col=False
+        columns=BOOKINGS_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'Bookings_Raw_CA_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+# ═══════════════════════════════════════════════════════════════
+# OPEN ORDERS — Dashboard + Exports
+# ═══════════════════════════════════════════════════════════════
+
+@sales_bp.route('/open-orders')
+def open_orders():
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    snapshot_us, snapshot_ca, last_updated, cad_rate = get_open_orders_from_cache()
+
+    us_data = _build_region_data(snapshot_us, cad_rate, is_canada=False)
+    ca_data = _build_region_data(snapshot_ca, cad_rate, is_canada=True)
+
+    error = None
+    if snapshot_us is None and snapshot_ca is None:
+        error = "Unable to load data. Please try again shortly."
+
+    return render_template(
+        'sales/open_orders.html',
+        user=session["user"],
+        error=error,
+        us=us_data,
+        ca=ca_data,
+        cad_rate=cad_rate,
+        last_updated=last_updated,
     )
 
-    filename = f'Bookings_Raw_CA_{date.today().strftime("%Y%m%d")}.xlsx'
-    return _send_workbook(wb, filename)
+
+@sales_bp.route('/open-orders/export')
+def open_orders_export():
+    """Export open orders (US + Canada combined)."""
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    rows_us = fetch_open_orders_raw_us() or []
+    rows_ca = fetch_open_orders_raw_ca() or []
+
+    if not rows_us and not rows_ca:
+        return redirect(url_for('sales.open_orders'))
+
+    for row in rows_us:
+        row['Region'] = 'US'
+    for row in rows_ca:
+        row['Region'] = 'CA'
+
+    wb = build_export_workbook(
+        rows=rows_us + rows_ca,
+        title_label='Open Sales Orders (US + Canada)',
+        columns=OPEN_ORDERS_EXPORT_COLUMNS,
+        include_region_col=True,
+    )
+    return send_workbook(wb, f'Open_Orders_US_CA_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+@sales_bp.route('/open-orders/export/us')
+def open_orders_export_us():
+    """Export open orders US only."""
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    rows = fetch_open_orders_raw_us()
+    if not rows:
+        return redirect(url_for('sales.open_orders'))
+
+    wb = build_export_workbook(
+        rows=rows,
+        title_label='Open Sales Orders — United States',
+        columns=OPEN_ORDERS_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'Open_Orders_US_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+@sales_bp.route('/open-orders/export/ca')
+def open_orders_export_ca():
+    """Export open orders Canada only."""
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    rows = fetch_open_orders_raw_ca()
+    if not rows:
+        return redirect(url_for('sales.open_orders'))
+
+    wb = build_export_workbook(
+        rows=rows,
+        title_label='Open Sales Orders — Canada',
+        columns=OPEN_ORDERS_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'Open_Orders_CA_{date.today().strftime("%Y%m%d")}.xlsx')
