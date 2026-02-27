@@ -28,7 +28,8 @@ def _build_bookings_query(database):
     SELECT
         tr.sono,
         tr.origqtyord                           AS units,
-        tr.origqtyord * tr.price                AS amount,
+        tr.origqtyord * tr.price * (1 - tr.disc / 100.0)
+                                                AS amount,
         CASE WHEN cu.terr = '900'
              THEN cu.terr
              ELSE sm.terr
@@ -153,7 +154,9 @@ def _build_bookings_raw_query(database):
         tr.origqtyord        AS QtyOrdered,
         tr.qtyshp            AS QtyShipped,
         tr.price             AS UnitPrice,
-        tr.origqtyord * tr.price AS ExtAmount,
+        tr.disc              AS Discount,
+        tr.origqtyord * tr.price * (1 - tr.disc / 100.0)
+                             AS ExtAmount,
         tr.extprice          AS ExtPrice,
         tr.sostat            AS LineStatus,
         tr.sotype            AS OrderType,

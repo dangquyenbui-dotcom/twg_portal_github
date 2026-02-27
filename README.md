@@ -2,7 +2,7 @@
 
 A secure, enterprise-grade internal portal for **The Wheel Group**, built with Flask and integrated with Microsoft Entra ID (SSO) for authentication and Microsoft SQL Server for real-time ERP data.
 
-The portal serves as a centralized dashboard hub for multiple departments — starting with **Sales** — providing live KPIs, territory rankings, real-time currency conversion, Excel data exports, and auto-refreshing displays optimized for desktop monitors, tablets, phones, and unattended TV/kiosk screens.
+The portal serves as a centralized dashboard hub for multiple departments — starting with **Sales** — providing live KPIs, territory rankings, salesman rankings, real-time currency conversion, Excel data exports, and auto-refreshing displays optimized for desktop monitors, tablets, phones, and unattended TV/kiosk screens.
 
 ---
 
@@ -14,8 +14,13 @@ The portal serves as a centralized dashboard hub for multiple departments — st
 - [Authentication Flow](#authentication-flow)
 - [Data Architecture](#data-architecture)
 - [Sales Module](#sales-module)
+  - [Daily Bookings Dashboard](#daily-bookings-dashboard)
+  - [Open Sales Orders Dashboard](#open-sales-orders-dashboard)
+- [Amount Calculation & Discount Handling](#amount-calculation--discount-handling)
 - [Currency Conversion](#currency-conversion)
-- [Excel Export](#excel-export)
+- [Excel Exports](#excel-exports)
+  - [Bookings Export Columns](#bookings-export-columns-26-columns)
+  - [Open Orders Export Columns](#open-orders-export-columns-26-columns)
 - [Responsive Design](#responsive-design)
 - [Configuration Reference](#configuration-reference)
 - [Setup & Installation](#setup--installation)
@@ -37,25 +42,29 @@ The application follows a **Decoupled Caching Architecture** to ensure instant p
 │  (User/TV)   │      │  (Routes)    │      │  (In-Memory)  │
 └─────────────┘      └──────────────┘      └───────┬───────┘
                                                     │
-                                           ┌────────┴────────┐
-                                           │  APScheduler     │
-                                           │  Background      │
-                                           │  Worker (10 min) │
-                                           └──┬──────────┬───┘
-                                              │          │
-                                    ┌─────────┴──┐  ┌───┴──────────┐
-                                    │ SQL Server  │  │ Exchange Rate│
-                                    │ PRO05 (US)  │  │ API (CAD→USD)│
-                                    │ PRO06 (CA)  │  └──────────────┘
-                                    └─────────────┘
+                                    ┌───────────────┴───────────────┐
+                                    │        APScheduler             │
+                                    │   ┌──────────┐ ┌────────────┐ │
+                                    │   │ Bookings │ │ Open Orders│ │
+                                    │   │ 10 min   │ │  60 min    │ │
+                                    │   └────┬─────┘ └─────┬──────┘ │
+                                    └────────┼─────────────┼────────┘
+                                             │             │
+                                   ┌─────────┴──┐  ┌──────┴────────┐
+                                   │ SQL Server  │  │ Exchange Rate │
+                                   │ PRO05 (US)  │  │ API (CAD→USD) │
+                                   │ PRO06 (CA)  │  └───────────────┘
+                                   └─────────────┘
 ```
 
 **How it works:**
 
-1. **Background Worker (APScheduler)** — Runs every 10 minutes. Executes optimized SQL queries against both the US (PRO05) and Canada (PRO06) ERP databases, fetches the live CAD→USD exchange rate from a public API, and stores all results in a file-based cache. Also runs once immediately on app startup so the cache is never empty.
-2. **Cache Layer (Flask-Caching)** — Stores the latest data snapshots using `FileSystemCache`. Survives brief app restarts. Each cache entry includes a `last_updated` timestamp so users know the data freshness. Separate cache keys are used for US data, Canada data, the exchange rate, and the refresh timestamp.
+1. **Background Workers (APScheduler)** — Two independent scheduled jobs run at different intervals to minimize SQL Server load:
+   - **Bookings refresh** — Every **10 minutes**. Queries today's bookings from both US (PRO05) and Canada (PRO06) databases, fetches the live CAD→USD exchange rate, and caches all results. Also runs once immediately on app startup.
+   - **Open orders refresh** — Every **60 minutes**. Queries all currently open sales order lines from both databases. Open orders data changes less frequently than daily bookings, so the longer interval significantly reduces SQL Server load.
+2. **Cache Layer (Flask-Caching)** — Stores the latest data snapshots using `FileSystemCache`. Survives brief app restarts. Each cache entry includes a `last_updated` timestamp so users know the data freshness. Separate cache keys and timeouts are used for bookings data (15-min TTL), open orders data (65-min TTL), the exchange rate, and refresh timestamps.
 3. **Web App (Flask)** — Serves the UI. Route handlers **never** query SQL directly — they read exclusively from cache, ensuring sub-millisecond response times regardless of SQL Server load. The only exception is the Excel export routes, which query SQL directly to pull full line-item detail for download.
-4. **Auto-Refresh (Client-Side)** — The bookings page includes a `<meta http-equiv="refresh">` tag that reloads the page every 10 minutes, plus a live JavaScript countdown timer. This is designed for TVs/monitors in the sales area that display the dashboard unattended.
+4. **Auto-Refresh (Client-Side)** — The bookings page includes a `<meta http-equiv="refresh">` tag that reloads the page every 10 minutes, plus a live JavaScript countdown timer. This is designed for TVs/monitors in the sales area that display the dashboard unattended. The open orders page does **not** auto-refresh — it is designed for on-demand desktop use and simply shows the "Last updated" timestamp.
 
 ---
 
@@ -83,7 +92,7 @@ The application follows a **Decoupled Caching Architecture** to ensure instant p
 twg_portal/
 │
 ├── app.py                    # Application factory, SSO routes, scheduler init
-├── config.py                 # All configuration (auth, DB, cache, scheduler)
+├── config.py                 # All configuration (auth, DB, cache, scheduler intervals)
 ├── extensions.py             # Shared Flask extensions (Cache, APScheduler)
 ├── requirements.txt          # Python dependencies
 ├── .env                      # Environment variables (secrets — never committed)
@@ -91,27 +100,35 @@ twg_portal/
 ├── README.md                 # This file
 │
 ├── auth/
+│   ├── __init__.py
 │   └── entra_auth.py         # MSAL helper: build app, token exchange
 │
 ├── routes/
+│   ├── __init__.py
 │   ├── main.py               # Home page (department hub), login page
-│   └── sales.py              # Sales blueprint: bookings dashboard + Excel exports
+│   └── sales.py              # Sales blueprint: bookings + open orders dashboards, Excel exports
 │
 ├── services/
-│   ├── db_service.py         # SQL Server queries, Python-side aggregation, territory mapping
-│   └── data_worker.py        # Background cache refresh logic + exchange rate fetching
+│   ├── __init__.py
+│   ├── constants.py          # Shared territory maps, customer exclusion sets, helper functions
+│   ├── db_connection.py      # pyodbc connection factory
+│   ├── bookings_service.py   # Bookings SQL queries + Python aggregation (snapshot + raw export)
+│   ├── open_orders_service.py# Open orders SQL queries + Python aggregation (snapshot + raw export)
+│   ├── data_worker.py        # Background cache refresh logic, exchange rate fetching, scheduler functions
+│   └── excel_helper.py       # Shared Excel workbook builder (openpyxl formatting)
 │
 ├── static/
 │   └── logo/
 │       └── TWG.png           # Company logo used in nav and login page
 │
 ├── templates/
-│   ├── base.html             # Shared layout: nav, avatar, breadcrumbs, responsive
+│   ├── base.html             # Shared layout: nav, avatar, breadcrumbs, responsive CSS
 │   ├── login.html            # Microsoft SSO login page
 │   ├── index.html            # Department hub (Sales, Warehouse, Accounting, HR)
 │   └── sales/
-│       ├── index.html        # Sales report menu (Bookings, Shipments, etc.)
-│       └── bookings.html     # Daily Bookings dashboard (US + CA, auto-refresh)
+│       ├── index.html        # Sales report menu (Bookings, Open Orders, Shipments, etc.)
+│       ├── bookings.html     # Daily Bookings dashboard (US + CA, auto-refresh for TV)
+│       └── open_orders.html  # Open Sales Orders dashboard (US + CA, territory + salesman ranking)
 │
 └── cache-data/               # Auto-generated cache directory (gitignored)
 ```
@@ -194,20 +211,21 @@ Locking:  All queries use WITH (NOLOCK) to avoid blocking ERP operations
 
 The portal uses a **lean SQL, heavy Python** strategy to minimize SQL Server load:
 
-1. **SQL pulls minimal filtered rows** — A single query per region fetches `sono`, `units`, `amount`, `terr_code`, `custno`, and `plinid` for today's orders. No aggregation functions run on the database.
-2. **Python handles all aggregation** — `_aggregate_bookings()` in `db_service.py` processes the raw rows, filtering out excluded customers and TAX line items, mapping territory codes to display names, computing sums, counting distinct orders, and building the ranked territory list.
-3. **All monetary amounts are rounded up** — `math.ceil()` is applied to every dollar figure (summary totals and individual territory totals) so the dashboard always shows whole numbers with no decimal places.
+1. **SQL pulls minimal filtered rows** — Queries fetch only the columns needed for aggregation (sono, qty, amount, territory code, salesman, plinid). No `GROUP BY`, `SUM`, or other aggregation functions run on the database.
+2. **Python handles all aggregation** — Service modules (`bookings_service.py`, `open_orders_service.py`) process the raw rows in Python, filtering out excluded records, mapping territory codes to display names, computing sums, counting distinct orders, and building the ranked lists.
+3. **All monetary amounts are rounded up** — `math.ceil()` is applied to every dollar figure (summary totals and individual territory/salesman totals) so the dashboard always shows whole numbers with no decimal places.
+4. **Discount is applied in SQL** — Amount calculations use `qty × price × (1 - disc / 100)` directly in the SQL query to properly account for line-level discounts before any aggregation happens.
 
 **Why this approach?**
 
 - Keeps SQL Server resource usage minimal (single table scan with simple joins)
-- Avoids blocking the ERP's transactional tables (WITH NOLOCK on every join)
+- Avoids blocking the ERP's transactional tables (`WITH (NOLOCK)` on every join)
 - Shifts CPU-intensive work (aggregation, sorting, ranking) to the app server
 - Makes it easy to change business logic (territory mapping, exclusions, rounding) without modifying SQL
 
 ### Territory Mapping
 
-Territory codes from the ERP are mapped to human-readable names in Python:
+Territory codes from the ERP are mapped to human-readable names in Python (`services/constants.py`):
 
 **US Territories (PRO05):**
 
@@ -241,13 +259,13 @@ Territory codes from the ERP are mapped to human-readable names in Python:
 | 503  | Montreal   |
 | *    | Others     |
 
-**Territory resolution logic:** If the customer's territory (`cu.terr`) is `'900'` (Central Billing), that code is used. Otherwise, the sales order master territory (`sm.terr`) is used. This is handled in the SQL `CASE` expression and also in the Python aggregation.
+**Territory resolution logic:** If the customer's territory (`arcust.terr`) is `'900'` (Central Billing), that code is used. Otherwise, the sales order master territory (`somast.terr`) is used. This is handled in the SQL `CASE` expression and also validated in the Python aggregation.
 
 ### Excluded Data
 
-The following are filtered out at the Python aggregation level:
+#### Both Reports — Excluded Customers
 
-**Excluded Customers:**
+The following customers are filtered out of **both bookings and open orders**:
 
 | Customer Code | Reason                    |
 |---------------|---------------------------|
@@ -259,39 +277,60 @@ The following are filtered out at the Python aggregation level:
 | EMP-US        | Employee orders            |
 | TEST123       | Test account               |
 
-**Excluded Product Lines:**
+#### Both Reports — Excluded Product Lines
 
 | Product Line | Reason           |
 |--------------|------------------|
 | TAX          | Tax line items   |
 
-**Excluded Order Statuses/Types:**
+#### Both Reports — Excluded Order Statuses/Types
 
-| Field      | Excluded Values | Reason                     |
-|------------|-----------------|----------------------------|
-| `currhist` | `X`             | Cancelled/historical       |
-| `sostat`   | `V`, `X`        | Voided, cancelled lines    |
-| `sotype`   | `B`, `R`        | Blanket orders, returns    |
+| Field      | Excluded Values | Reason                     | Applies To       |
+|------------|-----------------|----------------------------|------------------|
+| `currhist` | `X`             | Cancelled/historical       | Both             |
+| `sostat` (line) | `V`, `X`   | Voided, cancelled lines    | Bookings         |
+| `sostat` (line) | `C`, `V`, `X` | Closed, voided, cancelled lines | Open Orders |
+| `sostat` (order)| `C`        | Fully closed order         | Open Orders      |
+| `sotype`   | `B`, `R`        | Blanket orders, returns    | Both             |
+
+### Scheduler Strategy (Two Independent Jobs)
+
+To minimize SQL Server load, bookings and open orders run on **separate schedules**:
+
+| Job ID              | Interval   | What It Refreshes                     | Cache TTL |
+|---------------------|------------|---------------------------------------|-----------|
+| `bookings_refresh`  | 10 minutes | US bookings, CA bookings, exchange rate | 900s (15 min) |
+| `open_orders_refresh`| 60 minutes | US open orders, CA open orders        | 3900s (65 min) |
+
+On **app startup**, both jobs run once immediately via `refresh_all_on_startup()` so the cache is never empty when the first user hits the page.
+
+**Why different intervals?**
+
+- **Bookings** change throughout the day as new orders come in — 10-minute refresh keeps the TV display current.
+- **Open orders** represent the entire backlog and change slowly — hourly refresh is sufficient and reduces SQL Server queries by 6×.
 
 ### Caching Strategy
 
-| Setting              | Value           | Purpose                                              |
-|----------------------|-----------------|------------------------------------------------------|
-| Cache type           | FileSystemCache | Persists across brief app restarts                   |
-| Cache directory      | `cache-data/`   | Auto-created, gitignored                             |
-| Cache timeout        | 900s (15 min)   | Safety net — data is overwritten every 10 min anyway |
-| Refresh interval     | 600s (10 min)   | Background worker schedule                           |
-| Startup behavior     | Immediate       | `refresh_bookings_cache()` runs in `create_app()`    |
-| Cache miss fallback  | Synchronous     | If cache is empty, fetches once before rendering     |
+| Setting              | Bookings        | Open Orders     | Purpose                                    |
+|----------------------|-----------------|-----------------|---------------------------------------------|
+| Cache type           | FileSystemCache | FileSystemCache | Persists across brief app restarts           |
+| Cache directory      | `cache-data/`   | `cache-data/`   | Auto-created, gitignored                     |
+| Cache timeout        | 900s (15 min)   | 3900s (65 min)  | Safety net — overwritten each refresh cycle  |
+| Refresh interval     | 600s (10 min)   | 3600s (60 min)  | Background worker schedule                   |
+| Startup behavior     | Immediate       | Immediate       | Both run on startup via `refresh_all_on_startup()` |
+| Cache miss fallback  | Synchronous     | Synchronous     | If cache is empty, fetches once before rendering   |
 
 **Cache keys:**
 
-| Key                      | Type       | Description                                 |
-|--------------------------|------------|---------------------------------------------|
-| `bookings_snapshot_us`   | `dict`     | US summary + territory ranking              |
-| `bookings_snapshot_ca`   | `dict`     | Canada summary + territory ranking          |
-| `bookings_last_updated`  | `datetime` | Timestamp of last successful refresh        |
-| `cad_to_usd_rate`        | `float`    | Latest CAD → USD exchange rate              |
+| Key                          | Type       | Description                                 |
+|------------------------------|------------|---------------------------------------------|
+| `bookings_snapshot_us`       | `dict`     | US bookings summary + territory ranking     |
+| `bookings_snapshot_ca`       | `dict`     | Canada bookings summary + territory ranking |
+| `bookings_last_updated`      | `datetime` | Timestamp of last successful bookings refresh |
+| `open_orders_snapshot_us`    | `dict`     | US open orders summary + territory + salesman ranking |
+| `open_orders_snapshot_ca`    | `dict`     | Canada open orders summary + territory + salesman ranking |
+| `open_orders_last_updated`   | `datetime` | Timestamp of last successful open orders refresh |
+| `cad_to_usd_rate`            | `float`    | Latest CAD → USD exchange rate              |
 
 ---
 
@@ -303,11 +342,17 @@ After login, users land on the department hub — a card-based grid showing all 
 
 ### Sales Report Menu (`/sales`)
 
-A report selection page with cards for each available report. Currently **Daily Bookings** is live; Daily Shipments, Territory Performance, and Top Customers are shown as "Coming Soon." Each card shows a status badge ("Live" in green or "Coming Soon" in gray).
+A report selection page with cards for each available report. Currently **Daily Bookings** and **Open Sales Orders** are live; Daily Shipments and Territory Performance are shown as "Coming Soon." Each card shows a status badge ("Live" in green or "Coming Soon" in gray).
 
-### Daily Bookings Dashboard (`/sales/bookings`)
+---
 
-The main dashboard page, designed for both desktop use and unattended TV/monitor display. The page is split into two distinct regional sections: **United States** and **Canada**.
+### Daily Bookings Dashboard
+
+**Route:** `/sales/bookings`
+**Refresh:** Auto-refresh every 10 minutes (designed for TV/monitor display)
+**Data Source:** `sotran` rows where `ordate = today`
+
+The main bookings dashboard page, designed for both desktop use and unattended TV/monitor display. The page is split into two distinct regional sections: **United States** and **Canada**.
 
 **Page Header:**
 
@@ -343,22 +388,141 @@ The main dashboard page, designed for both desktop use and unattended TV/monitor
    - **≈ USD** — Converted amount in US dollars (whole numbers, muted color)
    - **Rank** — Position number
 
-**Auto-refresh behavior:**
+**Bookings SQL Filter Logic:**
 
-- `<meta http-equiv="refresh" content="600">` reloads the page every 10 minutes
-- JavaScript countdown timer updates every second, showing minutes and seconds remaining
-- Background worker refreshes cached data (US + CA + exchange rate) on the same 10-minute interval
-- On app startup, an immediate refresh ensures the cache is populated with fresh data
+```sql
+WHERE tr.ordate = CAST(GETDATE() AS DATE)    -- today's orders only
+  AND tr.currhist <> 'X'                     -- not cancelled/historical
+  AND tr.sostat  NOT IN ('V', 'X')           -- not voided or cancelled
+  AND tr.sotype  NOT IN ('B', 'R')           -- no blankets or returns
+```
+
+Plus Python-side filtering: excluded customers (7 internal accounts) and TAX product lines.
+
+**Bookings Amount Formula:**
+
+```
+Booking $ = origqtyord × price × (1 - disc / 100)
+```
+
+---
+
+### Open Sales Orders Dashboard
+
+**Route:** `/sales/open-orders`
+**Refresh:** Every 60 minutes (background), no auto-refresh on client — designed for on-demand desktop use
+**Data Source:** All currently open `sotran` lines (no date filter)
+
+Displays the total value of all open (unfulfilled) sales order lines across both regions. Unlike bookings which shows today only, this report covers **all** open orders regardless of when they were placed.
+
+**Page Header:**
+
+- **Title** — "Open Sales Orders"
+- **Tag** — "All Open Lines" (amber pill)
+- **Export All Button** — Downloads a combined US + Canada Excel file
+
+**Refresh Bar:**
+
+- **Left side** — Green pulsing dot + "Last updated: 2:30 PM · Refreshes every hour"
+- **No countdown timer** — this page is not designed for TV display
+
+**US Section (United States — PRO05):**
+
+1. **Region Header** — US flag icon, title, "Export US" button
+2. **Summary Cards** — Four KPI cards:
+   - **Total Open Amount** (green) — sum of all open line values
+   - **Open Units** (blue) — sum of `qtyord` across all open lines
+   - **Open Orders** (amber) — count of distinct sales order numbers (`sono`)
+   - **Open Lines** (purple) — count of individual line items
+3. **Side-by-Side Rankings** — Two tables displayed in a 50/50 grid:
+   - **By Territory** — Territories ranked by total open dollar value
+   - **By Salesman** — Salesmen ranked by total open dollar value (raw salesman codes from `sotran.salesmn`)
+
+**Canada Section (Canada — PRO06):**
+
+1. **Region Header** — Canadian flag, "Export CA" button, live exchange rate badge (refreshed hourly)
+2. **Summary Cards** — Same four cards with CAD prefix and USD equivalent on the amount card
+3. **Side-by-Side Rankings** — Territory and Salesman tables, each with an additional "≈ USD" column
+
+**Open Orders SQL Filter Logic:**
+
+```sql
+WHERE tr.qtyord > 0                          -- still has remaining open quantity
+  AND tr.sostat  NOT IN ('C', 'V', 'X')     -- line not closed, voided, or cancelled
+  AND sm.sostat  <> 'C'                      -- order not fully closed
+  AND tr.currhist <> 'X'                     -- not historical/cancelled
+  AND tr.sotype  NOT IN ('B', 'R')           -- no blankets or returns
+```
+
+Plus Python-side filtering: excluded customers (same 7 internal accounts as bookings) and TAX product lines.
+
+**Open line definition explained:**
+
+- `qtyord > 0` — The ERP updates `qtyord` as shipments go out. It represents the **remaining open quantity**, not the original quantity ordered. When `qtyord` reaches 0, the line is fully shipped.
+- `sostat NOT IN ('C', 'V', 'X')` — Excludes lines that are closed (fully invoiced), voided, or cancelled at the line level.
+- `somast.sostat <> 'C'` — Excludes lines belonging to orders that are fully closed at the header level (uses `INNER JOIN` to enforce this).
+
+**Open Amount Formula:**
+
+```
+Open $ = qtyord × price × (1 - disc / 100)
+```
+
+**Key differences from Bookings:**
+
+| Aspect            | Bookings                    | Open Orders                    |
+|-------------------|-----------------------------|--------------------------------|
+| Date filter       | Today only (`ordate = today`) | None — all open lines          |
+| Refresh interval  | 10 minutes                  | 60 minutes                     |
+| Auto-refresh UI   | Yes (TV/kiosk mode)         | No (on-demand desktop use)     |
+| Customer exclusions| 7 internal accounts excluded| Same 7 internal accounts excluded |
+| Qty field          | `origqtyord` (original qty) | `qtyord` (remaining open qty)  |
+| sostat exclusion   | `V`, `X`                    | `C`, `V`, `X`                  |
+| Rankings           | Territory only              | Territory + Salesman side-by-side |
+| Release column     | Not included                | Included (`somast.release`)    |
+| `somast` join      | `LEFT JOIN`                 | `INNER JOIN` (enforces order-level filter) |
+
+---
+
+## Amount Calculation & Discount Handling
+
+All monetary amount calculations in both reports account for line-level discounts stored in `sotran.disc`:
+
+**Formula (both reports):**
+
+```
+Amount = quantity × price × (1 - disc / 100)
+```
+
+**Example — SO 5110994:**
+
+| Line | Qty | Price   | Disc % | Without Discount | With Discount | ERP Extension |
+|------|-----|---------|--------|------------------|---------------|---------------|
+| 1    | 4   | 219.05  | 5.000  | $876.20          | **$832.39**   | $832.39 ✓     |
+| 3    | 4   | 228.80  | 5.000  | $915.20          | **$869.44**   | $869.44 ✓     |
+
+**Where the discount is applied:**
+
+| Context                  | Formula Applied In | Notes                              |
+|--------------------------|--------------------|------------------------------------|
+| Bookings snapshot (dashboard) | SQL query      | `origqtyord * price * (1 - disc/100)` |
+| Bookings raw export (Excel)  | SQL query      | Same formula, plus `disc` column exported |
+| Open orders snapshot (dashboard) | SQL query  | `qtyord * price * (1 - disc/100)`     |
+| Open orders raw export (Excel)   | SQL query  | Same formula, plus `Discount %` column exported |
+
+When `disc = 0` (no discount), the formula simplifies to `qty × price × 1`, so orders without discounts are unaffected.
+
+**Rounding:** After discount calculation and aggregation, all monetary totals are rounded **up** using `math.ceil()` to the nearest whole dollar. This applies to summary totals, territory totals, salesman totals, and USD equivalents.
 
 ---
 
 ## Currency Conversion
 
-The portal provides real-time CAD to USD conversion for all Canadian booking amounts, allowing the team to immediately understand the US dollar equivalent of Canadian sales.
+The portal provides real-time CAD to USD conversion for all Canadian amounts, allowing the team to immediately understand the US dollar equivalent of Canadian sales.
 
 ### How It Works
 
-1. **Exchange rate is fetched by the background worker** — Every 10 minutes (alongside the SQL data refresh), the worker calls a public exchange rate API and caches the result.
+1. **Exchange rate is fetched by the background worker** — Every 10 minutes (with the bookings refresh), the worker calls a public exchange rate API and caches the result. The open orders page also reads this cached rate.
 2. **Two APIs with automatic failover:**
 
 | Priority | API                        | Source Data | Auth Required |
@@ -368,33 +532,26 @@ The portal provides real-time CAD to USD conversion for all Canadian booking amo
 
 3. **Sanity check** — The returned rate is validated to be between 0.50 and 1.00 (reasonable range for CAD to USD). Out-of-range values are rejected.
 4. **Hardcoded fallback** — If all APIs fail, a default rate of `0.72` is used so the dashboard never breaks.
-5. **Conversion happens in Python** — The route handler (`sales.py`) multiplies each CAD amount by the cached rate and rounds up with `math.ceil()`. Both the CAD original and USD equivalent are passed to the template.
+5. **Conversion happens in Python** — The route handler (`sales.py`, `_build_region_data()`) multiplies each CAD amount by the cached rate and rounds up with `math.ceil()`. Both the CAD original and USD equivalent are passed to the template.
 
 ### Where Conversions Appear
 
-| Location                    | CAD Amount     | USD Equivalent   |
-|-----------------------------|----------------|------------------|
-| Canada summary card         | `CAD $12,345`  | `≈ USD $8,888`   |
-| Canada territory table rows | `$12,345`      | `$8,888`         |
-| Exchange rate badge         | —              | `1 CAD = 0.7200 USD` |
-
-### Amount Rounding
-
-All monetary amounts across the entire dashboard (US and Canada) are rounded **up** using `math.ceil()`:
-
-- `$998.55` → `$999`
-- `$1,000.01` → `$1,001`
-- `$0.00` → `$0`
-
-This rounding is applied at the aggregation level in `db_service.py` (`_aggregate_bookings()`), so both the summary totals and individual territory totals are already whole numbers before they reach the template. USD equivalents for Canada are also ceiling-rounded after conversion.
+| Page         | Location                    | CAD Amount     | USD Equivalent   |
+|--------------|-----------------------------|----------------|------------------|
+| Bookings     | Canada summary card         | `CAD $12,345`  | `≈ USD $8,888`   |
+| Bookings     | Canada territory table rows | `$12,345`      | `$8,888`         |
+| Open Orders  | Canada summary card         | `CAD $500,000` | `≈ USD $360,000` |
+| Open Orders  | Canada territory table rows | `$100,000`     | `$72,000`        |
+| Open Orders  | Canada salesman table rows  | `$80,000`      | `$57,600`        |
+| Both         | Exchange rate badge         | —              | `1 CAD = 0.7200 USD` |
 
 ---
 
-## Excel Export
+## Excel Exports
 
-The portal provides three Excel export endpoints for downloading today's raw bookings data as formatted `.xlsx` files.
+The portal provides Excel export endpoints for downloading raw line-item data as formatted `.xlsx` files. Unlike the dashboard (which reads from cache), the export routes **query SQL Server directly** to pull the full raw line-item data.
 
-### Export Endpoints
+### Bookings Export Endpoints
 
 | Route                        | Scope       | Filename Pattern                        |
 |------------------------------|-------------|-----------------------------------------|
@@ -402,72 +559,103 @@ The portal provides three Excel export endpoints for downloading today's raw boo
 | `/sales/bookings/export/us`  | US only     | `Bookings_Raw_US_YYYYMMDD.xlsx`        |
 | `/sales/bookings/export/ca`  | Canada only | `Bookings_Raw_CA_YYYYMMDD.xlsx`        |
 
-### How Exports Work
+### Open Orders Export Endpoints
 
-Unlike the dashboard (which reads from cache), the export routes **query SQL Server directly** to pull the full raw line-item data. This is because the cached data is pre-aggregated and doesn't contain the line-level detail needed for a proper data export.
+| Route                          | Scope       | Filename Pattern                       |
+|--------------------------------|-------------|----------------------------------------|
+| `/sales/open-orders/export`    | US + Canada | `Open_Orders_US_CA_YYYYMMDD.xlsx`     |
+| `/sales/open-orders/export/us` | US only     | `Open_Orders_US_YYYYMMDD.xlsx`        |
+| `/sales/open-orders/export/ca` | Canada only | `Open_Orders_CA_YYYYMMDD.xlsx`        |
 
-**Query flow:**
+### Excel Formatting (Shared)
 
-1. `fetch_bookings_raw()` / `fetch_bookings_raw_ca()` in `db_service.py` runs a detailed query returning 24+ columns per line item
-2. `_process_raw_rows()` filters out excluded customers and TAX lines, maps territory codes, and cleans string fields
-3. `_build_export_workbook()` in `sales.py` builds a formatted openpyxl workbook
-4. The workbook is saved to an in-memory `BytesIO` buffer and returned as a download
-
-### Excel Formatting
-
-Each exported file includes:
+All exported files are built by `services/excel_helper.py` with consistent formatting:
 
 - **Title row** — Report name and today's date (bold, 13pt)
 - **Metadata row** — "Exported by {user} on {date/time}" (italic, 9pt, gray)
 - **Header row** — Dark background (`#1F2937`), white text, centered, wrap text
 - **Alternating row shading** — Every other row gets a light gray (`#F9FAFB`) fill
-- **Money columns** — Green font (`#0A7A4F`) for ExtAmount and UnitPrice
-- **Number formatting** — Currency columns use `$#,##0.00`, quantity columns use `#,##0`, dates use `MM/DD/YYYY`
+- **Money columns** — Green font (`#0A7A4F`) for ExtAmount, UnitPrice, OpenAmount, ExtPrice
+- **Number formatting** — Currency columns use `$#,##0.00`, quantity columns use `#,##0`, dates use `MM/DD/YYYY`, discount uses `0.000`
 - **Frozen header** — Row 4 is frozen so headers stay visible while scrolling
 - **Auto-filter** — Excel filter dropdowns on every column header
 - **Column widths** — Pre-set for readability (e.g., CustomerName = 30, Description = 32)
 
-**Combined export (US + Canada)** adds a "Region" column as the first column with values `US` or `CA`.
+**Combined exports (US + Canada)** add a "Region" column as the first column with values `US` or `CA`.
 
-### Export Columns (25 columns)
+### Bookings Export Columns (26 columns)
 
-| #  | Header                      | Key           | Format       |
-|----|-----------------------------|---------------|--------------|
-| 1  | Sales Order (sono)          | SalesOrder    | Text         |
-| 2  | Line# (tranlineno)          | LineNo        | `#,##0`      |
-| 3  | Order Date (ordate)         | OrderDate     | `MM/DD/YYYY` |
-| 4  | Customer No (custno)        | CustomerNo    | Text         |
-| 5  | Customer Name (company)     | CustomerName  | Text         |
-| 6  | Item (item)                 | Item          | Text         |
-| 7  | Description (descrip)       | Description   | Text         |
-| 8  | Product Line (plinid)       | ProductLine   | Text         |
-| 9  | Qty Ordered (origqtyord)    | QtyOrdered    | `#,##0`      |
-| 10 | Qty Shipped (qtyshp)        | QtyShipped    | `#,##0`      |
-| 11 | Unit Price (price)          | UnitPrice     | `$#,##0.00`  |
-| 12 | Ext Amount (calculated)     | ExtAmount     | `$#,##0.00`  |
-| 13 | Ext Price (extprice)        | ExtPrice      | `$#,##0.00`  |
-| 14 | Line Status (sostat)        | LineStatus    | Text         |
-| 15 | Order Type (sotype)         | OrderType     | Text         |
-| 16 | Territory (mapped)          | Territory     | Text         |
-| 17 | Terr Code (resolved)        | TerrCode      | Text         |
-| 18 | Tran Terr (tr.terr)         | TranTerr      | Text         |
-| 19 | SO Mast Terr (sm.terr)      | SOMastTerr    | Text         |
-| 20 | Cust Terr (cu.terr)         | CustTerr      | Text         |
-| 21 | Salesman (salesmn)          | Salesman      | Text         |
-| 22 | Location (loctid)           | Location      | Text         |
-| 23 | Request Date (rqdate)       | RequestDate   | `MM/DD/YYYY` |
-| 24 | Ship Date (shipdate)        | ShipDate      | `MM/DD/YYYY` |
-| 25 | Ship Via (shipvia)          | ShipVia       | Text         |
+| #  | Header                      | Source Field           | Format       |
+|----|-----------------------------|------------------------|--------------|
+| 1  | Sales Order (sono)          | `tr.sono`              | Text         |
+| 2  | Line# (tranlineno)          | `tr.tranlineno`        | `#,##0`      |
+| 3  | Order Date (ordate)         | `tr.ordate`            | `MM/DD/YYYY` |
+| 4  | Customer No (custno)        | `tr.custno`            | Text         |
+| 5  | Customer Name (company)     | `cu.company`           | Text         |
+| 6  | Item (item)                 | `tr.item`              | Text         |
+| 7  | Description (descrip)       | `tr.descrip`           | Text         |
+| 8  | Product Line (plinid)       | `ic.plinid`            | Text         |
+| 9  | Qty Ordered (origqtyord)    | `tr.origqtyord`        | `#,##0`      |
+| 10 | Qty Shipped (qtyshp)        | `tr.qtyshp`            | `#,##0`      |
+| 11 | Unit Price (price)          | `tr.price`             | `$#,##0.00`  |
+| 12 | Discount % (disc)           | `tr.disc`              | `0.000`      |
+| 13 | Ext Amount (calculated)     | `origqtyord × price × (1-disc/100)` | `$#,##0.00` |
+| 14 | Ext Price (extprice)        | `tr.extprice`          | `$#,##0.00`  |
+| 15 | Line Status (sostat)        | `tr.sostat`            | Text         |
+| 16 | Order Type (sotype)         | `tr.sotype`            | Text         |
+| 17 | Territory (mapped)          | Python-mapped          | Text         |
+| 18 | Terr Code (resolved)        | `CASE cu.terr/sm.terr` | Text         |
+| 19 | Tran Terr (tr.terr)         | `tr.terr`              | Text         |
+| 20 | SO Mast Terr (sm.terr)      | `sm.terr`              | Text         |
+| 21 | Cust Terr (cu.terr)         | `cu.terr`              | Text         |
+| 22 | Salesman (salesmn)          | `tr.salesmn`           | Text         |
+| 23 | Location (loctid)           | `tr.loctid`            | Text         |
+| 24 | Request Date (rqdate)       | `tr.rqdate`            | `MM/DD/YYYY` |
+| 25 | Ship Date (shipdate)        | `tr.shipdate`          | `MM/DD/YYYY` |
+| 26 | Ship Via (shipvia)          | `sm.shipvia`           | Text         |
+
+### Open Orders Export Columns (26 columns)
+
+| #  | Header                      | Source Field           | Format       |
+|----|-----------------------------|------------------------|--------------|
+| 1  | Sales Order                 | `tr.sono`              | Text         |
+| 2  | Line#                       | `tr.tranlineno`        | `#,##0`      |
+| 3  | Order Date                  | `tr.ordate`            | `MM/DD/YYYY` |
+| 4  | Customer No                 | `tr.custno`            | Text         |
+| 5  | Customer Name               | `cu.company`           | Text         |
+| 6  | Item                        | `tr.item`              | Text         |
+| 7  | Description                 | `tr.descrip`           | Text         |
+| 8  | Product Line                | `ic.plinid`            | Text         |
+| 9  | Orig Qty Ordered            | `tr.origqtyord`        | `#,##0`      |
+| 10 | Open Qty                    | `tr.qtyord`            | `#,##0`      |
+| 11 | Qty Shipped                 | `tr.qtyshp`            | `#,##0`      |
+| 12 | Unit Price                  | `tr.price`             | `$#,##0.00`  |
+| 13 | Discount %                  | `tr.disc`              | `0.000`      |
+| 14 | Open Amount                 | `qtyord × price × (1-disc/100)` | `$#,##0.00` |
+| 15 | Line Status                 | `tr.sostat`            | Text         |
+| 16 | Order Type                  | `tr.sotype`            | Text         |
+| 17 | Release                     | `sm.release`           | Text         |
+| 18 | Salesman                    | `tr.salesmn`           | Text         |
+| 19 | Territory (mapped)          | Python-mapped          | Text         |
+| 20 | Terr Code                   | `CASE cu.terr/sm.terr` | Text         |
+| 21 | SO Mast Terr                | `sm.terr`              | Text         |
+| 22 | Cust Terr                   | `cu.terr`              | Text         |
+| 23 | Location                    | `tr.loctid`            | Text         |
+| 24 | Request Date                | `tr.rqdate`            | `MM/DD/YYYY` |
+| 25 | Ship Date                   | `tr.shipdate`          | `MM/DD/YYYY` |
+| 26 | Ship Via                    | `sm.shipvia`           | Text         |
 
 ---
 
 ## Responsive Design
 
-The bookings dashboard is fully responsive across three breakpoints, designed so all content fits comfortably on any screen.
+Both dashboard pages are fully responsive across three breakpoints. The bookings page is optimized for unattended TV display; the open orders page is optimized for desktop/tablet use.
 
 ### Desktop (1024px+)
 
-- Full layout with 4-column stat cards, 3-column podium, and ranking table
+- Full layout with 4-column stat cards and ranking tables
+- Bookings: 3-column podium for top territories
+- Open Orders: side-by-side territory + salesman ranking tables (50/50 grid)
 - Navigation shows full brand logo, "Portal" text, breadcrumbs, user name, and sign-out button
 - Page container max-width: 1400px with 32px padding
 - Both US and Canada sections visible with full detail
@@ -477,7 +665,7 @@ The bookings dashboard is fully responsive across three breakpoints, designed so
 
 - Scaled-down fonts and padding to fit everything in one screen
 - Stat card values: 20px, podium amounts: 16px
-- Internal scrolling on ranking table if content overflows
+- Ranking tables remain side-by-side on open orders
 - Navigation hides breadcrumbs on smaller tablets
 - Exchange rate badge scales down (10px font)
 - USD equivalent text: 11px
@@ -485,12 +673,12 @@ The bookings dashboard is fully responsive across three breakpoints, designed so
 ### Phone / iPhone (under 480px)
 
 - Stat cards switch to 2x2 grid layout
-- Podium medals shrink to 28px, text to 11–13px
+- Bookings podium medals shrink to 28px, text to 11–13px
+- Open orders ranking tables **stack vertically** (territory above salesman)
 - All spacing reduced (12px container padding)
 - Navigation shows only the logo icon, avatar circle, and sign-out button
 - Export button labels hidden (icon-only); per-region export buttons also collapse to icon-only
 - Exchange rate badge wraps below the region title (9px font)
-- USD equivalent text scales to 10px on stat cards, 9px on podium
 - `user-scalable=no` prevents accidental pinch-zoom on TV/kiosk displays
 
 ---
@@ -526,9 +714,10 @@ All configuration lives in `config.py`, loaded from environment variables via `p
 
 ### Application
 
-| Variable               | Required | Default    | Description                           |
-|------------------------|----------|------------|---------------------------------------|
-| `DATA_REFRESH_INTERVAL`| No       | `600`      | Background refresh interval (seconds) |
+| Variable                    | Required | Default    | Description                             |
+|-----------------------------|----------|------------|-----------------------------------------|
+| `DATA_REFRESH_INTERVAL`     | No       | `600`      | Bookings refresh interval (seconds)     |
+| `OPEN_ORDERS_REFRESH_INTERVAL` | No    | `3600`     | Open orders refresh interval (seconds)  |
 
 ### Internal Constants (config.py)
 
@@ -544,6 +733,7 @@ All configuration lives in `config.py`, loaded from environment variables via `p
 | Setting             | Value  | Description                                   |
 |---------------------|--------|-----------------------------------------------|
 | `DEFAULT_CAD_TO_USD`| `0.72` | Fallback exchange rate if all APIs fail        |
+| `OO_CACHE_TIMEOUT`  | `3900` | Open orders cache TTL (65 min safety buffer)   |
 
 ---
 
@@ -632,13 +822,21 @@ The app starts on `http://localhost:5000`. On startup you will see:
 INFO:config:Config validated. CLIENT_ID=effc40c2...
 INFO:__main__:Scheduler started.
 INFO:__main__:Scheduled 'bookings_refresh' every 600s
-INFO:__main__:Running initial data refresh...
-INFO:services.data_worker:Worker: Refreshing bookings cache (US + CA)...
-INFO:services.db_service:US Bookings snapshot: $125,430 across 12 territories (847 raw rows processed)
-INFO:services.data_worker:Worker: US bookings cache updated successfully.
-INFO:services.db_service:CA Bookings snapshot: CAD $18,200 across 3 territories (96 raw rows processed)
-INFO:services.data_worker:Worker: CA bookings cache updated successfully.
+INFO:__main__:Scheduled 'open_orders_refresh' every 3600s
+INFO:__main__:Running initial data refresh (all sources)...
+INFO:services.data_worker:Worker: ═══ Initial startup refresh (all data) ═══
 INFO:services.data_worker:Exchange rate fetched: 1 CAD = 0.7198 USD (from https://api.frankfurter.app/latest?from=CAD&to=USD)
+INFO:services.data_worker:Worker: Refreshing bookings cache (US + CA)...
+INFO:services.bookings_service:US Bookings snapshot: $125,430 across 12 territories (847 raw rows processed)
+INFO:services.data_worker:Worker: US bookings cache updated.
+INFO:services.bookings_service:CA Bookings snapshot: $18,200 across 3 territories (96 raw rows processed)
+INFO:services.data_worker:Worker: CA bookings cache updated.
+INFO:services.data_worker:Worker: Refreshing open orders cache (US + CA)...
+INFO:services.open_orders_service:US Open Orders snapshot: $2,345,678 across 892 orders, 4120 lines (5200 raw rows processed)
+INFO:services.data_worker:Worker: US open orders cache updated.
+INFO:services.open_orders_service:CA Open Orders snapshot: $456,789 across 210 orders, 890 lines (1100 raw rows processed)
+INFO:services.data_worker:Worker: CA open orders cache updated.
+INFO:services.data_worker:Worker: ═══ Initial startup refresh complete ═══
 ```
 
 ### Production (Waitress)
@@ -664,40 +862,46 @@ serve(app, host='0.0.0.0', port=5000)
 - **Session security:** In production, set `SECRET_KEY` to a strong random value (e.g., `python -c "import secrets; print(secrets.token_hex(32))"`)
 - **Redirect URI:** Update the Azure App Registration redirect URI to match your production domain
 - **HTTPS:** Use a reverse proxy (nginx, IIS) with SSL termination in front of Waitress
-- **Firewall:** Ensure the app server can reach `twg-sql-01.thewheelgroup.com` on port 1433
+- **Firewall:** Ensure the app server can reach the SQL Server on port 1433
 - **Exchange Rate APIs:** Ensure outbound HTTPS (port 443) is open to `api.frankfurter.app` and `open.er-api.com`. If blocked, the fallback rate of 0.72 will be used automatically.
-- **TV Displays:** Open `http://your-server:5000/sales/bookings` in a full-screen browser (kiosk mode). The page auto-refreshes every 10 minutes with no user interaction needed.
+- **TV Displays:** Open `http://your-server:5000/sales/bookings` in a full-screen browser (kiosk mode). The page auto-refreshes every 10 minutes with no user interaction needed. The open orders page does NOT auto-refresh and is intended for on-demand use.
+- **SQL Server Load:** The two separate scheduler intervals ensure minimal database impact. Bookings runs 6 queries/hour (2 per refresh × 3 refreshes is wrong — it's 2 queries per 10-min refresh = 12 queries/hour). Open orders runs just 2 queries/hour. Total: ~14 lightweight `SELECT` queries per hour with `NOLOCK`, each completing in under 1 second.
 
 ---
 
 ## URL Reference
 
-| Route                        | Method | Auth Required | Description                          |
-|------------------------------|--------|---------------|--------------------------------------|
-| `/login_page`                | GET    | No            | Login page with Microsoft SSO button |
-| `/login`                     | GET    | No            | Initiates OAuth flow                 |
-| `/auth/redirect`             | GET    | No            | OAuth callback                       |
-| `/logout`                    | GET    | No            | Clears session, redirects to MS logout |
-| `/`                          | GET    | Yes           | Department hub                       |
-| `/sales`                     | GET    | Yes           | Sales report menu                    |
-| `/sales/bookings`            | GET    | Yes           | Daily bookings dashboard (US + CA)   |
-| `/sales/bookings/export`     | GET    | Yes           | Excel export: US + Canada combined   |
-| `/sales/bookings/export/us`  | GET    | Yes           | Excel export: US only                |
-| `/sales/bookings/export/ca`  | GET    | Yes           | Excel export: Canada only            |
+| Route                          | Method | Auth Required | Description                                |
+|--------------------------------|--------|---------------|--------------------------------------------|
+| `/login_page`                  | GET    | No            | Login page with Microsoft SSO button       |
+| `/login`                       | GET    | No            | Initiates OAuth flow                       |
+| `/auth/redirect`               | GET    | No            | OAuth callback                             |
+| `/logout`                      | GET    | No            | Clears session, redirects to MS logout     |
+| `/`                            | GET    | Yes           | Department hub                             |
+| `/sales`                       | GET    | Yes           | Sales report menu                          |
+| `/sales/bookings`              | GET    | Yes           | Daily bookings dashboard (US + CA)         |
+| `/sales/bookings/export`       | GET    | Yes           | Excel export: bookings US + Canada combined|
+| `/sales/bookings/export/us`    | GET    | Yes           | Excel export: bookings US only             |
+| `/sales/bookings/export/ca`    | GET    | Yes           | Excel export: bookings Canada only         |
+| `/sales/open-orders`           | GET    | Yes           | Open orders dashboard (US + CA)            |
+| `/sales/open-orders/export`    | GET    | Yes           | Excel export: open orders US + Canada combined |
+| `/sales/open-orders/export/us` | GET    | Yes           | Excel export: open orders US only          |
+| `/sales/open-orders/export/ca` | GET    | Yes           | Excel export: open orders Canada only      |
 
 ---
 
 ## Roadmap
 
-| Module         | Status        | Description                                    |
-|----------------|---------------|------------------------------------------------|
-| **Sales**      | ✅ Live        | Daily bookings (US + CA), territory ranking, CAD→USD conversion, Excel export |
-| Shipments      | 🔜 Planned    | Daily shipments by warehouse                   |
-| Territory Perf | 🔜 Planned    | Monthly trends with period comparison          |
-| Top Customers  | 🔜 Planned    | Customer ranking by revenue                    |
-| **Warehouse**  | 🔜 Planned    | Inventory levels, fulfillment tracking         |
-| **Accounting** | 🔜 Planned    | Invoices, payments, financial reporting        |
-| **HR**         | 🔜 Planned    | Employee directory, attendance                 |
+| Module           | Status        | Description                                    |
+|------------------|---------------|------------------------------------------------|
+| **Sales**        |               |                                                |
+| Daily Bookings   | ✅ Live        | Today's bookings by territory, auto-refresh for TV, CAD→USD, Excel export |
+| Open Sales Orders| ✅ Live        | All open order lines by territory + salesman, hourly refresh, CAD→USD, Excel export |
+| Shipments        | 🔜 Planned    | Daily shipments by warehouse                   |
+| Territory Perf   | 🔜 Planned    | Monthly trends with period comparison          |
+| **Warehouse**    | 🔜 Planned    | Inventory levels, fulfillment tracking         |
+| **Accounting**   | 🔜 Planned    | Invoices, payments, financial reporting        |
+| **HR**           | 🔜 Planned    | Employee directory, attendance                 |
 
 ---
 

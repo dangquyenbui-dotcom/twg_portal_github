@@ -4,14 +4,14 @@ Fetches all currently open sales order lines (snapshot for dashboard + raw for E
 
 Open line definition:
   - sotran.qtyord > 0            (still has remaining/open quantity)
-  - sotran.sostat NOT IN ('C','X') (not closed/cancelled at line level)
+  - sotran.sostat NOT IN ('C','V','X') (not closed/voided/cancelled at line level)
   - somast.sostat <> 'C'          (order not fully closed)
   - sotran.currhist <> 'X'        (not historical/cancelled)
   - sotran.sotype NOT IN ('B','R') (no blankets/returns)
   - icitem.plinid <> 'TAX'        (no tax line items)
-  - NO customer exclusions        (unlike bookings, all customers included)
+  - Excluded customers             (same as bookings: W1VAN, W1TOR, W1MON, MISC, TWGMARKET, EMP-US, TEST123)
 
-Open $ = sotran.qtyord × sotran.price  (qtyord = remaining open qty after shipments)
+Open $ = sotran.qtyord × sotran.price × (1 - sotran.disc / 100)  (qtyord = remaining open qty after shipments)
 """
 
 import logging
@@ -20,7 +20,7 @@ from collections import defaultdict
 
 from config import Config
 from services.db_connection import get_connection
-from services.constants import map_territory
+from services.constants import map_territory, BOOKINGS_EXCLUDED_CUSTOMERS
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +35,15 @@ def _build_open_orders_query(database):
     SELECT
         tr.sono,
         tr.qtyord                               AS open_qty,
-        tr.qtyord * tr.price                    AS open_amount,
+        tr.qtyord * tr.price * (1 - tr.disc / 100.0)
+                                                AS open_amount,
         CASE WHEN cu.terr = '900'
              THEN cu.terr
              ELSE sm.terr
         END                                     AS terr_code,
         tr.salesmn,
-        ic.plinid
+        ic.plinid,
+        tr.custno
     FROM {database}.dbo.sotran tr WITH (NOLOCK)
     INNER JOIN {database}.dbo.somast sm WITH (NOLOCK)
         ON sm.sono = tr.sono
@@ -50,7 +52,7 @@ def _build_open_orders_query(database):
     LEFT JOIN {database}.dbo.icitem ic WITH (NOLOCK)
         ON ic.item = tr.item
     WHERE tr.qtyord > 0
-      AND tr.sostat  NOT IN ('C', 'X')
+      AND tr.sostat  NOT IN ('C', 'V', 'X')
       AND sm.sostat  <> 'C'
       AND tr.currhist <> 'X'
       AND tr.sotype  NOT IN ('B', 'R')
@@ -71,7 +73,12 @@ def _aggregate_open_orders(rows, region='US'):
     territory_totals = defaultdict(float)
     salesman_totals = defaultdict(float)
 
-    for sono, open_qty, open_amount, terr_code, salesmn, plinid in rows:
+    for sono, open_qty, open_amount, terr_code, salesmn, plinid, custno in rows:
+        # Exclude internal/test customers
+        custno_clean = (custno or '').strip().upper()
+        if custno_clean in BOOKINGS_EXCLUDED_CUSTOMERS:
+            continue
+
         # Exclude TAX line items
         if (plinid or '').strip().upper() == 'TAX':
             continue
@@ -182,7 +189,9 @@ def _build_open_orders_raw_query(database):
         tr.qtyord            AS OpenQty,
         tr.qtyshp            AS QtyShipped,
         tr.price             AS UnitPrice,
-        tr.qtyord * tr.price AS OpenAmount,
+        tr.disc              AS Discount,
+        tr.qtyord * tr.price * (1 - tr.disc / 100.0)
+                             AS OpenAmount,
         tr.sostat            AS LineStatus,
         tr.sotype            AS OrderType,
         sm.release           AS Release,
@@ -205,7 +214,7 @@ def _build_open_orders_raw_query(database):
     LEFT JOIN {database}.dbo.icitem ic WITH (NOLOCK)
         ON ic.item = tr.item
     WHERE tr.qtyord > 0
-      AND tr.sostat  NOT IN ('C', 'X')
+      AND tr.sostat  NOT IN ('C', 'V', 'X')
       AND sm.sostat  <> 'C'
       AND tr.currhist <> 'X'
       AND tr.sotype  NOT IN ('B', 'R')
@@ -219,6 +228,11 @@ def _process_open_orders_raw_rows(cursor, rows, region='US'):
 
     for row in rows:
         record = dict(zip(columns, row))
+
+        # Exclude internal/test customers
+        custno_clean = (record.get('CustomerNo') or '').strip().upper()
+        if custno_clean in BOOKINGS_EXCLUDED_CUSTOMERS:
+            continue
 
         # Exclude TAX line items
         if (record.get('ProductLine') or '').strip().upper() == 'TAX':

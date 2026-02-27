@@ -32,7 +32,7 @@ TERRITORY_MAP_CA = {
     '503': 'Montreal',
 }
 
-# ── Excluded customers (bookings only — open orders has NO exclusions) ──
+# ── Excluded customers (shared by bookings and open orders) ──
 BOOKINGS_EXCLUDED_CUSTOMERS = frozenset({
     'W1VAN', 'W1TOR', 'W1MON', 'MISC', 'TWGMARKET', 'EMP-US', 'TEST123'
 })
