@@ -8,9 +8,10 @@ from datetime import date
 
 from flask import Blueprint, render_template, session, redirect, url_for
 
-from services.data_worker import get_bookings_from_cache, get_open_orders_from_cache
-from services.bookings_service import fetch_bookings_raw_us, fetch_bookings_raw_ca
-from services.open_orders_service import fetch_open_orders_raw_us, fetch_open_orders_raw_ca
+from services.data_worker import (
+    get_bookings_from_cache, get_bookings_raw_from_cache,
+    get_open_orders_from_cache, get_open_orders_raw_from_cache,
+)
 from services.excel_helper import build_export_workbook, send_workbook
 
 sales_bp = Blueprint('sales', __name__, url_prefix='/sales')
@@ -166,12 +167,11 @@ def bookings():
 
 @sales_bp.route('/bookings/export')
 def bookings_export():
-    """Export today's raw bookings data (US + Canada combined)."""
+    """Export today's raw bookings data (US + Canada combined) — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    rows_us = fetch_bookings_raw_us() or []
-    rows_ca = fetch_bookings_raw_ca() or []
+    rows_us, rows_ca = get_bookings_raw_from_cache()
 
     if not rows_us and not rows_ca:
         return redirect(url_for('sales.bookings'))
@@ -192,16 +192,16 @@ def bookings_export():
 
 @sales_bp.route('/bookings/export/us')
 def bookings_export_us():
-    """Export today's raw US bookings data."""
+    """Export today's raw US bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    rows = fetch_bookings_raw_us()
-    if not rows:
+    rows_us, _ = get_bookings_raw_from_cache()
+    if not rows_us:
         return redirect(url_for('sales.bookings'))
 
     wb = build_export_workbook(
-        rows=rows,
+        rows=rows_us,
         title_label='Daily Bookings Raw Data — United States',
         columns=BOOKINGS_EXPORT_COLUMNS,
     )
@@ -210,16 +210,16 @@ def bookings_export_us():
 
 @sales_bp.route('/bookings/export/ca')
 def bookings_export_ca():
-    """Export today's raw Canada bookings data."""
+    """Export today's raw Canada bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    rows = fetch_bookings_raw_ca()
-    if not rows:
+    _, rows_ca = get_bookings_raw_from_cache()
+    if not rows_ca:
         return redirect(url_for('sales.bookings'))
 
     wb = build_export_workbook(
-        rows=rows,
+        rows=rows_ca,
         title_label='Daily Bookings Raw Data — Canada',
         columns=BOOKINGS_EXPORT_COLUMNS,
     )
@@ -257,12 +257,11 @@ def open_orders():
 
 @sales_bp.route('/open-orders/export')
 def open_orders_export():
-    """Export open orders (US + Canada combined)."""
+    """Export open orders (US + Canada combined) — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    rows_us = fetch_open_orders_raw_us() or []
-    rows_ca = fetch_open_orders_raw_ca() or []
+    rows_us, rows_ca = get_open_orders_raw_from_cache()
 
     if not rows_us and not rows_ca:
         return redirect(url_for('sales.open_orders'))
@@ -283,16 +282,16 @@ def open_orders_export():
 
 @sales_bp.route('/open-orders/export/us')
 def open_orders_export_us():
-    """Export open orders US only."""
+    """Export open orders US only — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    rows = fetch_open_orders_raw_us()
-    if not rows:
+    rows_us, _ = get_open_orders_raw_from_cache()
+    if not rows_us:
         return redirect(url_for('sales.open_orders'))
 
     wb = build_export_workbook(
-        rows=rows,
+        rows=rows_us,
         title_label='Open Sales Orders — United States',
         columns=OPEN_ORDERS_EXPORT_COLUMNS,
     )
@@ -301,16 +300,16 @@ def open_orders_export_us():
 
 @sales_bp.route('/open-orders/export/ca')
 def open_orders_export_ca():
-    """Export open orders Canada only."""
+    """Export open orders Canada only — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    rows = fetch_open_orders_raw_ca()
-    if not rows:
+    _, rows_ca = get_open_orders_raw_from_cache()
+    if not rows_ca:
         return redirect(url_for('sales.open_orders'))
 
     wb = build_export_workbook(
-        rows=rows,
+        rows=rows_ca,
         title_label='Open Sales Orders — Canada',
         columns=OPEN_ORDERS_EXPORT_COLUMNS,
     )

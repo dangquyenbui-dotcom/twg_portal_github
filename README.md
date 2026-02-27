@@ -63,7 +63,7 @@ The application follows a **Decoupled Caching Architecture** to ensure instant p
    - **Bookings refresh** — Every **10 minutes**. Queries today's bookings from both US (PRO05) and Canada (PRO06) databases, fetches the live CAD→USD exchange rate, and caches all results. Also runs once immediately on app startup.
    - **Open orders refresh** — Every **60 minutes**. Queries all currently open sales order lines from both databases. Open orders data changes less frequently than daily bookings, so the longer interval significantly reduces SQL Server load.
 2. **Cache Layer (Flask-Caching)** — Stores the latest data snapshots using `FileSystemCache`. Survives brief app restarts. Each cache entry includes a `last_updated` timestamp so users know the data freshness. Separate cache keys and timeouts are used for bookings data (15-min TTL), open orders data (65-min TTL), the exchange rate, and refresh timestamps.
-3. **Web App (Flask)** — Serves the UI. Route handlers **never** query SQL directly — they read exclusively from cache, ensuring sub-millisecond response times regardless of SQL Server load. The only exception is the Excel export routes, which query SQL directly to pull full line-item detail for download.
+3. **Web App (Flask)** — Serves the UI. Route handlers **never** query SQL directly — they read exclusively from cache, ensuring sub-millisecond response times regardless of SQL Server load. This applies to both the dashboard pages AND the Excel export downloads. Even if 100 users click Export simultaneously, the SQL Server sees zero additional queries.
 4. **Auto-Refresh (Client-Side)** — The bookings page includes a `<meta http-equiv="refresh">` tag that reloads the page every 10 minutes, plus a live JavaScript countdown timer. This is designed for TVs/monitors in the sales area that display the dashboard unattended. The open orders page does **not** auto-refresh — it is designed for on-demand desktop use and simply shows the "Last updated" timestamp.
 
 ---
@@ -326,9 +326,13 @@ On **app startup**, both jobs run once immediately via `refresh_all_on_startup()
 |------------------------------|------------|---------------------------------------------|
 | `bookings_snapshot_us`       | `dict`     | US bookings summary + territory ranking     |
 | `bookings_snapshot_ca`       | `dict`     | Canada bookings summary + territory ranking |
+| `bookings_raw_us`            | `list`     | US bookings raw line-item data for Excel export |
+| `bookings_raw_ca`            | `list`     | Canada bookings raw line-item data for Excel export |
 | `bookings_last_updated`      | `datetime` | Timestamp of last successful bookings refresh |
 | `open_orders_snapshot_us`    | `dict`     | US open orders summary + territory + salesman ranking |
 | `open_orders_snapshot_ca`    | `dict`     | Canada open orders summary + territory + salesman ranking |
+| `open_orders_raw_us`         | `list`     | US open orders raw line-item data for Excel export |
+| `open_orders_raw_ca`         | `list`     | Canada open orders raw line-item data for Excel export |
 | `open_orders_last_updated`   | `datetime` | Timestamp of last successful open orders refresh |
 | `cad_to_usd_rate`            | `float`    | Latest CAD → USD exchange rate              |
 
@@ -549,7 +553,9 @@ The portal provides real-time CAD to USD conversion for all Canadian amounts, al
 
 ## Excel Exports
 
-The portal provides Excel export endpoints for downloading raw line-item data as formatted `.xlsx` files. Unlike the dashboard (which reads from cache), the export routes **query SQL Server directly** to pull the full raw line-item data.
+The portal provides Excel export endpoints for downloading raw line-item data as formatted `.xlsx` files. Unlike earlier versions that queried SQL on every click, **all exports now read from cache** — the background worker pre-fetches and caches the raw export data alongside the dashboard snapshots. This means 100 users can click Export simultaneously with **zero SQL queries** hitting the database.
+
+**Cache-miss safety net:** If the raw cache is empty (e.g., app just restarted and hasn't completed its first refresh), the export route triggers one synchronous fetch to populate the cache, then serves from cache for all subsequent requests.
 
 ### Bookings Export Endpoints
 
@@ -865,7 +871,7 @@ serve(app, host='0.0.0.0', port=5000)
 - **Firewall:** Ensure the app server can reach the SQL Server on port 1433
 - **Exchange Rate APIs:** Ensure outbound HTTPS (port 443) is open to `api.frankfurter.app` and `open.er-api.com`. If blocked, the fallback rate of 0.72 will be used automatically.
 - **TV Displays:** Open `http://your-server:5000/sales/bookings` in a full-screen browser (kiosk mode). The page auto-refreshes every 10 minutes with no user interaction needed. The open orders page does NOT auto-refresh and is intended for on-demand use.
-- **SQL Server Load:** The two separate scheduler intervals ensure minimal database impact. Bookings runs 6 queries/hour (2 per refresh × 3 refreshes is wrong — it's 2 queries per 10-min refresh = 12 queries/hour). Open orders runs just 2 queries/hour. Total: ~14 lightweight `SELECT` queries per hour with `NOLOCK`, each completing in under 1 second.
+- **SQL Server Load:** The background worker handles ALL SQL queries — neither dashboards nor Excel exports hit the database at request time. Bookings refresh runs 4 queries per cycle (2 snapshot + 2 raw) × 6 cycles/hour = 24 queries/hour. Open orders runs 4 queries per cycle × 1 cycle/hour = 4 queries/hour. Total: ~28 lightweight `SELECT` queries per hour with `NOLOCK`, regardless of how many users are viewing dashboards or downloading exports.
 
 ---
 

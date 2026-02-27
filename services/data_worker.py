@@ -1,41 +1,60 @@
 """
 Background Data Worker
 Runs on a schedule to refresh cached data from SQL Server.
-Pages never query SQL directly — they read from cache for instant loads.
+Pages and exports never query SQL directly — they read from cache for instant loads.
 
 Refreshes:
-  - US bookings (PRO05)
-  - CA bookings (PRO06)
-  - US open orders (PRO05)
-  - CA open orders (PRO06)
-  - CAD → USD exchange rate
+  - US bookings snapshot + raw (PRO05)     — every 10 min
+  - CA bookings snapshot + raw (PRO06)     — every 10 min
+  - US open orders snapshot + raw (PRO05)  — every 60 min
+  - CA open orders snapshot + raw (PRO06)  — every 60 min
+  - CAD → USD exchange rate                — every 10 min
 """
 
 import logging
 import math
 from datetime import datetime
 from extensions import cache
-from services.bookings_service import fetch_bookings_snapshot_us, fetch_bookings_snapshot_ca
-from services.open_orders_service import fetch_open_orders_snapshot_us, fetch_open_orders_snapshot_ca
+from services.bookings_service import (
+    fetch_bookings_snapshot_us, fetch_bookings_snapshot_ca,
+    fetch_bookings_raw_us, fetch_bookings_raw_ca,
+)
+from services.open_orders_service import (
+    fetch_open_orders_snapshot_us, fetch_open_orders_snapshot_ca,
+    fetch_open_orders_raw_us, fetch_open_orders_raw_ca,
+)
 
 logger = logging.getLogger(__name__)
 
 # ── Cache keys (centralized so routes and worker stay in sync) ──
-# Bookings
+
+# Bookings — dashboard snapshots
 CACHE_KEY_BOOKINGS_US = "bookings_snapshot_us"
 CACHE_KEY_BOOKINGS_CA = "bookings_snapshot_ca"
 CACHE_KEY_BOOKINGS_UPDATED = "bookings_last_updated"
 
-# Open Orders
+# Bookings — raw export data
+CACHE_KEY_BOOKINGS_RAW_US = "bookings_raw_us"
+CACHE_KEY_BOOKINGS_RAW_CA = "bookings_raw_ca"
+
+# Open Orders — dashboard snapshots
 CACHE_KEY_OPEN_ORDERS_US = "open_orders_snapshot_us"
 CACHE_KEY_OPEN_ORDERS_CA = "open_orders_snapshot_ca"
 CACHE_KEY_OPEN_ORDERS_UPDATED = "open_orders_last_updated"
+
+# Open Orders — raw export data
+CACHE_KEY_OPEN_ORDERS_RAW_US = "open_orders_raw_us"
+CACHE_KEY_OPEN_ORDERS_RAW_CA = "open_orders_raw_ca"
 
 # Exchange Rate
 CACHE_KEY_CAD_RATE = "cad_to_usd_rate"
 
 # Fallback rate in case all APIs are unreachable
 DEFAULT_CAD_TO_USD = 0.72
+
+# Cache timeouts
+BOOKINGS_CACHE_TIMEOUT = 900     # 15 min (refreshes every 10 min)
+OO_CACHE_TIMEOUT = 3900          # 65 min (refreshes every 60 min)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -74,30 +93,53 @@ def _fetch_cad_to_usd_rate():
 
 
 # ─────────────────────────────────────────────────────────────
-# Bookings Cache
+# Bookings Cache (snapshot + raw)
 # ─────────────────────────────────────────────────────────────
 
 def refresh_bookings_cache():
-    """Fetch fresh bookings data from SQL for both US and Canada, store in cache."""
+    """
+    Fetch fresh bookings data from SQL for both US and Canada.
+    Caches both the dashboard snapshot AND raw export data in one pass,
+    so Excel exports never hit SQL Server directly.
+    """
     logger.info("Worker: Refreshing bookings cache (US + CA)...")
 
     try:
+        # ── US snapshot ──
         result_us = fetch_bookings_snapshot_us()
         if result_us is not None:
-            cache.set(CACHE_KEY_BOOKINGS_US, result_us, timeout=900)
-            logger.info("Worker: US bookings cache updated.")
+            cache.set(CACHE_KEY_BOOKINGS_US, result_us, timeout=BOOKINGS_CACHE_TIMEOUT)
+            logger.info("Worker: US bookings snapshot cache updated.")
         else:
-            logger.warning("Worker: US bookings query returned None — keeping stale cache.")
+            logger.warning("Worker: US bookings snapshot returned None — keeping stale cache.")
 
+        # ── CA snapshot ──
         result_ca = fetch_bookings_snapshot_ca()
         if result_ca is not None:
-            cache.set(CACHE_KEY_BOOKINGS_CA, result_ca, timeout=900)
-            logger.info("Worker: CA bookings cache updated.")
+            cache.set(CACHE_KEY_BOOKINGS_CA, result_ca, timeout=BOOKINGS_CACHE_TIMEOUT)
+            logger.info("Worker: CA bookings snapshot cache updated.")
         else:
-            logger.warning("Worker: CA bookings query returned None — keeping stale cache.")
+            logger.warning("Worker: CA bookings snapshot returned None — keeping stale cache.")
 
-        if result_us is not None or result_ca is not None:
-            cache.set(CACHE_KEY_BOOKINGS_UPDATED, datetime.now(), timeout=900)
+        # ── US raw export data ──
+        raw_us = fetch_bookings_raw_us()
+        if raw_us is not None:
+            cache.set(CACHE_KEY_BOOKINGS_RAW_US, raw_us, timeout=BOOKINGS_CACHE_TIMEOUT)
+            logger.info(f"Worker: US bookings raw cache updated ({len(raw_us)} rows).")
+        else:
+            logger.warning("Worker: US bookings raw query returned None — keeping stale cache.")
+
+        # ── CA raw export data ──
+        raw_ca = fetch_bookings_raw_ca()
+        if raw_ca is not None:
+            cache.set(CACHE_KEY_BOOKINGS_RAW_CA, raw_ca, timeout=BOOKINGS_CACHE_TIMEOUT)
+            logger.info(f"Worker: CA bookings raw cache updated ({len(raw_ca)} rows).")
+        else:
+            logger.warning("Worker: CA bookings raw query returned None — keeping stale cache.")
+
+        # ── Timestamp ──
+        if any(x is not None for x in [result_us, result_ca, raw_us, raw_ca]):
+            cache.set(CACHE_KEY_BOOKINGS_UPDATED, datetime.now(), timeout=BOOKINGS_CACHE_TIMEOUT)
 
     except Exception as e:
         logger.error(f"Worker: Failed to refresh bookings cache: {e}")
@@ -105,7 +147,7 @@ def refresh_bookings_cache():
 
 def get_bookings_from_cache():
     """
-    Read bookings data from cache. If empty, do a one-time synchronous fetch.
+    Read bookings dashboard data from cache. If empty, do a one-time synchronous fetch.
     Returns (us_snapshot, ca_snapshot, last_updated, cad_to_usd_rate)
     """
     data_us = cache.get(CACHE_KEY_BOOKINGS_US)
@@ -126,37 +168,71 @@ def get_bookings_from_cache():
     return data_us, data_ca, updated, cad_rate
 
 
+def get_bookings_raw_from_cache():
+    """
+    Read bookings raw export data from cache. If empty, do a one-time synchronous fetch.
+    Returns (us_rows, ca_rows) — each is a list of dicts or empty list.
+    """
+    raw_us = cache.get(CACHE_KEY_BOOKINGS_RAW_US)
+    raw_ca = cache.get(CACHE_KEY_BOOKINGS_RAW_CA)
+
+    if raw_us is None and raw_ca is None:
+        logger.info("Bookings raw cache miss — running synchronous fetch.")
+        refresh_bookings_cache()
+        raw_us = cache.get(CACHE_KEY_BOOKINGS_RAW_US)
+        raw_ca = cache.get(CACHE_KEY_BOOKINGS_RAW_CA)
+
+    return raw_us or [], raw_ca or []
+
+
 # ─────────────────────────────────────────────────────────────
-# Open Orders Cache
+# Open Orders Cache (snapshot + raw)
 # ─────────────────────────────────────────────────────────────
 
 def refresh_open_orders_cache():
     """
-    Fetch fresh open orders data from SQL for both US and Canada, store in cache.
-    Uses a longer cache timeout (65 min) since open orders refresh hourly,
-    keeping SQL Server load minimal.
+    Fetch fresh open orders data from SQL for both US and Canada.
+    Caches both the dashboard snapshot AND raw export data in one pass,
+    so Excel exports never hit SQL Server directly.
+    Uses a longer cache timeout (65 min) since open orders refresh hourly.
     """
     logger.info("Worker: Refreshing open orders cache (US + CA)...")
 
-    # 65-minute timeout — gives a 5-min safety buffer beyond the 60-min refresh cycle
-    OO_CACHE_TIMEOUT = 3900
-
     try:
+        # ── US snapshot ──
         result_us = fetch_open_orders_snapshot_us()
         if result_us is not None:
             cache.set(CACHE_KEY_OPEN_ORDERS_US, result_us, timeout=OO_CACHE_TIMEOUT)
-            logger.info("Worker: US open orders cache updated.")
+            logger.info("Worker: US open orders snapshot cache updated.")
         else:
-            logger.warning("Worker: US open orders query returned None — keeping stale cache.")
+            logger.warning("Worker: US open orders snapshot returned None — keeping stale cache.")
 
+        # ── CA snapshot ──
         result_ca = fetch_open_orders_snapshot_ca()
         if result_ca is not None:
             cache.set(CACHE_KEY_OPEN_ORDERS_CA, result_ca, timeout=OO_CACHE_TIMEOUT)
-            logger.info("Worker: CA open orders cache updated.")
+            logger.info("Worker: CA open orders snapshot cache updated.")
         else:
-            logger.warning("Worker: CA open orders query returned None — keeping stale cache.")
+            logger.warning("Worker: CA open orders snapshot returned None — keeping stale cache.")
 
-        if result_us is not None or result_ca is not None:
+        # ── US raw export data ──
+        raw_us = fetch_open_orders_raw_us()
+        if raw_us is not None:
+            cache.set(CACHE_KEY_OPEN_ORDERS_RAW_US, raw_us, timeout=OO_CACHE_TIMEOUT)
+            logger.info(f"Worker: US open orders raw cache updated ({len(raw_us)} rows).")
+        else:
+            logger.warning("Worker: US open orders raw query returned None — keeping stale cache.")
+
+        # ── CA raw export data ──
+        raw_ca = fetch_open_orders_raw_ca()
+        if raw_ca is not None:
+            cache.set(CACHE_KEY_OPEN_ORDERS_RAW_CA, raw_ca, timeout=OO_CACHE_TIMEOUT)
+            logger.info(f"Worker: CA open orders raw cache updated ({len(raw_ca)} rows).")
+        else:
+            logger.warning("Worker: CA open orders raw query returned None — keeping stale cache.")
+
+        # ── Timestamp ──
+        if any(x is not None for x in [result_us, result_ca, raw_us, raw_ca]):
             cache.set(CACHE_KEY_OPEN_ORDERS_UPDATED, datetime.now(), timeout=OO_CACHE_TIMEOUT)
 
     except Exception as e:
@@ -165,7 +241,7 @@ def refresh_open_orders_cache():
 
 def get_open_orders_from_cache():
     """
-    Read open orders data from cache. If empty, do a one-time synchronous fetch.
+    Read open orders dashboard data from cache. If empty, do a one-time synchronous fetch.
     Returns (us_snapshot, ca_snapshot, last_updated, cad_to_usd_rate)
     """
     data_us = cache.get(CACHE_KEY_OPEN_ORDERS_US)
@@ -186,6 +262,23 @@ def get_open_orders_from_cache():
     return data_us, data_ca, updated, cad_rate
 
 
+def get_open_orders_raw_from_cache():
+    """
+    Read open orders raw export data from cache. If empty, do a one-time synchronous fetch.
+    Returns (us_rows, ca_rows) — each is a list of dicts or empty list.
+    """
+    raw_us = cache.get(CACHE_KEY_OPEN_ORDERS_RAW_US)
+    raw_ca = cache.get(CACHE_KEY_OPEN_ORDERS_RAW_CA)
+
+    if raw_us is None and raw_ca is None:
+        logger.info("Open orders raw cache miss — running synchronous fetch.")
+        refresh_open_orders_cache()
+        raw_us = cache.get(CACHE_KEY_OPEN_ORDERS_RAW_US)
+        raw_ca = cache.get(CACHE_KEY_OPEN_ORDERS_RAW_CA)
+
+    return raw_us or [], raw_ca or []
+
+
 # ─────────────────────────────────────────────────────────────
 # Scheduled Refresh Functions
 # ─────────────────────────────────────────────────────────────
@@ -193,7 +286,7 @@ def get_open_orders_from_cache():
 def refresh_bookings_and_rate():
     """
     Called by scheduler every 10 minutes.
-    Refreshes bookings (US + CA) and the exchange rate.
+    Refreshes bookings snapshot + raw (US + CA) and the exchange rate.
     Open orders are NOT included — they have their own hourly schedule
     to keep SQL Server load low.
     """
@@ -201,9 +294,9 @@ def refresh_bookings_and_rate():
 
     # Exchange rate (shared by bookings + open orders)
     rate = _fetch_cad_to_usd_rate()
-    cache.set(CACHE_KEY_CAD_RATE, rate, timeout=3900)
+    cache.set(CACHE_KEY_CAD_RATE, rate, timeout=OO_CACHE_TIMEOUT)
 
-    # Bookings only
+    # Bookings (snapshot + raw)
     refresh_bookings_cache()
 
     logger.info("Worker: ═══ Bookings refresh complete ═══")
@@ -212,7 +305,7 @@ def refresh_bookings_and_rate():
 def refresh_open_orders_scheduled():
     """
     Called by scheduler every 60 minutes.
-    Refreshes open orders (US + CA) on a slower cadence
+    Refreshes open orders snapshot + raw (US + CA) on a slower cadence
     to minimize SQL Server load — open orders data doesn't change frequently.
     """
     logger.info("Worker: ═══ Open orders refresh (every 60 min) ═══")
@@ -229,12 +322,12 @@ def refresh_all_on_startup():
 
     # Exchange rate
     rate = _fetch_cad_to_usd_rate()
-    cache.set(CACHE_KEY_CAD_RATE, rate, timeout=3900)
+    cache.set(CACHE_KEY_CAD_RATE, rate, timeout=OO_CACHE_TIMEOUT)
 
-    # Bookings
+    # Bookings (snapshot + raw)
     refresh_bookings_cache()
 
-    # Open Orders
+    # Open Orders (snapshot + raw)
     refresh_open_orders_cache()
 
     logger.info("Worker: ═══ Initial startup refresh complete ═══")
