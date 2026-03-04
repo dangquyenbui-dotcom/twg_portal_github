@@ -12,6 +12,7 @@ The portal serves as a centralized dashboard hub for multiple departments — st
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Authentication Flow](#authentication-flow)
+- [Role-Based Access Control (RBAC)](#role-based-access-control-rbac)
 - [Data Architecture](#data-architecture)
 - [Sales Module](#sales-module)
   - [Daily Bookings Dashboard](#daily-bookings-dashboard)
@@ -27,7 +28,9 @@ The portal serves as a centralized dashboard hub for multiple departments — st
 - [Environment Variables](#environment-variables)
 - [Running the Application](#running-the-application)
 - [Deployment Notes](#deployment-notes)
+- [HTTPS & Redirect URI Handling](#https--redirect-uri-handling)
 - [URL Reference](#url-reference)
+- [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 
 ---
@@ -74,6 +77,7 @@ The application follows a **Decoupled Caching Architecture** to ensure instant p
 |------------------|---------------------------------------------------|
 | **Backend**      | Python 3.12+, Flask 3.0                           |
 | **Auth (SSO)**   | Microsoft Entra ID (Azure AD), MSAL for Python    |
+| **RBAC**         | Entra ID App Roles, custom `@require_role` decorator |
 | **Database**     | Microsoft SQL Server (US: PRO05, Canada: PRO06), pyodbc |
 | **Caching**      | Flask-Caching (FileSystemCache)                   |
 | **Scheduler**    | Flask-APScheduler (background data refresh)       |
@@ -91,8 +95,8 @@ The application follows a **Decoupled Caching Architecture** to ensure instant p
 ```
 twg_portal/
 │
-├── app.py                    # Application factory, SSO routes, scheduler init
-├── config.py                 # All configuration (auth, DB, cache, scheduler intervals)
+├── app.py                    # Application factory, SSO routes, HTTPS redirect URI builder, scheduler init
+├── config.py                 # All configuration (auth, DB, cache, scheduler intervals, REDIRECT_URI_OVERRIDE)
 ├── extensions.py             # Shared Flask extensions (Cache, APScheduler)
 ├── requirements.txt          # Python dependencies
 ├── .env                      # Environment variables (secrets — never committed)
@@ -101,7 +105,8 @@ twg_portal/
 │
 ├── auth/
 │   ├── __init__.py
-│   └── entra_auth.py         # MSAL helper: build app, token exchange
+│   ├── entra_auth.py         # MSAL helper: build app, token exchange
+│   └── decorators.py         # @require_role decorator for App Role enforcement
 │
 ├── routes/
 │   ├── __init__.py
@@ -112,6 +117,7 @@ twg_portal/
 │   ├── __init__.py
 │   ├── constants.py          # Shared territory maps, customer exclusion sets, helper functions
 │   ├── db_connection.py      # pyodbc connection factory
+│   ├── db_service.py         # Legacy bookings service (retained for reference)
 │   ├── bookings_service.py   # Bookings SQL queries + Python aggregation (snapshot + raw export)
 │   ├── open_orders_service.py# Open orders SQL queries + Python aggregation (snapshot + raw export)
 │   ├── data_worker.py        # Background cache refresh logic, exchange rate fetching, scheduler functions
@@ -124,9 +130,9 @@ twg_portal/
 ├── templates/
 │   ├── base.html             # Shared layout: nav, avatar, breadcrumbs, responsive CSS
 │   ├── login.html            # Microsoft SSO login page
-│   ├── index.html            # Department hub (Sales, Warehouse, Accounting, HR)
+│   ├── index.html            # Department hub (Sales, Warehouse, Accounting, HR) — role-aware card visibility
 │   └── sales/
-│       ├── index.html        # Sales report menu (Bookings, Open Orders, Shipments, etc.)
+│       ├── index.html        # Sales report menu (Bookings, Open Orders, Shipments, etc.) — role-aware
 │       ├── bookings.html     # Daily Bookings dashboard (US + CA, auto-refresh for TV)
 │       └── open_orders.html  # Open Sales Orders dashboard (US + CA, territory + salesman ranking)
 │
@@ -144,8 +150,12 @@ User clicks "Sign in with Microsoft"
         │
         ▼
   GET /login
+  ├── _build_redirect_uri()
+  │   ├── If REDIRECT_URI_OVERRIDE is set in .env → use it verbatim
+  │   ├── Else build from request.url_root
+  │   └── Force https:// for non-localhost hosts (proxy-safe)
   ├── Build MSAL ConfidentialClientApplication
-  ├── initiate_auth_code_flow() with dynamic redirect_uri
+  ├── initiate_auth_code_flow() with computed redirect_uri
   └── Redirect user to Microsoft login page
         │
         ▼
@@ -154,8 +164,8 @@ User clicks "Sign in with Microsoft"
         ▼
   GET /auth/redirect  (callback)
   ├── Exchange auth code for tokens via acquire_token_by_auth_code_flow()
-  ├── Extract id_token_claims (name, email, oid, tid)
-  ├── Store user info in session (signed cookie)
+  ├── Extract id_token_claims (name, email, oid, tid, roles)
+  ├── Store user info + roles in session (signed cookie)
   └── Redirect to home page (/)
         │
         ▼
@@ -167,17 +177,95 @@ User clicks "Sign in with Microsoft"
 **Key implementation details:**
 
 - `acquire_token_by_auth_code_flow()` is used instead of `acquire_token_by_authorization_code()` to properly handle PKCE verification, preventing AADSTS50148 errors.
-- Redirect URIs are built dynamically from `request.url_root` — no hardcoded `localhost` URLs.
+- Redirect URIs are built by `_build_redirect_uri()` which **forces `https://`** for any non-localhost host. This is critical when running behind a reverse proxy (IIS, nginx) with SSL termination — Flask sees `http://` from `request.url_root` but Azure Entra ID requires `https://` for all redirect URIs except localhost.
+- An optional `REDIRECT_URI_OVERRIDE` environment variable allows hardcoding the full redirect URI for edge cases where the dynamic builder doesn't produce the correct result.
 - The `.env` file loader has a fallback from `.env` to `_env` to handle Windows filename quirks.
 - Config validation runs at startup and raises `SystemExit` with clear error messages if any required values are missing.
-- User session stores `name`, `email`, `oid`, and `tid` from the Microsoft ID token claims.
+- User session stores `name`, `email`, `oid`, `tid`, and `roles` from the Microsoft ID token claims.
 
 **Required Azure App Registration settings:**
 
 - **Platform:** Web
-- **Redirect URI:** `http://localhost:5000/auth/redirect` (dev) or your production URL
+- **Redirect URIs (all three):**
+  - `http://localhost:5000/auth/redirect` (local development)
+  - `https://dev.thewheelgroup.info/auth/redirect` (dev/staging)
+  - `https://portal.thewheelgroup.info/auth/redirect` (production)
 - **API Permissions:** `User.Read` (Microsoft Graph)
 - **Client Secret:** Generate under Certificates & secrets
+- **App Roles:** Defined under App roles (see RBAC section below)
+
+---
+
+## Role-Based Access Control (RBAC)
+
+The portal enforces page-level access control using **Microsoft Entra ID App Roles**. Roles are assigned to users (or groups) in the Azure portal and are included in the `id_token_claims.roles` array on every login. The `@require_role` decorator in `auth/decorators.py` checks for the required role before allowing access to a route.
+
+### How It Works
+
+```
+User logs in via Microsoft SSO
+        │
+        ▼
+  id_token_claims includes "roles": ["Sales.Base", "Sales.Bookings"]
+        │
+        ▼
+  session["user"]["roles"] = ["Sales.Base", "Sales.Bookings"]
+        │
+        ▼
+  User navigates to /sales/bookings
+        │
+        ▼
+  @require_role('Sales.Bookings') checks session roles
+  ├── Role found → Allow access
+  ├── 'Admin' role found → Allow access (Admin bypasses all checks)
+  └── Role missing → HTTP 403 Forbidden
+```
+
+### App Roles
+
+| Role Name          | Purpose                                | Grants Access To                     |
+|--------------------|----------------------------------------|--------------------------------------|
+| `Admin`            | Full access to everything              | All pages (bypasses all role checks) |
+| `Sales.Base`       | Access to the Sales department hub     | `/sales` (report menu)               |
+| `Sales.Bookings`   | View daily bookings + export           | `/sales/bookings`, `/sales/bookings/export/*` |
+| `Sales.OpenOrders` | View open orders + export              | `/sales/open-orders`, `/sales/open-orders/export/*` |
+
+### Role Enforcement Points
+
+| Route Pattern                | Decorator                    | Notes                          |
+|------------------------------|------------------------------|--------------------------------|
+| `/sales`                     | `@require_role('Sales.Base')`| Sales department hub           |
+| `/sales/bookings`            | `@require_role('Sales.Bookings')` | Dashboard view            |
+| `/sales/bookings/export`     | `@require_role('Sales.Bookings')` | Excel download            |
+| `/sales/bookings/export/us`  | `@require_role('Sales.Bookings')` | Excel download (US only)  |
+| `/sales/bookings/export/ca`  | `@require_role('Sales.Bookings')` | Excel download (CA only)  |
+| `/sales/open-orders`         | `@require_role('Sales.OpenOrders')` | Dashboard view          |
+| `/sales/open-orders/export`  | `@require_role('Sales.OpenOrders')` | Excel download          |
+| `/sales/open-orders/export/us`| `@require_role('Sales.OpenOrders')` | Excel download (US)    |
+| `/sales/open-orders/export/ca`| `@require_role('Sales.OpenOrders')` | Excel download (CA)    |
+
+### UI Behavior
+
+The department hub (`index.html`) and sales report menu (`sales/index.html`) use Jinja2 conditionals to show or hide cards based on the user's roles:
+
+- Users **with** the required role (or `Admin`) see a clickable card with a green "Live" badge.
+- Users **without** the required role see a dimmed, non-clickable card with a "No Access" badge.
+- Departments not yet built (Warehouse, Accounting, HR) show a "Coming Soon" badge for everyone.
+
+### Setting Up App Roles in Azure
+
+1. Go to **Azure Portal** → **App registrations** → select your app (`effc40c2-...`)
+2. Click **App roles** in the left sidebar
+3. Click **Create app role** for each role:
+   - Display name: `Sales Base Access`
+   - Allowed member types: `Users/Groups`
+   - Value: `Sales.Base`
+   - Description: `Access to the Sales department hub`
+4. Repeat for `Sales.Bookings`, `Sales.OpenOrders`, and `Admin`
+5. Go to **Enterprise applications** → select your app → **Users and groups**
+6. Click **Add user/group** → select the user → select the role(s) → **Assign**
+
+**Important:** Roles are assigned under **Enterprise applications**, not App registrations. The App registration defines what roles exist; the Enterprise application assigns them to users.
 
 ---
 
@@ -344,15 +432,20 @@ On **app startup**, both jobs run once immediately via `refresh_all_on_startup()
 
 After login, users land on the department hub — a card-based grid showing all departments. Currently **Sales** is live; Warehouse, Accounting, and HR are shown as "Coming Soon" with disabled cards. Each card has a unique accent color (Sales: blue, Warehouse: amber, Accounting: green, HR: purple).
 
+**Role-aware visibility:** The Sales card is only clickable if the user has the `Sales.Base` or `Admin` role. Users without access see a dimmed card with a "No Access" badge instead of "Live."
+
 ### Sales Report Menu (`/sales`)
 
-A report selection page with cards for each available report. Currently **Daily Bookings** and **Open Sales Orders** are live; Daily Shipments and Territory Performance are shown as "Coming Soon." Each card shows a status badge ("Live" in green or "Coming Soon" in gray).
+A report selection page with cards for each available report. Currently **Daily Bookings** and **Open Sales Orders** are live; Daily Shipments and Territory Performance are shown as "Coming Soon." Each card shows a status badge ("Live" in green, "No Access" in gray, or "Coming Soon" in gray).
+
+**Role-aware visibility:** Bookings cards require `Sales.Bookings` (or `Admin`). Open Orders cards require `Sales.OpenOrders` (or `Admin`). Cards for reports the user cannot access are shown as disabled with "No Access."
 
 ---
 
 ### Daily Bookings Dashboard
 
 **Route:** `/sales/bookings`
+**Required Role:** `Sales.Bookings` or `Admin`
 **Refresh:** Auto-refresh every 10 minutes (designed for TV/monitor display)
 **Data Source:** `sotran` rows where `ordate = today`
 
@@ -414,6 +507,7 @@ Booking $ = origqtyord × price × (1 - disc / 100)
 ### Open Sales Orders Dashboard
 
 **Route:** `/sales/open-orders`
+**Required Role:** `Sales.OpenOrders` or `Admin`
 **Refresh:** Every 60 minutes (background), no auto-refresh on client — designed for on-demand desktop use
 **Data Source:** All currently open `sotran` lines (no date filter)
 
@@ -434,19 +528,19 @@ Displays the total value of all open (unfulfilled) sales order lines across both
 
 1. **Region Header** — US flag icon, title, "Export US" button
 2. **Summary Cards** — Four KPI cards:
-   - **Total Open Amount** (green) — sum of all open line values
+   - **Total Open Amount** (green) — sum of all open line values, with a **Released** sub-line showing the dollar amount and percentage of open orders that have `somast.release = 'Y'`
    - **Open Units** (blue) — sum of `qtyord` across all open lines
    - **Open Orders** (amber) — count of distinct sales order numbers (`sono`)
    - **Open Lines** (purple) — count of individual line items
 3. **Side-by-Side Rankings** — Two tables displayed in a 50/50 grid:
-   - **By Territory** — Territories ranked by total open dollar value
-   - **By Salesman** — Salesmen ranked by total open dollar value (raw salesman codes from `sotran.salesmn`)
+   - **By Territory** — Territories ranked by total open dollar value, with Open $ and Released $ columns
+   - **By Salesman** — Salesmen ranked by total open dollar value, with Open $ and Released $ columns (raw salesman codes from `sotran.salesmn`)
 
 **Canada Section (Canada — PRO06):**
 
 1. **Region Header** — Canadian flag, "Export CA" button, live exchange rate badge (refreshed hourly)
-2. **Summary Cards** — Same four cards with CAD prefix and USD equivalent on the amount card
-3. **Side-by-Side Rankings** — Territory and Salesman tables, each with an additional "≈ USD" column
+2. **Summary Cards** — Same four cards with CAD prefix, USD equivalent on the amount card, and Released sub-line with CAD and USD equivalents
+3. **Side-by-Side Rankings** — Territory and Salesman tables, each with Open $ (CAD), Released (CAD), ≈ USD, and Rank columns
 
 **Open Orders SQL Filter Logic:**
 
@@ -466,6 +560,7 @@ Plus Python-side filtering: excluded customers (same 7 internal accounts as book
 - `qtyord > 0` — The ERP updates `qtyord` as shipments go out. It represents the **remaining open quantity**, not the original quantity ordered. When `qtyord` reaches 0, the line is fully shipped.
 - `sostat NOT IN ('C', 'V', 'X')` — Excludes lines that are closed (fully invoiced), voided, or cancelled at the line level.
 - `somast.sostat <> 'C'` — Excludes lines belonging to orders that are fully closed at the header level (uses `INNER JOIN` to enforce this).
+- `somast.release` — Tracked as a flag (`'Y'` = released). Released amounts are shown separately on the dashboard so users can see how much of the open order backlog has been approved for fulfillment.
 - **No `currhist` filter** — Unlike bookings, open orders does not filter on `currhist`. The `qtyord > 0` and `sostat` filters are sufficient to identify genuinely open lines.
 - **No date filter** — All open orders are included regardless of when they were placed.
 
@@ -479,6 +574,7 @@ Open $ = qtyord × price × (1 - disc / 100)
 
 | Aspect            | Bookings                    | Open Orders                    |
 |-------------------|-----------------------------|--------------------------------|
+| Required role     | `Sales.Bookings`            | `Sales.OpenOrders`             |
 | Date filter       | Today only (`ordate = today`) | None — all open lines          |
 | Refresh interval  | 10 minutes                  | 60 minutes                     |
 | Auto-refresh UI   | Yes (TV/kiosk mode)         | No (on-demand desktop use)     |
@@ -487,7 +583,8 @@ Open $ = qtyord × price × (1 - disc / 100)
 | sostat exclusion   | `V`, `X`                    | `C`, `V`, `X`                  |
 | currhist filter    | `currhist <> 'X'`           | Not applied                    |
 | Rankings           | Territory only              | Territory + Salesman side-by-side |
-| Release column     | Not included                | Included (`somast.release`)    |
+| Released tracking  | Not included                | Included (`somast.release`)    |
+| Release column     | Not included                | Included in export             |
 | `somast` join      | `LEFT JOIN`                 | `INNER JOIN` (enforces order-level filter) |
 
 ---
@@ -628,32 +725,32 @@ All exported files are built by `services/excel_helper.py` with consistent forma
 
 | #  | Header                      | Source Field           | Format       |
 |----|-----------------------------|------------------------|--------------|
-| 1  | Sales Order                 | `tr.sono`              | Text         |
-| 2  | Line#                       | `tr.tranlineno`        | `#,##0`      |
-| 3  | Order Date                  | `tr.ordate`            | `MM/DD/YYYY` |
-| 4  | Customer No                 | `tr.custno`            | Text         |
-| 5  | Customer Name               | `cu.company`           | Text         |
-| 6  | Item                        | `tr.item`              | Text         |
-| 7  | Description                 | `tr.descrip`           | Text         |
-| 8  | Product Line                | `ic.plinid`            | Text         |
-| 9  | Orig Qty Ordered            | `tr.origqtyord`        | `#,##0`      |
-| 10 | Open Qty                    | `tr.qtyord`            | `#,##0`      |
-| 11 | Qty Shipped                 | `tr.qtyshp`            | `#,##0`      |
-| 12 | Unit Price                  | `tr.price`             | `$#,##0.00`  |
-| 13 | Discount %                  | `tr.disc`              | `0.000`      |
-| 14 | Open Amount                 | `qtyord × price × (1-disc/100)` | `$#,##0.00` |
-| 15 | Line Status                 | `tr.sostat`            | Text         |
-| 16 | Order Type                  | `tr.sotype`            | Text         |
-| 17 | Release                     | `sm.release`           | Text         |
-| 18 | Salesman                    | `tr.salesmn`           | Text         |
+| 1  | Sales Order (sono)          | `tr.sono`              | Text         |
+| 2  | Line# (tranlineno)          | `tr.tranlineno`        | `#,##0`      |
+| 3  | Order Date (ordate)         | `tr.ordate`            | `MM/DD/YYYY` |
+| 4  | Customer No (custno)        | `tr.custno`            | Text         |
+| 5  | Customer Name (company)     | `cu.company`           | Text         |
+| 6  | Item (item)                 | `tr.item`              | Text         |
+| 7  | Description (descrip)       | `tr.descrip`           | Text         |
+| 8  | Product Line (plinid)       | `ic.plinid`            | Text         |
+| 9  | Orig Qty Ordered (origqtyord)| `tr.origqtyord`       | `#,##0`      |
+| 10 | Open Qty (qtyord)           | `tr.qtyord`            | `#,##0`      |
+| 11 | Qty Shipped (qtyshp)        | `tr.qtyshp`            | `#,##0`      |
+| 12 | Unit Price (price)          | `tr.price`             | `$#,##0.00`  |
+| 13 | Discount % (disc)           | `tr.disc`              | `0.000`      |
+| 14 | Open Amount (calculated)    | `qtyord × price × (1-disc/100)` | `$#,##0.00` |
+| 15 | Line Status (sostat)        | `tr.sostat`            | Text         |
+| 16 | Order Type (sotype)         | `tr.sotype`            | Text         |
+| 17 | Release (release)           | `sm.release`           | Text         |
+| 18 | Salesman (salesmn)          | `tr.salesmn`           | Text         |
 | 19 | Territory (mapped)          | Python-mapped          | Text         |
-| 20 | Terr Code                   | `CASE cu.terr/sm.terr` | Text         |
-| 21 | SO Mast Terr                | `sm.terr`              | Text         |
-| 22 | Cust Terr                   | `cu.terr`              | Text         |
-| 23 | Location                    | `tr.loctid`            | Text         |
-| 24 | Request Date                | `tr.rqdate`            | `MM/DD/YYYY` |
-| 25 | Ship Date                   | `tr.shipdate`          | `MM/DD/YYYY` |
-| 26 | Ship Via                    | `sm.shipvia`           | Text         |
+| 20 | Terr Code (resolved)        | `CASE cu.terr/sm.terr` | Text         |
+| 21 | SO Mast Terr (sm.terr)      | `sm.terr`              | Text         |
+| 22 | Cust Terr (cu.terr)         | `cu.terr`              | Text         |
+| 23 | Location (loctid)           | `tr.loctid`            | Text         |
+| 24 | Request Date (rqdate)       | `tr.rqdate`            | `MM/DD/YYYY` |
+| 25 | Ship Date (shipdate)        | `tr.shipdate`          | `MM/DD/YYYY` |
+| 26 | Ship Via (shipvia)          | `sm.shipvia`           | Text         |
 
 ---
 
@@ -699,15 +796,16 @@ All configuration lives in `config.py`, loaded from environment variables via `p
 
 ### Authentication
 
-| Variable        | Required | Default                       | Description                      |
-|-----------------|----------|-------------------------------|----------------------------------|
-| `SECRET_KEY`    | Yes      | `dev-key-change-in-production`| Flask session signing key        |
-| `CLIENT_ID`     | Yes      | —                             | Azure App Registration client ID |
-| `CLIENT_SECRET` | Yes      | —                             | Azure App Registration secret    |
-| `TENANT_ID`     | Yes      | —                             | Azure AD tenant ID               |
-| `AUTHORITY`     | No       | Auto-built from tenant        | Full authority URL               |
-| `REDIRECT_PATH` | No       | `/auth/redirect`              | OAuth callback path              |
-| `SCOPE`         | No       | `User.Read`                   | Microsoft Graph permissions      |
+| Variable                | Required | Default                       | Description                      |
+|-------------------------|----------|-------------------------------|----------------------------------|
+| `SECRET_KEY`            | Yes      | `dev-key-change-in-production`| Flask session signing key        |
+| `CLIENT_ID`             | Yes      | —                             | Azure App Registration client ID |
+| `CLIENT_SECRET`         | Yes      | —                             | Azure App Registration secret    |
+| `TENANT_ID`             | Yes      | —                             | Azure AD tenant ID               |
+| `AUTHORITY`             | No       | Auto-built from tenant        | Full authority URL               |
+| `REDIRECT_PATH`         | No       | `/auth/redirect`              | OAuth callback path              |
+| `REDIRECT_URI_OVERRIDE` | No       | (empty — dynamic)             | Hardcode full redirect URI if needed |
+| `SCOPE`                 | No       | `User.Read`                   | Microsoft Graph permissions      |
 
 ### Database
 
@@ -753,7 +851,7 @@ All configuration lives in `config.py`, loaded from environment variables via `p
 
 - Python 3.12 or higher
 - ODBC Driver 18 for SQL Server ([Download](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server))
-- An Azure App Registration with `User.Read` permission and a client secret
+- An Azure App Registration with `User.Read` permission, a client secret, and App Roles defined
 - Network access to the SQL Server instance (port 1433)
 - Outbound HTTPS access to `api.frankfurter.app` and `open.er-api.com` for exchange rates
 
@@ -803,6 +901,11 @@ TENANT_ID=your-azure-tenant-id
 AUTHORITY=https://login.microsoftonline.com/your-tenant-id
 SCOPE=User.Read
 
+# Redirect URI Override (optional — leave empty for dynamic auto-detection)
+# Only set this if the auto-detection doesn't work in your environment.
+# The app automatically forces https:// for non-localhost hosts.
+# REDIRECT_URI_OVERRIDE=https://portal.thewheelgroup.info/auth/redirect
+
 # SQL Server
 DB_DRIVER={ODBC Driver 18 for SQL Server}
 DB_SERVER=your-sql-server.domain.com
@@ -815,6 +918,8 @@ DB_ORDERS_CA=PRO06
 ```
 
 > **Important:** The `.env` file is listed in `.gitignore` and must never be committed.
+
+> **Windows note:** If Windows won't let you create a file named `.env`, name it `_env` instead. The config loader automatically tries `_env` as a fallback.
 
 ---
 
@@ -830,6 +935,7 @@ The app starts on `http://localhost:5000`. On startup you will see:
 
 ```
 INFO:config:Config validated. CLIENT_ID=effc40c2...
+INFO:config:Config: No REDIRECT_URI_OVERRIDE — will build redirect_uri dynamically from request.
 INFO:__main__:Scheduler started.
 INFO:__main__:Scheduled 'bookings_refresh' every 600s
 INFO:__main__:Scheduled 'open_orders_refresh' every 3600s
@@ -838,14 +944,14 @@ INFO:services.data_worker:Worker: ═══ Initial startup refresh (all data) �
 INFO:services.data_worker:Exchange rate fetched: 1 CAD = 0.7198 USD (from https://api.frankfurter.app/latest?from=CAD&to=USD)
 INFO:services.data_worker:Worker: Refreshing bookings cache (US + CA)...
 INFO:services.bookings_service:US Bookings snapshot: $125,430 across 12 territories (847 raw rows processed)
-INFO:services.data_worker:Worker: US bookings cache updated.
+INFO:services.data_worker:Worker: US bookings snapshot cache updated.
 INFO:services.bookings_service:CA Bookings snapshot: $18,200 across 3 territories (96 raw rows processed)
-INFO:services.data_worker:Worker: CA bookings cache updated.
+INFO:services.data_worker:Worker: CA bookings snapshot cache updated.
 INFO:services.data_worker:Worker: Refreshing open orders cache (US + CA)...
-INFO:services.open_orders_service:US Open Orders snapshot: $2,345,678 across 892 orders, 4120 lines (5200 raw rows processed)
-INFO:services.data_worker:Worker: US open orders cache updated.
-INFO:services.open_orders_service:CA Open Orders snapshot: $456,789 across 210 orders, 890 lines (1100 raw rows processed)
-INFO:services.data_worker:Worker: CA open orders cache updated.
+INFO:services.open_orders_service:US Open Orders snapshot: $2,345,678 ($1,890,000 released) across 892 orders, 4120 lines (5200 raw rows processed)
+INFO:services.data_worker:Worker: US open orders snapshot cache updated.
+INFO:services.open_orders_service:CA Open Orders snapshot: $456,789 ($320,000 released) across 210 orders, 890 lines (1100 raw rows processed)
+INFO:services.data_worker:Worker: CA open orders snapshot cache updated.
 INFO:services.data_worker:Worker: ═══ Initial startup refresh complete ═══
 ```
 
@@ -870,33 +976,135 @@ serve(app, host='0.0.0.0', port=5000)
 ## Deployment Notes
 
 - **Session security:** In production, set `SECRET_KEY` to a strong random value (e.g., `python -c "import secrets; print(secrets.token_hex(32))"`)
-- **Redirect URI:** Update the Azure App Registration redirect URI to match your production domain
-- **HTTPS:** Use a reverse proxy (nginx, IIS) with SSL termination in front of Waitress
-- **Firewall:** Ensure the app server can reach the SQL Server on port 1433
+- **Redirect URIs:** Register all environment URLs in the Azure App Registration under Authentication → Web platform. The app forces `https://` automatically for non-localhost hosts, so you only need `https://` URIs registered in Azure (plus `http://localhost:5000/auth/redirect` for local dev).
+- **HTTPS:** Use a reverse proxy (nginx, IIS) with SSL termination in front of Waitress. The app's `_build_redirect_uri()` function handles the http→https conversion automatically.
+- **Firewall:** Ensure the app server can reach the SQL Server on port 1433.
 - **Exchange Rate APIs:** Ensure outbound HTTPS (port 443) is open to `api.frankfurter.app` and `open.er-api.com`. If blocked, the fallback rate of 0.72 will be used automatically.
-- **TV Displays:** Open `http://your-server:5000/sales/bookings` in a full-screen browser (kiosk mode). The page auto-refreshes every 10 minutes with no user interaction needed. The open orders page does NOT auto-refresh and is intended for on-demand use.
+- **TV Displays:** Open `https://your-server/sales/bookings` in a full-screen browser (kiosk mode). The page auto-refreshes every 10 minutes with no user interaction needed. The open orders page does NOT auto-refresh and is intended for on-demand use.
 - **SQL Server Load:** The background worker handles ALL SQL queries — neither dashboards nor Excel exports hit the database at request time. Bookings refresh runs 4 queries per cycle (2 snapshot + 2 raw) × 6 cycles/hour = 24 queries/hour. Open orders runs 4 queries per cycle × 1 cycle/hour = 4 queries/hour. Total: ~28 lightweight `SELECT` queries per hour with `NOLOCK`, regardless of how many users are viewing dashboards or downloading exports.
+- **App Roles:** After defining roles in the App Registration, assign them to users under Enterprise Applications → Users and groups. Users who log in before being assigned roles will see "No Access" badges on all report cards.
+
+---
+
+## HTTPS & Redirect URI Handling
+
+This section documents a common deployment issue and how the app handles it.
+
+### The Problem
+
+When Flask runs behind a reverse proxy (IIS, nginx) with SSL termination, `request.url_root` returns `http://` even though the user accessed the site via `https://`. Microsoft Entra ID requires `https://` for all redirect URIs except `localhost`, so the OAuth flow fails with error `AADSTS50011: The redirect URI does not match`.
+
+### The Solution
+
+The `_build_redirect_uri()` function in `app.py` handles this automatically:
+
+```
+1. If REDIRECT_URI_OVERRIDE is set in .env → use it verbatim (for edge cases)
+2. Else build from request.url_root:
+   a. Extract the hostname
+   b. If hostname is NOT localhost/127.0.0.1 → force https://
+   c. If hostname IS localhost/127.0.0.1 → keep http:// (for local dev)
+3. Append /auth/redirect
+```
+
+This means:
+
+| Environment                          | `request.url_root`                     | Redirect URI Sent to Azure              |
+|--------------------------------------|----------------------------------------|-----------------------------------------|
+| Local dev                            | `http://localhost:5000/`               | `http://localhost:5000/auth/redirect`   |
+| Dev server (behind proxy)            | `http://dev.thewheelgroup.info/`       | `https://dev.thewheelgroup.info/auth/redirect` |
+| Production (behind proxy)            | `http://portal.thewheelgroup.info/`    | `https://portal.thewheelgroup.info/auth/redirect` |
+
+### Azure Redirect URIs to Register
+
+All three must be added in Azure Portal → App registrations → Authentication → Web:
+
+- `http://localhost:5000/auth/redirect`
+- `https://dev.thewheelgroup.info/auth/redirect`
+- `https://portal.thewheelgroup.info/auth/redirect`
 
 ---
 
 ## URL Reference
 
-| Route                          | Method | Auth Required | Description                                |
-|--------------------------------|--------|---------------|--------------------------------------------|
-| `/login_page`                  | GET    | No            | Login page with Microsoft SSO button       |
-| `/login`                       | GET    | No            | Initiates OAuth flow                       |
-| `/auth/redirect`               | GET    | No            | OAuth callback                             |
-| `/logout`                      | GET    | No            | Clears session, redirects to MS logout     |
-| `/`                            | GET    | Yes           | Department hub                             |
-| `/sales`                       | GET    | Yes           | Sales report menu                          |
-| `/sales/bookings`              | GET    | Yes           | Daily bookings dashboard (US + CA)         |
-| `/sales/bookings/export`       | GET    | Yes           | Excel export: bookings US + Canada combined|
-| `/sales/bookings/export/us`    | GET    | Yes           | Excel export: bookings US only             |
-| `/sales/bookings/export/ca`    | GET    | Yes           | Excel export: bookings Canada only         |
-| `/sales/open-orders`           | GET    | Yes           | Open orders dashboard (US + CA)            |
-| `/sales/open-orders/export`    | GET    | Yes           | Excel export: open orders US + Canada combined |
-| `/sales/open-orders/export/us` | GET    | Yes           | Excel export: open orders US only          |
-| `/sales/open-orders/export/ca` | GET    | Yes           | Excel export: open orders Canada only      |
+| Route                          | Method | Auth Required | Role Required        | Description                                |
+|--------------------------------|--------|---------------|----------------------|--------------------------------------------|
+| `/login_page`                  | GET    | No            | —                    | Login page with Microsoft SSO button       |
+| `/login`                       | GET    | No            | —                    | Initiates OAuth flow                       |
+| `/auth/redirect`               | GET    | No            | —                    | OAuth callback                             |
+| `/logout`                      | GET    | No            | —                    | Clears session, redirects to MS logout     |
+| `/`                            | GET    | Yes           | —                    | Department hub (role-aware card visibility)|
+| `/sales`                       | GET    | Yes           | `Sales.Base`         | Sales report menu (role-aware)             |
+| `/sales/bookings`              | GET    | Yes           | `Sales.Bookings`     | Daily bookings dashboard (US + CA)         |
+| `/sales/bookings/export`       | GET    | Yes           | `Sales.Bookings`     | Excel export: bookings US + Canada combined|
+| `/sales/bookings/export/us`    | GET    | Yes           | `Sales.Bookings`     | Excel export: bookings US only             |
+| `/sales/bookings/export/ca`    | GET    | Yes           | `Sales.Bookings`     | Excel export: bookings Canada only         |
+| `/sales/open-orders`           | GET    | Yes           | `Sales.OpenOrders`   | Open orders dashboard (US + CA)            |
+| `/sales/open-orders/export`    | GET    | Yes           | `Sales.OpenOrders`   | Excel export: open orders US + CA combined |
+| `/sales/open-orders/export/us` | GET    | Yes           | `Sales.OpenOrders`   | Excel export: open orders US only          |
+| `/sales/open-orders/export/ca` | GET    | Yes           | `Sales.OpenOrders`   | Excel export: open orders Canada only      |
+
+> **Note:** The `Admin` role bypasses all role checks. Users with `Admin` can access every route.
+
+---
+
+## Troubleshooting
+
+### AADSTS50011 — Redirect URI Mismatch
+
+**Symptom:** Error page says "The redirect URI 'http://...' does not match the redirect URIs configured for the application."
+
+**Cause:** The redirect URI sent to Azure uses `http://` but only `https://` URIs are registered (Azure requires `https://` for non-localhost).
+
+**Fix:** The `_build_redirect_uri()` function should handle this automatically. If it doesn't:
+1. Check that `app.py` has the `_build_redirect_uri()` function with the `https://` forcing logic.
+2. Verify all three redirect URIs are registered in Azure (see HTTPS section above).
+3. As a last resort, set `REDIRECT_URI_OVERRIDE=https://your-domain/auth/redirect` in `.env`.
+
+### AADSTS50148 — PKCE Mismatch
+
+**Symptom:** Authentication fails after the Microsoft login page.
+
+**Cause:** Using `acquire_token_by_authorization_code()` instead of `acquire_token_by_auth_code_flow()`.
+
+**Fix:** Ensure `auth/entra_auth.py` uses `acquire_token_by_auth_code_flow()` which handles PKCE automatically.
+
+### 403 Forbidden — Access Denied
+
+**Symptom:** User sees "Access Denied: You need the 'Sales.Bookings' role to view this page."
+
+**Cause:** The user doesn't have the required App Role assigned.
+
+**Fix:**
+1. Go to Azure Portal → Enterprise applications → select your app → Users and groups
+2. Click Add user/group → select the user → select the missing role → Assign
+3. User must log out and log back in for new roles to take effect
+
+### Empty Dashboard — "Unable to load data"
+
+**Symptom:** Dashboard shows error banner and no data.
+
+**Cause:** SQL Server is unreachable, or the initial startup refresh failed.
+
+**Fix:**
+1. Check SQL Server connectivity: `telnet twg-sql-01.thewheelgroup.com 1433`
+2. Verify credentials in `.env`
+3. Check the console logs for specific SQL error messages
+4. The next scheduled refresh (10 min for bookings, 60 min for open orders) will retry automatically
+
+### Exchange Rate Shows 0.7200
+
+**Symptom:** The exchange rate badge always shows exactly `0.7200`.
+
+**Cause:** Both exchange rate APIs are unreachable (likely a firewall blocking outbound HTTPS).
+
+**Fix:** Allow outbound HTTPS to `api.frankfurter.app` and `open.er-api.com`. The 0.72 fallback rate is still a reasonable approximation and won't break the dashboard.
+
+### Windows: Cannot Create .env File
+
+**Symptom:** Windows Explorer won't let you create a file named `.env`.
+
+**Fix:** Name it `_env` instead. The config loader tries `.env` first, then falls back to `_env` automatically.
 
 ---
 
@@ -905,8 +1113,8 @@ serve(app, host='0.0.0.0', port=5000)
 | Module           | Status        | Description                                    |
 |------------------|---------------|------------------------------------------------|
 | **Sales**        |               |                                                |
-| Daily Bookings   | ✅ Live        | Today's bookings by territory, auto-refresh for TV, CAD→USD, Excel export |
-| Open Sales Orders| ✅ Live        | All open order lines by territory + salesman, hourly refresh, CAD→USD, Excel export |
+| Daily Bookings   | ✅ Live        | Today's bookings by territory, auto-refresh for TV, CAD→USD, Excel export, role-protected |
+| Open Sales Orders| ✅ Live        | All open order lines by territory + salesman, released tracking, hourly refresh, CAD→USD, Excel export, role-protected |
 | Shipments        | 🔜 Planned    | Daily shipments by warehouse                   |
 | Territory Perf   | 🔜 Planned    | Monthly trends with period comparison          |
 | **Warehouse**    | 🔜 Planned    | Inventory levels, fulfillment tracking         |
