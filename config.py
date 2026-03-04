@@ -33,6 +33,13 @@ class Config:
     REDIRECT_PATH = os.getenv('REDIRECT_PATH', '/auth/redirect')
     SCOPE = [os.getenv('SCOPE', 'User.Read')]
 
+    # Optional: Hardcode the full redirect URI for environments where
+    # request.url_root doesn't match Azure's registered URI (e.g. behind
+    # a reverse proxy, custom domain, or dev server).
+    # Example: http://dev.thewheelgroup.info/auth/redirect
+    # If not set (empty/None), the app builds it dynamically from the request.
+    REDIRECT_URI_OVERRIDE = os.getenv('REDIRECT_URI_OVERRIDE', '').strip() or None
+
     # SQL Server Settings
     DB_DRIVER = os.getenv('DB_DRIVER', '{ODBC Driver 18 for SQL Server}')
     DB_SERVER = os.getenv('DB_SERVER')
@@ -91,4 +98,8 @@ class Config:
             raise SystemExit("Cannot start: missing authentication configuration.")
 
         logger.info(f"Config validated. CLIENT_ID={cls.CLIENT_ID[:8]}...")
+        if cls.REDIRECT_URI_OVERRIDE:
+            logger.info(f"Config: REDIRECT_URI_OVERRIDE is set: {cls.REDIRECT_URI_OVERRIDE}")
+        else:
+            logger.info("Config: No REDIRECT_URI_OVERRIDE — will build redirect_uri dynamically from request.")
         return True

@@ -23,6 +23,30 @@ logging.getLogger('apscheduler').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
+def _build_redirect_uri():
+    """
+    Build the OAuth redirect URI, forcing HTTPS for non-localhost environments.
+    Behind a reverse proxy (IIS/nginx with SSL termination), Flask sees http://
+    from request.url_root even though users access via https://. Azure Entra ID
+    requires https:// for all redirect URIs except localhost, so we force it.
+    """
+    # If an explicit override is set in .env, use it as-is
+    if Config.REDIRECT_URI_OVERRIDE:
+        return Config.REDIRECT_URI_OVERRIDE
+
+    # Build from request
+    base = request.url_root.rstrip('/')
+
+    # Force https for anything that isn't localhost/127.0.0.1
+    host = request.host.split(':')[0]
+    if host not in ('localhost', '127.0.0.1') and base.startswith('http://'):
+        base = 'https://' + base[len('http://'):]
+
+    redirect_uri = base + Config.REDIRECT_PATH
+    logger.info(f"Login: Built redirect_uri: {redirect_uri}")
+    return redirect_uri
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -76,7 +100,7 @@ def create_app():
     @app.route("/login")
     def login():
         try:
-            redirect_uri = request.url_root.rstrip('/') + Config.REDIRECT_PATH
+            redirect_uri = _build_redirect_uri()
 
             flow = auth_utils._build_msal_app().initiate_auth_code_flow(
                 Config.SCOPE,
