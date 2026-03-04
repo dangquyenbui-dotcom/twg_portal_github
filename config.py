@@ -36,9 +36,37 @@ class Config:
     # Optional: Hardcode the full redirect URI for environments where
     # request.url_root doesn't match Azure's registered URI (e.g. behind
     # a reverse proxy, custom domain, or dev server).
-    # Example: http://dev.thewheelgroup.info/auth/redirect
-    # If not set (empty/None), the app builds it dynamically from the request.
     REDIRECT_URI_OVERRIDE = os.getenv('REDIRECT_URI_OVERRIDE', '').strip() or None
+
+    # ── Security Group → Role Mapping ──
+    # Maps Entra ID Security Group Object IDs to internal role names.
+    # One user can belong to multiple groups = multiple roles (no more single-assignment limit).
+    # Paste each group's Object ID from Entra ID → Groups → group → Overview → Object ID.
+    GROUP_ROLE_MAP = {}
+
+    @classmethod
+    def _build_group_role_map(cls):
+        """
+        Build the group-to-role mapping from environment variables.
+        Each GROUP_* env var maps a Security Group Object ID to an internal role name.
+        """
+        mapping = {}
+        group_vars = {
+            'GROUP_ADMIN':        'Admin',
+            'GROUP_SALES_VIEWER': 'Sales.Viewer',
+            'GROUP_SALES_FULL':   'Sales.Full',
+            'GROUP_WAREHOUSE':    'Warehouse',
+            'GROUP_FINANCE':      'Finance',
+            'GROUP_HR':           'HR',
+        }
+        for env_key, role_name in group_vars.items():
+            group_id = os.getenv(env_key, '').strip()
+            if group_id:
+                mapping[group_id] = role_name
+                logger.info(f"Group mapping: {env_key} ({group_id[:8]}...) → {role_name}")
+            else:
+                logger.debug(f"Group mapping: {env_key} not set — skipping")
+        cls.GROUP_ROLE_MAP = mapping
 
     # SQL Server Settings
     DB_DRIVER = os.getenv('DB_DRIVER', '{ODBC Driver 18 for SQL Server}')
@@ -96,6 +124,14 @@ class Config:
             logger.error(f"   Expected .env location: {Path(__file__).resolve().parent / '.env'}")
             logger.error("=" * 60)
             raise SystemExit("Cannot start: missing authentication configuration.")
+
+        # Build group → role mapping from env vars
+        cls._build_group_role_map()
+
+        if not cls.GROUP_ROLE_MAP:
+            logger.warning("WARNING: No GROUP_* environment variables set. No users will have any roles.")
+        else:
+            logger.info(f"Config validated. {len(cls.GROUP_ROLE_MAP)} security group(s) mapped.")
 
         logger.info(f"Config validated. CLIENT_ID={cls.CLIENT_ID[:8]}...")
         if cls.REDIRECT_URI_OVERRIDE:

@@ -8,6 +8,7 @@ from flask import Flask, session, redirect, url_for, request, render_template
 from config import Config
 from extensions import cache, scheduler
 import auth.entra_auth as auth_utils
+from auth.decorators import user_has_role
 from routes.main import main_bp
 from routes.sales import sales_bp
 from services.data_worker import refresh_bookings_and_rate, refresh_open_orders_scheduled, refresh_all_on_startup
@@ -30,14 +31,11 @@ def _build_redirect_uri():
     from request.url_root even though users access via https://. Azure Entra ID
     requires https:// for all redirect URIs except localhost, so we force it.
     """
-    # If an explicit override is set in .env, use it as-is
     if Config.REDIRECT_URI_OVERRIDE:
         return Config.REDIRECT_URI_OVERRIDE
 
-    # Build from request
     base = request.url_root.rstrip('/')
 
-    # Force https for anything that isn't localhost/127.0.0.1
     host = request.host.split(':')[0]
     if host not in ('localhost', '127.0.0.1') and base.startswith('http://'):
         base = 'https://' + base[len('http://'):]
@@ -47,11 +45,36 @@ def _build_redirect_uri():
     return redirect_uri
 
 
+def _resolve_roles_from_groups(group_ids):
+    """
+    Convert a list of Entra ID Security Group Object IDs into internal role names
+    using the GROUP_ROLE_MAP from config. Returns a list of role name strings.
+
+    Example:
+        group_ids = ["abc-123", "def-456"]
+        GROUP_ROLE_MAP = {"abc-123": "Sales.Full", "def-456": "Warehouse"}
+        returns ["Sales.Full", "Warehouse"]
+    """
+    if not group_ids:
+        return []
+
+    roles = []
+    for gid in group_ids:
+        role = Config.GROUP_ROLE_MAP.get(gid)
+        if role:
+            roles.append(role)
+
+    return roles
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
     Config.validate()
+
+    # --- Register Jinja2 global so templates can check roles with hierarchy ---
+    app.jinja_env.globals['user_has_role'] = user_has_role
 
     # --- Init Cache ---
     cache.init_app(app)
@@ -62,7 +85,6 @@ def create_app():
         scheduler.start()
         logger.info("Scheduler started.")
 
-    # Schedule bookings + exchange rate refresh every 10 minutes
     if not scheduler.get_job('bookings_refresh'):
         scheduler.add_job(
             id='bookings_refresh',
@@ -73,7 +95,6 @@ def create_app():
         )
         logger.info(f"Scheduled 'bookings_refresh' every {Config.DATA_REFRESH_INTERVAL}s")
 
-    # Schedule open orders refresh every 60 minutes (separate, lighter on SQL Server)
     if not scheduler.get_job('open_orders_refresh'):
         scheduler.add_job(
             id='open_orders_refresh',
@@ -84,12 +105,10 @@ def create_app():
         )
         logger.info(f"Scheduled 'open_orders_refresh' every {Config.OPEN_ORDERS_REFRESH_INTERVAL}s")
 
-    # --- Immediate refresh on startup so cache is never empty ---
     with app.app_context():
         logger.info("Running initial data refresh (all sources)...")
         refresh_all_on_startup()
 
-    # Shut down scheduler on exit
     atexit.register(lambda: scheduler.shutdown() if scheduler.running else None)
 
     # --- Register Blueprints ---
@@ -133,15 +152,25 @@ def create_app():
                 return render_template("login.html", error=error_msg)
 
             user_claims = result.get("id_token_claims")
+
+            # ── Resolve Security Group IDs → internal role names ──
+            group_ids = user_claims.get("groups", [])
+            roles = _resolve_roles_from_groups(group_ids)
+
             session["user"] = {
                 "name": user_claims.get("name"),
                 "email": user_claims.get("preferred_username"),
                 "oid": user_claims.get("oid"),
                 "tid": user_claims.get("tid"),
-                "roles": user_claims.get("roles", [])
+                "groups": group_ids,
+                "roles": roles,
             }
             session.pop("flow", None)
-            logger.info(f"User authenticated: {session['user'].get('email')} with roles {session['user'].get('roles')}")
+            logger.info(
+                f"User authenticated: {session['user'].get('email')} "
+                f"| groups: {len(group_ids)} "
+                f"| roles: {roles}"
+            )
             return redirect(url_for("main.index"))
 
         except Exception as e:
