@@ -5,7 +5,6 @@ TWG Portal - Main Application
 import logging
 import atexit
 from flask import Flask, session, redirect, url_for, request, render_template
-from werkzeug.middleware.proxy_fix import ProxyFix
 from config import Config
 from extensions import cache, scheduler
 import auth.entra_auth as auth_utils
@@ -26,16 +25,6 @@ logger = logging.getLogger(__name__)
 
 def create_app():
     app = Flask(__name__)
-
-    # ── ProxyFix: trust reverse proxy headers so request.url_root uses https:// ──
-    # This fixes AADSTS50011 redirect URI mismatch when running behind
-    # a reverse proxy (IIS, nginx, etc.) that terminates SSL.
-    # x_for=1   -> trust X-Forwarded-For (1 proxy)
-    # x_proto=1 -> trust X-Forwarded-Proto (http vs https)
-    # x_host=1  -> trust X-Forwarded-Host
-    # x_prefix=1 -> trust X-Forwarded-Prefix
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-
     app.config.from_object(Config)
 
     Config.validate()
@@ -124,10 +113,11 @@ def create_app():
                 "name": user_claims.get("name"),
                 "email": user_claims.get("preferred_username"),
                 "oid": user_claims.get("oid"),
-                "tid": user_claims.get("tid")
+                "tid": user_claims.get("tid"),
+                "roles": user_claims.get("roles", [])
             }
             session.pop("flow", None)
-            logger.info(f"User authenticated: {session['user'].get('email')}")
+            logger.info(f"User authenticated: {session['user'].get('email')} with roles {session['user'].get('roles')}")
             return redirect(url_for("main.index"))
 
         except Exception as e:

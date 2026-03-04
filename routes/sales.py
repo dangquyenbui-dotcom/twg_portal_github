@@ -13,6 +13,7 @@ from services.data_worker import (
     get_open_orders_from_cache, get_open_orders_raw_from_cache,
 )
 from services.excel_helper import build_export_workbook, send_workbook
+from auth.decorators import require_role
 
 sales_bp = Blueprint('sales', __name__, url_prefix='/sales')
 
@@ -136,6 +137,7 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/')
+@require_role('Sales.Base')
 def sales_home():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
@@ -147,6 +149,7 @@ def sales_home():
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/bookings')
+@require_role('Sales.Bookings')
 def bookings():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
@@ -172,6 +175,7 @@ def bookings():
 
 
 @sales_bp.route('/bookings/export')
+@require_role('Sales.Bookings')
 def bookings_export():
     """Export today's raw bookings data (US + Canada combined) — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -197,6 +201,7 @@ def bookings_export():
 
 
 @sales_bp.route('/bookings/export/us')
+@require_role('Sales.Bookings')
 def bookings_export_us():
     """Export today's raw US bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -215,6 +220,7 @@ def bookings_export_us():
 
 
 @sales_bp.route('/bookings/export/ca')
+@require_role('Sales.Bookings')
 def bookings_export_ca():
     """Export today's raw Canada bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -237,6 +243,7 @@ def bookings_export_ca():
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/open-orders')
+@require_role('Sales.OpenOrders')
 def open_orders():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
@@ -262,6 +269,7 @@ def open_orders():
 
 
 @sales_bp.route('/open-orders/export')
+@require_role('Sales.OpenOrders')
 def open_orders_export():
     """Export open orders (US + Canada combined) — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -287,6 +295,7 @@ def open_orders_export():
 
 
 @sales_bp.route('/open-orders/export/us')
+@require_role('Sales.OpenOrders')
 def open_orders_export_us():
     """Export open orders US only — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -305,6 +314,7 @@ def open_orders_export_us():
 
 
 @sales_bp.route('/open-orders/export/ca')
+@require_role('Sales.OpenOrders')
 def open_orders_export_ca():
     """Export open orders Canada only — reads from cache, zero SQL."""
     if not session.get("user"):
