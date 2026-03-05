@@ -1,6 +1,11 @@
 """
 Sales Blueprint
 Routes for all sales reports: bookings dashboard, open orders dashboard, and Excel exports.
+
+Role mapping (using Security Groups with hierarchy):
+  /sales                  → Sales.Base   (implied by Sales.Viewer and Sales.Full)
+  /sales/bookings/*       → Sales.Viewer (implied by Sales.Full)
+  /sales/open-orders/*    → Sales.Full
 """
 
 import math
@@ -92,7 +97,6 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
     For Canada, adds USD equivalents to monetary fields.
     """
     if snapshot is None:
-        # Return empty defaults — works for both bookings and open orders
         return {
             "total_amount": 0, "total_amount_usd": 0,
             "total_released_amount": 0, "total_released_amount_usd": 0,
@@ -133,7 +137,7 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Sales Home
+# Sales Home — requires Sales.Base (implied by Viewer and Full)
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/')
@@ -145,11 +149,11 @@ def sales_home():
 
 
 # ═══════════════════════════════════════════════════════════════
-# BOOKINGS — Dashboard + Exports
+# BOOKINGS — requires Sales.Viewer (implied by Sales.Full)
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/bookings')
-@require_role('Sales.Bookings')
+@require_role('Sales.Viewer')
 def bookings():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
@@ -175,7 +179,7 @@ def bookings():
 
 
 @sales_bp.route('/bookings/export')
-@require_role('Sales.Bookings')
+@require_role('Sales.Viewer')
 def bookings_export():
     """Export today's raw bookings data (US + Canada combined) — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -201,7 +205,7 @@ def bookings_export():
 
 
 @sales_bp.route('/bookings/export/us')
-@require_role('Sales.Bookings')
+@require_role('Sales.Viewer')
 def bookings_export_us():
     """Export today's raw US bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -220,7 +224,7 @@ def bookings_export_us():
 
 
 @sales_bp.route('/bookings/export/ca')
-@require_role('Sales.Bookings')
+@require_role('Sales.Viewer')
 def bookings_export_ca():
     """Export today's raw Canada bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -239,11 +243,11 @@ def bookings_export_ca():
 
 
 # ═══════════════════════════════════════════════════════════════
-# OPEN ORDERS — Dashboard + Exports
+# OPEN ORDERS — requires Sales.Full
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/open-orders')
-@require_role('Sales.OpenOrders')
+@require_role('Sales.Full')
 def open_orders():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
@@ -269,7 +273,7 @@ def open_orders():
 
 
 @sales_bp.route('/open-orders/export')
-@require_role('Sales.OpenOrders')
+@require_role('Sales.Full')
 def open_orders_export():
     """Export open orders (US + Canada combined) — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -295,7 +299,7 @@ def open_orders_export():
 
 
 @sales_bp.route('/open-orders/export/us')
-@require_role('Sales.OpenOrders')
+@require_role('Sales.Full')
 def open_orders_export_us():
     """Export open orders US only — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -314,7 +318,7 @@ def open_orders_export_us():
 
 
 @sales_bp.route('/open-orders/export/ca')
-@require_role('Sales.OpenOrders')
+@require_role('Sales.Full')
 def open_orders_export_ca():
     """Export open orders Canada only — reads from cache, zero SQL."""
     if not session.get("user"):

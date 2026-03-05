@@ -133,8 +133,8 @@
 
 <div class="dept-grid">
 
-    {# Only show Sales card if user has access #}
-    {% if 'Admin' in user.roles or 'Sales.Base' in user.roles %}
+    {# Sales card — uses hierarchy: Sales.Viewer and Sales.Full both imply Sales.Base #}
+    {% if user_has_role(user, 'Sales.Base') %}
     <a href="/sales" class="dept-card sales fade-in stagger-1">
         <div class="dept-icon sales">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">

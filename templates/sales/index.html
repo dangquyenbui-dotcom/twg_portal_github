@@ -152,8 +152,8 @@
 
 <div class="report-grid">
 
-    {# Only show Bookings card if user has access #}
-    {% if 'Admin' in user.roles or 'Sales.Bookings' in user.roles %}
+    {# Bookings — requires Sales.Viewer (implied by Sales.Full) #}
+    {% if user_has_role(user, 'Sales.Viewer') %}
     <a href="/sales/bookings" class="report-card fade-in stagger-2">
         <div class="report-icon blue">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
@@ -168,8 +168,8 @@
     </a>
     {% endif %}
 
-    {# Only show Open Orders card if user has access #}
-    {% if 'Admin' in user.roles or 'Sales.OpenOrders' in user.roles %}
+    {# Open Orders — requires Sales.Full #}
+    {% if user_has_role(user, 'Sales.Full') %}
     <a href="/sales/open-orders" class="report-card fade-in stagger-2">
         <div class="report-icon amber">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
@@ -184,7 +184,7 @@
     </a>
     {% endif %}
 
-    {# Coming Soon reports — shown to everyone as disabled #}
+    {# Coming Soon reports — shown to everyone #}
     <div class="report-card disabled fade-in stagger-3">
         <div class="report-icon green">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
