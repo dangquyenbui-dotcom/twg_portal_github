@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TWG Icon Test</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; padding: 20px; background: #111827; color: #fff; }
+        .test { margin: 20px 0; padding: 15px; background: #1a2035; border-radius: 10px; }
+        .test img { border: 2px solid #333; border-radius: 8px; }
+        .status { font-size: 14px; margin-top: 8px; }
+        .ok { color: #10B981; }
+        .fail { color: #EF4444; }
+        h2 { margin-bottom: 5px; font-size: 16px; }
+        code { background: #2a3352; padding: 2px 8px; border-radius: 4px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <h1>TWG Portal — Icon Diagnostic</h1>
+    <p>Open this page in Safari on your iPhone, then check each test below.</p>
+
+    <div class="test">
+        <h2>Test 1: apple-touch-icon via /static/icons/</h2>
+        <code>/static/icons/apple-touch-icon.png</code><br><br>
+        <img id="img1" src="/static/icons/apple-touch-icon.png" width="90" height="90" alt="test1">
+        <div class="status" id="status1">Loading...</div>
+    </div>
+
+    <div class="test">
+        <h2>Test 2: apple-touch-icon via root fallback</h2>
+        <code>/apple-touch-icon.png</code><br><br>
+        <img id="img2" src="/apple-touch-icon.png" width="90" height="90" alt="test2">
+        <div class="status" id="status2">Loading...</div>
+    </div>
+
+    <div class="test">
+        <h2>Test 3: icon-192x192</h2>
+        <code>/static/icons/icon-192x192.png</code><br><br>
+        <img id="img3" src="/static/icons/icon-192x192.png" width="90" height="90" alt="test3">
+        <div class="status" id="status3">Loading...</div>
+    </div>
+
+    <div class="test">
+        <h2>Test 4: manifest.json</h2>
+        <code>/static/manifest.json</code><br>
+        <div class="status" id="status4">Checking...</div>
+    </div>
+
+    <div class="test">
+        <h2>Test 5: Existing logo (should always work)</h2>
+        <code>/static/logo/TWG.png</code><br><br>
+        <img id="img5" src="/static/logo/TWG.png" width="90" height="auto" alt="test5">
+        <div class="status" id="status5">Loading...</div>
+    </div>
+
+    <script>
+        function checkImg(imgId, statusId) {
+            const img = document.getElementById(imgId);
+            const status = document.getElementById(statusId);
+            img.onload = () => { status.textContent = '✅ LOADED OK (' + img.naturalWidth + 'x' + img.naturalHeight + ')'; status.className = 'status ok'; };
+            img.onerror = () => { status.textContent = '❌ FAILED TO LOAD'; status.className = 'status fail'; };
+            if (img.complete && img.naturalWidth > 0) { status.textContent = '✅ LOADED OK (' + img.naturalWidth + 'x' + img.naturalHeight + ')'; status.className = 'status ok'; }
+        }
+        checkImg('img1', 'status1');
+        checkImg('img2', 'status2');
+        checkImg('img3', 'status3');
+        checkImg('img5', 'status5');
+
+        fetch('/static/manifest.json')
+            .then(r => { document.getElementById('status4').textContent = r.ok ? '✅ manifest.json accessible (HTTP ' + r.status + ')' : '❌ HTTP ' + r.status; document.getElementById('status4').className = 'status ' + (r.ok ? 'ok' : 'fail'); })
+            .catch(e => { document.getElementById('status4').textContent = '❌ ' + e.message; document.getElementById('status4').className = 'status fail'; });
+    </script>
+</body>
+</html>

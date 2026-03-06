@@ -115,14 +115,26 @@ def create_app():
     app.register_blueprint(main_bp)
     app.register_blueprint(sales_bp)
 
-    # --- PWA: Safari looks for apple-touch-icon at site root ---
+    # --- PWA: Safari probes these root paths for the home screen icon ---
     @app.route('/apple-touch-icon.png')
     @app.route('/apple-touch-icon-precomposed.png')
+    @app.route('/apple-touch-icon-120x120.png')
+    @app.route('/apple-touch-icon-120x120-precomposed.png')
+    @app.route('/apple-touch-icon-152x152.png')
+    @app.route('/apple-touch-icon-152x152-precomposed.png')
+    @app.route('/apple-touch-icon-180x180.png')
+    @app.route('/apple-touch-icon-180x180-precomposed.png')
     def apple_touch_icon():
         return send_from_directory(
             app.static_folder, 'icons/apple-touch-icon.png',
-            mimetype='image/png'
+            mimetype='image/png',
+            max_age=86400
         )
+
+    # --- Diagnostic page: /icon-test (remove after confirming icons work) ---
+    @app.route('/icon-test')
+    def icon_test():
+        return render_template('icon_test.html')
 
     # --- SSO ROUTES ---
     @app.route("/login")
