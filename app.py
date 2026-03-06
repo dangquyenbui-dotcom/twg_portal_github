@@ -126,15 +126,10 @@ def create_app():
     @app.route('/apple-touch-icon-180x180-precomposed.png')
     def apple_touch_icon():
         return send_from_directory(
-            app.static_folder, 'icons/apple-touch-icon.png',
+            app.static_folder, 'logo/apple-touch-icon.png',
             mimetype='image/png',
             max_age=86400
         )
-
-    # --- Diagnostic page: /icon-test (remove after confirming icons work) ---
-    @app.route('/icon-test')
-    def icon_test():
-        return render_template('icon_test.html')
 
     # --- SSO ROUTES ---
     @app.route("/login")
