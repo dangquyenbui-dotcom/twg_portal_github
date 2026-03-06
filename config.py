@@ -39,9 +39,21 @@ class Config:
     REDIRECT_URI_OVERRIDE = os.getenv('REDIRECT_URI_OVERRIDE', '').strip() or None
 
     # ── Security Group → Role Mapping ──
+    #
     # Maps Entra ID Security Group Object IDs to internal role names.
-    # One user can belong to multiple groups = multiple roles (no more single-assignment limit).
-    # Paste each group's Object ID from Entra ID → Groups → group → Overview → Object ID.
+    # One user can belong to multiple groups = multiple roles.
+    #
+    # Naming convention:
+    #   GROUP_ADMIN                         → Admin (full bypass)
+    #   GROUP_SALES_<REPORT>_VIEW           → Sales.<Report>.View (dashboard access)
+    #   GROUP_SALES_<REPORT>_EXPORT         → Sales.<Report>.Export (Excel download)
+    #   GROUP_WAREHOUSE_<REPORT>_VIEW       → Warehouse.<Report>.View (future)
+    #   GROUP_WAREHOUSE_<REPORT>_EXPORT     → Warehouse.<Report>.Export (future)
+    #
+    # Export roles do NOT grant view access — they only enable download buttons
+    # on reports the user can already see via the corresponding View role.
+    # Admin bypasses all checks (view + export).
+    #
     GROUP_ROLE_MAP = {}
 
     @classmethod
@@ -49,15 +61,44 @@ class Config:
         """
         Build the group-to-role mapping from environment variables.
         Each GROUP_* env var maps a Security Group Object ID to an internal role name.
+
+        Pattern:
+          GROUP_ADMIN                        → Admin
+          GROUP_SALES_BOOKINGS_VIEW          → Sales.Bookings.View
+          GROUP_SALES_BOOKINGS_EXPORT        → Sales.Bookings.Export
+          GROUP_SALES_OPENORDERS_VIEW        → Sales.OpenOrders.View
+          GROUP_SALES_OPENORDERS_EXPORT      → Sales.OpenOrders.Export
+          (add more reports by following the same pattern)
         """
         mapping = {}
         group_vars = {
-            'GROUP_ADMIN':        'Admin',
-            'GROUP_SALES_VIEWER': 'Sales.Viewer',
-            'GROUP_SALES_FULL':   'Sales.Full',
-            'GROUP_WAREHOUSE':    'Warehouse',
-            'GROUP_FINANCE':      'Finance',
-            'GROUP_HR':           'HR',
+            # ── Admin (full access to everything) ──
+            'GROUP_ADMIN':                      'Admin',
+
+            # ── Sales: Daily Bookings ──
+            'GROUP_SALES_BOOKINGS_VIEW':        'Sales.Bookings.View',
+            'GROUP_SALES_BOOKINGS_EXPORT':      'Sales.Bookings.Export',
+
+            # ── Sales: Open Orders ──
+            'GROUP_SALES_OPENORDERS_VIEW':      'Sales.OpenOrders.View',
+            'GROUP_SALES_OPENORDERS_EXPORT':    'Sales.OpenOrders.Export',
+
+            # ── Sales: Shipments (future — uncomment when ready) ──
+            # 'GROUP_SALES_SHIPMENTS_VIEW':     'Sales.Shipments.View',
+            # 'GROUP_SALES_SHIPMENTS_EXPORT':   'Sales.Shipments.Export',
+
+            # ── Sales: Territory Performance (future) ──
+            # 'GROUP_SALES_TERRPERF_VIEW':      'Sales.TerrPerf.View',
+            # 'GROUP_SALES_TERRPERF_EXPORT':    'Sales.TerrPerf.Export',
+
+            # ── Warehouse (future) ──
+            # 'GROUP_WAREHOUSE':                'Warehouse',
+
+            # ── Finance (future) ──
+            # 'GROUP_FINANCE':                  'Finance',
+
+            # ── HR (future) ──
+            # 'GROUP_HR':                       'HR',
         }
         for env_key, role_name in group_vars.items():
             group_id = os.getenv(env_key, '').strip()

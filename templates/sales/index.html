@@ -110,8 +110,15 @@
     line-height: 1.5;
 }
 
-.report-tag {
+.report-tags {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.report-tag {
     display: inline-flex;
     font-size: 10px;
     font-weight: 600;
@@ -128,6 +135,24 @@
 
 [data-theme="dark"] .report-tag.live {
     background: rgba(16,185,129,0.12);
+}
+
+.report-tag.export {
+    background: rgba(37,99,235,0.08);
+    color: var(--accent-blue);
+}
+
+[data-theme="dark"] .report-tag.export {
+    background: rgba(59,130,246,0.12);
+}
+
+.report-tag.view-only {
+    background: rgba(156,163,175,0.1);
+    color: var(--text-muted);
+}
+
+[data-theme="dark"] .report-tag.view-only {
+    background: rgba(92,101,132,0.2);
 }
 
 .report-tag.soon {
@@ -177,8 +202,8 @@
 
 <div class="report-grid">
 
-    {# Bookings — requires Sales.Viewer (implied by Sales.Full) #}
-    {% if user_has_role(user, 'Sales.Viewer') %}
+    {# ── Daily Bookings — requires Sales.Bookings.View ── #}
+    {% if user_has_role(user, 'Sales.Bookings.View') %}
     <a href="/sales/bookings" class="report-card fade-in stagger-2">
         <div class="report-icon blue">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
@@ -188,13 +213,20 @@
         <div class="report-info">
             <h3>Daily Bookings</h3>
             <p>Today's sales orders by territory with full detail breakdown. US + Canada.</p>
-            <div class="report-tag live">Live</div>
+            <div class="report-tags">
+                <span class="report-tag live">Live</span>
+                {% if user_has_role(user, 'Sales.Bookings.Export') %}
+                <span class="report-tag export">Export</span>
+                {% else %}
+                <span class="report-tag view-only">View Only</span>
+                {% endif %}
+            </div>
         </div>
     </a>
     {% endif %}
 
-    {# Open Orders — requires Sales.Full #}
-    {% if user_has_role(user, 'Sales.Full') %}
+    {# ── Open Orders — requires Sales.OpenOrders.View ── #}
+    {% if user_has_role(user, 'Sales.OpenOrders.View') %}
     <a href="/sales/open-orders" class="report-card fade-in stagger-2">
         <div class="report-icon amber">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
@@ -204,12 +236,19 @@
         <div class="report-info">
             <h3>Open Sales Orders</h3>
             <p>All currently open order lines by territory and salesman. US + Canada with CAD conversion.</p>
-            <div class="report-tag live">Live</div>
+            <div class="report-tags">
+                <span class="report-tag live">Live</span>
+                {% if user_has_role(user, 'Sales.OpenOrders.Export') %}
+                <span class="report-tag export">Export</span>
+                {% else %}
+                <span class="report-tag view-only">View Only</span>
+                {% endif %}
+            </div>
         </div>
     </a>
     {% endif %}
 
-    {# Coming Soon reports — shown to everyone #}
+    {# ── Coming Soon reports — shown to everyone ── #}
     <div class="report-card disabled fade-in stagger-3">
         <div class="report-icon green">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
@@ -219,7 +258,9 @@
         <div class="report-info">
             <h3>Daily Shipments</h3>
             <p>Today's shipped orders, tracking, and fulfillment status by warehouse.</p>
-            <div class="report-tag soon">Coming Soon</div>
+            <div class="report-tags">
+                <span class="report-tag soon">Coming Soon</span>
+            </div>
         </div>
     </div>
 
@@ -232,7 +273,9 @@
         <div class="report-info">
             <h3>Territory Performance</h3>
             <p>Monthly sales trends by territory with comparison to prior periods.</p>
-            <div class="report-tag soon">Coming Soon</div>
+            <div class="report-tags">
+                <span class="report-tag soon">Coming Soon</span>
+            </div>
         </div>
     </div>
 

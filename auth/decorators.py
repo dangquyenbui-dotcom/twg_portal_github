@@ -1,35 +1,44 @@
 """
 Authentication Decorators
 
-Authorization is based on Entra ID Security Groups (not App Roles).
-Users can belong to multiple groups, solving the single-assignment limitation.
+Authorization is based on Entra ID Security Groups mapped to internal roles.
+Users can belong to multiple groups = multiple roles (no single-assignment limit).
 
-Group Object IDs are mapped to internal role names via GROUP_* env vars in .env.
-The role hierarchy ensures higher roles automatically grant lower-level access:
+Role naming convention:
+  Admin                        → Full access to everything (bypasses all checks)
+  Sales.Bookings.View          → View Daily Bookings dashboard
+  Sales.Bookings.Export        → Download Bookings Excel (requires View to be useful)
+  Sales.OpenOrders.View        → View Open Orders dashboard
+  Sales.OpenOrders.Export      → Download Open Orders Excel (requires View)
+  (pattern continues for future reports)
 
-  Admin          → Full access to everything (bypasses all checks)
-  Sales.Full     → All Sales reports (Bookings, Open Orders, future reports)
-  Sales.Viewer   → Sales hub + Daily Bookings only
-  Warehouse      → Warehouse hub + all Warehouse reports (future)
-  Finance        → Finance hub + all Finance reports (future)
-  HR             → HR hub + all HR reports (future)
+Hierarchy:
+  Admin          → bypasses all checks (view + export for everything)
+  Sales.*.View   → any Sales view role automatically implies Sales.Base
+  Sales.*.Export → does NOT grant view access, only enables download buttons
 
-Hierarchy chain:  Admin > Sales.Full > Sales.Viewer > Sales.Base
-                  Admin > Warehouse, Finance, HR
-
-Sales.Base is never assigned directly — it's an internal role that is
-automatically implied by Sales.Viewer and Sales.Full so that any Sales
-role grants access to the /sales hub page.
+Sales.Base is never assigned directly — it is an internal role that is
+automatically implied by ANY Sales.*.View role so that any Sales user
+can access the /sales hub page.
 """
 from functools import wraps
 from flask import session, redirect, url_for, abort
 
+
 # ── Role hierarchy ──
 # Key = role that is needed
-# Value = list of higher roles that implicitly grant it
+# Value = list of roles that implicitly grant it
+#
+# Sales.Base is implied by ANY Sales.*.View role.
+# This list is maintained here so new reports just need to be added.
 ROLE_HIERARCHY = {
-    'Sales.Base':   ['Sales.Viewer', 'Sales.Full'],
-    'Sales.Viewer': ['Sales.Full'],
+    'Sales.Base': [
+        'Sales.Bookings.View',
+        'Sales.OpenOrders.View',
+        # Future: add new Sales.*.View roles here
+        # 'Sales.Shipments.View',
+        # 'Sales.TerrPerf.View',
+    ],
 }
 
 
@@ -62,7 +71,7 @@ def require_role(role_name):
     """
     Decorator to ensure the logged-in user has the required role.
     Roles are derived from Security Group memberships at login time.
-    Supports role hierarchy — e.g., Sales.Full implies Sales.Viewer implies Sales.Base.
+    Supports role hierarchy — e.g., any Sales.*.View implies Sales.Base.
     Users in the Admin group automatically bypass all checks.
     """
     def decorator(f):
@@ -88,7 +97,7 @@ def require_role(role_name):
 def user_has_role(user, role_name):
     """
     Template-friendly helper to check if a user has a role.
-    Use in Jinja2: {% if user_has_role(user, 'Sales.Viewer') %}
+    Use in Jinja2: {% if user_has_role(user, 'Sales.Bookings.View') %}
     """
     user_roles = (user or {}).get("roles", [])
     return _user_has_role(user_roles, role_name)

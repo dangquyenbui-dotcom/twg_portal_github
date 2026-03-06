@@ -2,10 +2,15 @@
 Sales Blueprint
 Routes for all sales reports: bookings dashboard, open orders dashboard, and Excel exports.
 
-Role mapping (using Security Groups with hierarchy):
-  /sales                  → Sales.Base   (implied by Sales.Viewer and Sales.Full)
-  /sales/bookings/*       → Sales.Viewer (implied by Sales.Full)
-  /sales/open-orders/*    → Sales.Full
+Per-report role mapping (using Security Groups):
+  /sales                        → Sales.Base  (auto-implied by ANY Sales.*.View)
+  /sales/bookings               → Sales.Bookings.View
+  /sales/bookings/export/*      → Sales.Bookings.Export
+  /sales/open-orders            → Sales.OpenOrders.View
+  /sales/open-orders/export/*   → Sales.OpenOrders.Export
+
+Export roles do NOT grant view access — they only enable download buttons
+on reports the user can already see. Admin bypasses all checks.
 """
 
 import math
@@ -18,7 +23,7 @@ from services.data_worker import (
     get_open_orders_from_cache, get_open_orders_raw_from_cache,
 )
 from services.excel_helper import build_export_workbook, send_workbook
-from auth.decorators import require_role
+from auth.decorators import require_role, user_has_role
 
 sales_bp = Blueprint('sales', __name__, url_prefix='/sales')
 
@@ -137,7 +142,7 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Sales Home — requires Sales.Base (implied by Viewer and Full)
+# Sales Home — requires Sales.Base (implied by ANY Sales.*.View)
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/')
@@ -149,11 +154,12 @@ def sales_home():
 
 
 # ═══════════════════════════════════════════════════════════════
-# BOOKINGS — requires Sales.Viewer (implied by Sales.Full)
+# BOOKINGS — View requires Sales.Bookings.View
+#             Export requires Sales.Bookings.Export
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/bookings')
-@require_role('Sales.Viewer')
+@require_role('Sales.Bookings.View')
 def bookings():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
@@ -167,6 +173,9 @@ def bookings():
     if snapshot_us is None and snapshot_ca is None:
         error = "Unable to load data. Please try again shortly."
 
+    # Check if user has export permission (Admin also counts)
+    can_export = user_has_role(session["user"], 'Sales.Bookings.Export')
+
     return render_template(
         'sales/bookings.html',
         user=session["user"],
@@ -175,11 +184,12 @@ def bookings():
         ca=ca_data,
         cad_rate=cad_rate,
         last_updated=last_updated,
+        can_export=can_export,
     )
 
 
 @sales_bp.route('/bookings/export')
-@require_role('Sales.Viewer')
+@require_role('Sales.Bookings.Export')
 def bookings_export():
     """Export today's raw bookings data (US + Canada combined) — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -205,7 +215,7 @@ def bookings_export():
 
 
 @sales_bp.route('/bookings/export/us')
-@require_role('Sales.Viewer')
+@require_role('Sales.Bookings.Export')
 def bookings_export_us():
     """Export today's raw US bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -224,7 +234,7 @@ def bookings_export_us():
 
 
 @sales_bp.route('/bookings/export/ca')
-@require_role('Sales.Viewer')
+@require_role('Sales.Bookings.Export')
 def bookings_export_ca():
     """Export today's raw Canada bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -243,11 +253,12 @@ def bookings_export_ca():
 
 
 # ═══════════════════════════════════════════════════════════════
-# OPEN ORDERS — requires Sales.Full
+# OPEN ORDERS — View requires Sales.OpenOrders.View
+#               Export requires Sales.OpenOrders.Export
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/open-orders')
-@require_role('Sales.Full')
+@require_role('Sales.OpenOrders.View')
 def open_orders():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
@@ -261,6 +272,9 @@ def open_orders():
     if snapshot_us is None and snapshot_ca is None:
         error = "Unable to load data. Please try again shortly."
 
+    # Check if user has export permission (Admin also counts)
+    can_export = user_has_role(session["user"], 'Sales.OpenOrders.Export')
+
     return render_template(
         'sales/open_orders.html',
         user=session["user"],
@@ -269,11 +283,12 @@ def open_orders():
         ca=ca_data,
         cad_rate=cad_rate,
         last_updated=last_updated,
+        can_export=can_export,
     )
 
 
 @sales_bp.route('/open-orders/export')
-@require_role('Sales.Full')
+@require_role('Sales.OpenOrders.Export')
 def open_orders_export():
     """Export open orders (US + Canada combined) — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -299,7 +314,7 @@ def open_orders_export():
 
 
 @sales_bp.route('/open-orders/export/us')
-@require_role('Sales.Full')
+@require_role('Sales.OpenOrders.Export')
 def open_orders_export_us():
     """Export open orders US only — reads from cache, zero SQL."""
     if not session.get("user"):
@@ -318,7 +333,7 @@ def open_orders_export_us():
 
 
 @sales_bp.route('/open-orders/export/ca')
-@require_role('Sales.Full')
+@require_role('Sales.OpenOrders.Export')
 def open_orders_export_ca():
     """Export open orders Canada only — reads from cache, zero SQL."""
     if not session.get("user"):
