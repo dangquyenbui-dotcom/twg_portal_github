@@ -42,6 +42,7 @@
     gap: 16px;
     position: relative;
     overflow: hidden;
+    box-shadow: var(--shadow-sm);
 }
 
 .dept-card::before {
@@ -60,7 +61,7 @@
     border-color: var(--border-light);
     background: var(--bg-card-hover);
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    box-shadow: var(--shadow-lg);
 }
 
 .dept-card:hover::before { opacity: 1; }
@@ -79,10 +80,15 @@
     justify-content: center;
 }
 
-.dept-icon.sales { background: rgba(59,130,246,0.12); color: var(--accent-blue); }
-.dept-icon.warehouse { background: rgba(245,158,11,0.12); color: var(--accent-amber); }
-.dept-icon.accounting { background: rgba(16,185,129,0.12); color: var(--accent-green); }
-.dept-icon.hr { background: rgba(139,92,246,0.12); color: var(--accent-purple); }
+.dept-icon.sales { background: rgba(37,99,235,0.1); color: var(--accent-blue); }
+.dept-icon.warehouse { background: rgba(217,119,6,0.1); color: var(--accent-amber); }
+.dept-icon.accounting { background: rgba(5,150,105,0.1); color: var(--accent-green); }
+.dept-icon.hr { background: rgba(124,58,237,0.1); color: var(--accent-purple); }
+
+[data-theme="dark"] .dept-icon.sales { background: rgba(59,130,246,0.12); }
+[data-theme="dark"] .dept-icon.warehouse { background: rgba(245,158,11,0.12); }
+[data-theme="dark"] .dept-icon.accounting { background: rgba(16,185,129,0.12); }
+[data-theme="dark"] .dept-icon.hr { background: rgba(139,92,246,0.12); }
 
 .dept-icon svg { width: 24px; height: 24px; }
 
@@ -110,13 +116,21 @@
 }
 
 .dept-badge.active {
-    background: rgba(16,185,129,0.12);
+    background: rgba(5,150,105,0.1);
     color: var(--accent-green);
 }
 
+[data-theme="dark"] .dept-badge.active {
+    background: rgba(16,185,129,0.12);
+}
+
 .dept-badge.coming-soon {
-    background: rgba(92,101,132,0.2);
+    background: rgba(156,163,175,0.1);
     color: var(--text-muted);
+}
+
+[data-theme="dark"] .dept-badge.coming-soon {
+    background: rgba(92,101,132,0.2);
 }
 
 .dept-card.disabled {

@@ -57,12 +57,13 @@
 .page-header .date-tag {
     font-size: 16px;
     color: var(--text-secondary);
-    background: var(--bg-card);
-    border: 1px solid var(--border);
+    background: var(--date-tag-bg);
+    border: 1px solid var(--date-tag-border);
     padding: 8px 18px;
     border-radius: 20px;
     font-family: var(--font-mono);
     font-weight: 500;
+    box-shadow: var(--shadow-sm);
 }
 
 /* ── Download Buttons ── */
@@ -75,8 +76,8 @@
     font-weight: 600;
     font-family: var(--font-body);
     color: var(--accent-green);
-    background: rgba(16,185,129,0.08);
-    border: 1px solid rgba(16,185,129,0.2);
+    background: var(--download-bg);
+    border: 1px solid var(--download-border);
     border-radius: var(--radius-md);
     text-decoration: none;
     cursor: pointer;
@@ -91,8 +92,8 @@
 }
 
 .btn-download:hover {
-    background: rgba(16,185,129,0.15);
-    border-color: rgba(16,185,129,0.35);
+    background: var(--download-hover-bg);
+    border-color: var(--download-hover-border);
     color: #34D399;
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(16,185,129,0.15);
@@ -184,7 +185,7 @@
     border-radius: 3px;
     overflow: hidden;
     flex-shrink: 0;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.1);
+    box-shadow: 0 0 0 1px rgba(128,128,128,0.2);
 }
 
 .region-flag svg {
@@ -220,8 +221,8 @@
     gap: 6px;
     font-size: 11px;
     color: var(--text-muted);
-    background: rgba(139,92,246,0.08);
-    border: 1px solid rgba(139,92,246,0.15);
+    background: var(--exchange-bg);
+    border: 1px solid var(--exchange-border);
     padding: 4px 12px;
     border-radius: 20px;
     font-family: var(--font-mono);
@@ -249,6 +250,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     padding: 16px;
+    box-shadow: var(--shadow-sm);
+    transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 .stat-card .label {
@@ -322,11 +325,12 @@
     text-align: center;
     overflow: hidden;
     transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: var(--shadow-sm);
 }
 
 .podium-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    box-shadow: var(--shadow-lg);
 }
 
 .podium-card::before {
@@ -338,13 +342,13 @@
     height: 3px;
 }
 
-.podium-card.gold   { border: 1px solid rgba(255,187,51,0.3); }
-.podium-card.silver { border: 1px solid rgba(168,179,199,0.25); }
-.podium-card.bronze { border: 1px solid rgba(205,147,91,0.25); }
+.podium-card.gold   { border: 1px solid var(--podium-gold-border); }
+.podium-card.silver { border: 1px solid var(--podium-silver-border); }
+.podium-card.bronze { border: 1px solid var(--podium-bronze-border); }
 
-.podium-card.gold::before   { background: linear-gradient(90deg, #D4A012, #FFCE44, #D4A012); }
-.podium-card.silver::before { background: linear-gradient(90deg, #7B8CA3, #C0CDE0, #7B8CA3); }
-.podium-card.bronze::before { background: linear-gradient(90deg, #96653A, #CD935B, #96653A); }
+.podium-card.gold::before   { background: var(--podium-gold-bar); }
+.podium-card.silver::before { background: var(--podium-silver-bar); }
+.podium-card.bronze::before { background: var(--podium-bronze-bar); }
 
 .podium-medal {
     width: 40px;
@@ -360,21 +364,21 @@
 }
 
 .podium-card.gold .podium-medal {
-    background: linear-gradient(145deg, #D4A012, #F5CE50);
-    color: #1A1400;
-    box-shadow: 0 0 20px rgba(212,160,18,0.3);
+    background: var(--podium-gold-medal-bg);
+    color: var(--podium-gold-medal-color);
+    box-shadow: 0 0 20px var(--podium-gold-medal-shadow);
 }
 
 .podium-card.silver .podium-medal {
-    background: linear-gradient(145deg, #7B8CA3, #B8C8DC);
-    color: #1A2035;
-    box-shadow: 0 0 16px rgba(123,140,163,0.25);
+    background: var(--podium-silver-medal-bg);
+    color: var(--podium-silver-medal-color);
+    box-shadow: 0 0 16px var(--podium-silver-medal-shadow);
 }
 
 .podium-card.bronze .podium-medal {
-    background: linear-gradient(145deg, #96653A, #CD935B);
-    color: #1A1208;
-    box-shadow: 0 0 16px rgba(150,101,58,0.25);
+    background: var(--podium-bronze-medal-bg);
+    color: var(--podium-bronze-medal-color);
+    box-shadow: 0 0 16px var(--podium-bronze-medal-shadow);
 }
 
 .podium-location {
@@ -391,9 +395,9 @@
     letter-spacing: -0.3px;
 }
 
-.podium-card.gold .podium-amount   { color: #FFCE44; }
-.podium-card.silver .podium-amount { color: #B8C8DC; }
-.podium-card.bronze .podium-amount { color: #CD935B; }
+.podium-card.gold .podium-amount   { color: var(--podium-gold-amount); }
+.podium-card.silver .podium-amount { color: var(--podium-silver-amount); }
+.podium-card.bronze .podium-amount { color: var(--podium-bronze-amount); }
 
 .podium-usd {
     font-size: 11px;
@@ -409,6 +413,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     overflow: hidden;
+    box-shadow: var(--shadow-sm);
 }
 
 .ranking-table {
@@ -424,9 +429,9 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: var(--text-muted);
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
+    color: var(--ranking-header-font);
+    background: var(--ranking-header-bg);
+    border-bottom: 1px solid var(--ranking-header-border);
     position: sticky;
     top: 0;
     z-index: 1;
@@ -440,7 +445,7 @@
 
 .ranking-table tbody td {
     padding: 9px 24px;
-    border-bottom: 1px solid rgba(42,51,82,0.4);
+    border-bottom: 1px solid var(--row-border);
     color: var(--text-secondary);
     font-size: 14px;
 }
@@ -450,7 +455,7 @@
 }
 
 .ranking-table tbody tr:hover {
-    background: rgba(59,130,246,0.04);
+    background: var(--ranking-hover);
 }
 
 .ranking-table tbody tr:hover td {
@@ -486,8 +491,8 @@
 
 /* ── Error / Empty ── */
 .error-banner {
-    background: rgba(239,68,68,0.08);
-    border: 1px solid rgba(239,68,68,0.2);
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
     border-radius: var(--radius-md);
     padding: 16px 20px;
     margin-bottom: 16px;

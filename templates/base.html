@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -12,19 +12,109 @@
     <meta name="apple-mobile-web-app-title" content="TWG Portal">
     <meta name="theme-color" content="#111827">
 
+    <!--
+      CRITICAL: Apply saved theme BEFORE any rendering to prevent flash.
+      This inline script runs synchronously before the page paints.
+    -->
+    <script>
+        (function() {
+            var saved = localStorage.getItem('twg-theme');
+            if (saved === 'dark' || saved === 'light') {
+                document.documentElement.setAttribute('data-theme', saved);
+            }
+            // default is light (set in the HTML attribute above)
+        })();
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         /* ── Reset & Variables ── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        :root {
-            --bg-primary: #0B0F1A;
-            --bg-secondary: #111827;
-            --bg-card: #1A2035;
-            --bg-card-hover: #1F2847;
-            --border: #2A3352;
-            --border-light: #333D5C;
+        /* ══════════════════════════════════════════════════════════
+           LIGHT MODE (default)
+           ══════════════════════════════════════════════════════════ */
+        :root,
+        [data-theme="light"] {
+            --bg-primary: #F5F6FA;
+            --bg-secondary: #FFFFFF;
+            --bg-card: #FFFFFF;
+            --bg-card-hover: #F8F9FC;
+            --border: #E2E5EF;
+            --border-light: #D0D5E3;
+            --text-primary: #111827;
+            --text-secondary: #4B5563;
+            --text-muted: #9CA3AF;
+            --accent-blue: #2563EB;
+            --accent-green: #059669;
+            --accent-amber: #D97706;
+            --accent-red: #DC2626;
+            --accent-purple: #7C3AED;
+            --font-body: 'DM Sans', -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 16px;
+
+            /* Light-specific tokens */
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.08);
+            --topnav-bg: #FFFFFF;
+            --topnav-border: #E2E5EF;
+            --ranking-header-bg: #F3F4F8;
+            --ranking-header-font: #4B5563;
+            --ranking-header-border: #E2E5EF;
+            --ranking-hover: rgba(37,99,235,0.04);
+            --row-alt-fill: #F9FAFB;
+            --row-border: rgba(226,229,239,0.6);
+            --podium-gold-border: rgba(217,119,6,0.3);
+            --podium-silver-border: rgba(156,163,175,0.3);
+            --podium-bronze-border: rgba(180,130,80,0.3);
+            --podium-gold-bar: linear-gradient(90deg, #D97706, #FBBF24, #D97706);
+            --podium-silver-bar: linear-gradient(90deg, #9CA3AF, #D1D5DB, #9CA3AF);
+            --podium-bronze-bar: linear-gradient(90deg, #92651D, #C9943A, #92651D);
+            --podium-gold-medal-bg: linear-gradient(145deg, #D97706, #FBBF24);
+            --podium-silver-medal-bg: linear-gradient(145deg, #9CA3AF, #D1D5DB);
+            --podium-bronze-medal-bg: linear-gradient(145deg, #92651D, #C9943A);
+            --podium-gold-medal-color: #451A03;
+            --podium-silver-medal-color: #1F2937;
+            --podium-bronze-medal-color: #3B1A00;
+            --podium-gold-medal-shadow: rgba(217,119,6,0.3);
+            --podium-silver-medal-shadow: rgba(156,163,175,0.25);
+            --podium-bronze-medal-shadow: rgba(146,101,29,0.25);
+            --podium-gold-amount: #B45309;
+            --podium-silver-amount: #6B7280;
+            --podium-bronze-amount: #92651D;
+            --avatar-gradient: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            --signout-hover-color: var(--accent-red);
+            --exchange-bg: rgba(124,58,237,0.06);
+            --exchange-border: rgba(124,58,237,0.12);
+            --download-bg: rgba(5,150,105,0.06);
+            --download-border: rgba(5,150,105,0.18);
+            --download-hover-bg: rgba(5,150,105,0.12);
+            --download-hover-border: rgba(5,150,105,0.3);
+            --error-bg: rgba(220,38,38,0.06);
+            --error-border: rgba(220,38,38,0.15);
+            --released-bg: rgba(37,99,235,0.08);
+            --logo-filter: none;
+            --page-tag-bg: rgba(217,119,6,0.08);
+            --page-tag-border: rgba(217,119,6,0.18);
+            --date-tag-bg: #FFFFFF;
+            --date-tag-border: #E2E5EF;
+        }
+
+        /* ══════════════════════════════════════════════════════════
+           DARK MODE — true OLED blacks
+           ══════════════════════════════════════════════════════════ */
+        [data-theme="dark"] {
+            --bg-primary: #000000;
+            --bg-secondary: #0A0A0A;
+            --bg-card: #111111;
+            --bg-card-hover: #1A1A1A;
+            --border: #1F1F1F;
+            --border-light: #2A2A2A;
             --text-primary: #F1F3F8;
             --text-secondary: #8B95B0;
             --text-muted: #5C6584;
@@ -33,11 +123,52 @@
             --accent-amber: #F59E0B;
             --accent-red: #EF4444;
             --accent-purple: #8B5CF6;
-            --font-body: 'DM Sans', -apple-system, sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
-            --radius-sm: 6px;
-            --radius-md: 10px;
-            --radius-lg: 16px;
+
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+            --topnav-bg: #0A0A0A;
+            --topnav-border: #1F1F1F;
+            --ranking-header-bg: #0A0A0A;
+            --ranking-header-font: #5C6584;
+            --ranking-header-border: #1F1F1F;
+            --ranking-hover: rgba(59,130,246,0.04);
+            --row-alt-fill: #0A0A0A;
+            --row-border: rgba(31,31,31,0.6);
+            --podium-gold-border: rgba(255,187,51,0.3);
+            --podium-silver-border: rgba(168,179,199,0.25);
+            --podium-bronze-border: rgba(205,147,91,0.25);
+            --podium-gold-bar: linear-gradient(90deg, #D4A012, #FFCE44, #D4A012);
+            --podium-silver-bar: linear-gradient(90deg, #7B8CA3, #C0CDE0, #7B8CA3);
+            --podium-bronze-bar: linear-gradient(90deg, #96653A, #CD935B, #96653A);
+            --podium-gold-medal-bg: linear-gradient(145deg, #D4A012, #F5CE50);
+            --podium-silver-medal-bg: linear-gradient(145deg, #7B8CA3, #B8C8DC);
+            --podium-bronze-medal-bg: linear-gradient(145deg, #96653A, #CD935B);
+            --podium-gold-medal-color: #1A1400;
+            --podium-silver-medal-color: #1A2035;
+            --podium-bronze-medal-color: #1A1208;
+            --podium-gold-medal-shadow: rgba(212,160,18,0.3);
+            --podium-silver-medal-shadow: rgba(123,140,163,0.25);
+            --podium-bronze-medal-shadow: rgba(150,101,58,0.25);
+            --podium-gold-amount: #FFCE44;
+            --podium-silver-amount: #B8C8DC;
+            --podium-bronze-amount: #CD935B;
+            --avatar-gradient: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            --signout-hover-color: var(--accent-red);
+            --exchange-bg: rgba(139,92,246,0.08);
+            --exchange-border: rgba(139,92,246,0.15);
+            --download-bg: rgba(16,185,129,0.08);
+            --download-border: rgba(16,185,129,0.2);
+            --download-hover-bg: rgba(16,185,129,0.15);
+            --download-hover-border: rgba(16,185,129,0.35);
+            --error-bg: rgba(239,68,68,0.08);
+            --error-border: rgba(239,68,68,0.2);
+            --released-bg: rgba(59,130,246,0.1);
+            --logo-filter: brightness(1.1);
+            --page-tag-bg: rgba(245,158,11,0.1);
+            --page-tag-border: rgba(245,158,11,0.2);
+            --date-tag-bg: var(--bg-card);
+            --date-tag-border: var(--border);
         }
 
         body {
@@ -46,6 +177,7 @@
             color: var(--text-primary);
             min-height: 100vh;
             -webkit-font-smoothing: antialiased;
+            transition: background-color 0.25s ease, color 0.25s ease;
         }
 
         /* ── Top Navigation ── */
@@ -55,11 +187,13 @@
             justify-content: space-between;
             padding: 0 32px;
             height: 56px;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border);
+            background: var(--topnav-bg);
+            border-bottom: 1px solid var(--topnav-border);
             position: sticky;
             top: 0;
             z-index: 100;
+            box-shadow: var(--shadow-sm);
+            transition: background-color 0.25s ease, border-color 0.25s ease;
         }
 
         .topnav-brand {
@@ -77,6 +211,7 @@
             height: 32px;
             width: auto;
             object-fit: contain;
+            filter: var(--logo-filter);
         }
 
         .topnav-brand .brand-divider {
@@ -107,15 +242,13 @@
         }
 
         .topnav-breadcrumb a:hover { color: var(--text-primary); }
-
         .topnav-breadcrumb .sep { font-size: 11px; }
-
         .topnav-breadcrumb .current { color: var(--text-primary); font-weight: 500; }
 
         .topnav-right {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 16px;
         }
 
         .topnav-user {
@@ -130,7 +263,7 @@
             width: 30px;
             height: 30px;
             border-radius: 50%;
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            background: var(--avatar-gradient);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -138,6 +271,47 @@
             font-weight: 600;
             color: #fff;
         }
+
+        /* ── Theme Toggle Button ── */
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-secondary);
+            padding: 0;
+            flex-shrink: 0;
+        }
+
+        .theme-toggle:hover {
+            border-color: var(--border-light);
+            background: var(--bg-card-hover);
+            color: var(--accent-amber);
+            transform: scale(1.05);
+        }
+
+        .theme-toggle svg {
+            width: 18px;
+            height: 18px;
+            transition: transform 0.3s ease;
+        }
+
+        .theme-toggle:hover svg {
+            transform: rotate(15deg);
+        }
+
+        /* Show/hide icons based on theme */
+        .theme-toggle .icon-sun { display: none; }
+        .theme-toggle .icon-moon { display: block; }
+
+        [data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+        [data-theme="dark"] .theme-toggle .icon-moon { display: none; }
 
         .btn-signout {
             font-size: 12px;
@@ -150,8 +324,8 @@
         }
 
         .btn-signout:hover {
-            color: var(--accent-red);
-            border-color: var(--accent-red);
+            color: var(--signout-hover-color);
+            border-color: var(--signout-hover-color);
         }
 
         /* ── Page Container ── */
@@ -188,7 +362,7 @@
             .topnav-brand .brand-logo { height: 28px; }
             .topnav-breadcrumb { display: none; }
             .topnav-user span { display: none; }
-            .topnav-right { gap: 12px; }
+            .topnav-right { gap: 10px; }
 
             .page-container {
                 padding: 16px;
@@ -213,6 +387,18 @@
             </div>
         </div>
         <div class="topnav-right">
+            <!-- Theme Toggle -->
+            <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode" aria-label="Toggle theme">
+                <!-- Sun icon (shown in dark mode → click to go light) -->
+                <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/>
+                </svg>
+                <!-- Moon icon (shown in light mode → click to go dark) -->
+                <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"/>
+                </svg>
+            </button>
+
             <div class="topnav-user">
                 <div class="topnav-avatar">{{ user.name[0] if user and user.name else '?' }}</div>
                 <span>{{ user.name if user else 'Guest' }}</span>
@@ -225,6 +411,23 @@
     <div class="page-container">
         {% block content %}{% endblock %}
     </div>
+
+    <!-- Theme Toggle Script -->
+    <script>
+    (function() {
+        var toggle = document.getElementById('themeToggle');
+        if (!toggle) return;
+
+        toggle.addEventListener('click', function() {
+            var html = document.documentElement;
+            var current = html.getAttribute('data-theme') || 'light';
+            var next = (current === 'dark') ? 'light' : 'dark';
+
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('twg-theme', next);
+        });
+    })();
+    </script>
 
     {% block scripts %}{% endblock %}
 </body>

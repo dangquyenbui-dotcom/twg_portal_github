@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,13 +12,86 @@
     <meta name="apple-mobile-web-app-title" content="TWG Portal">
     <meta name="theme-color" content="#111827">
 
+    <!-- Apply saved theme instantly to prevent flash -->
+    <script>
+        (function() {
+            var saved = localStorage.getItem('twg-theme');
+            if (saved === 'dark' || saved === 'light') {
+                document.documentElement.setAttribute('data-theme', saved);
+            }
+        })();
+    </script>
+
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+        /* ── Light Mode (default) ── */
+        :root,
+        [data-theme="light"] {
+            --login-bg: #F0F2F7;
+            --card-bg: #FFFFFF;
+            --card-border: #E2E5EF;
+            --card-shadow: 0 4px 24px rgba(0,0,0,0.06), 0 0 0 1px rgba(37,99,235,0.04);
+            --title-color: #111827;
+            --subtitle-color: #6B7280;
+            --error-color: #DC2626;
+            --error-bg: rgba(220,38,38,0.06);
+            --error-border: rgba(220,38,38,0.12);
+            --btn-bg: #2563EB;
+            --btn-hover-bg: #1D4ED8;
+            --btn-shadow: 0 6px 24px rgba(37,99,235,0.3);
+            --divider-color: #E2E5EF;
+            --divider-text: #9CA3AF;
+            --security-bg: rgba(37,99,235,0.04);
+            --security-border: rgba(37,99,235,0.08);
+            --security-text: #6B7280;
+            --footer-color: #D1D5DB;
+            --accent-line: linear-gradient(90deg, #2563EB, #7C3AED, #2563EB);
+            --logo-filter: none;
+            --gradient-a: rgba(37,99,235,0.04);
+            --gradient-b: rgba(124,58,237,0.03);
+            --gradient-c: rgba(5,150,105,0.03);
+            --toggle-bg: #FFFFFF;
+            --toggle-border: #E2E5EF;
+            --toggle-color: #6B7280;
+            --toggle-hover-color: #D97706;
+        }
+
+        /* ── Dark Mode (OLED) ── */
+        [data-theme="dark"] {
+            --login-bg: #000000;
+            --card-bg: #111111;
+            --card-border: #1F1F1F;
+            --card-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(59,130,246,0.05);
+            --title-color: #F1F3F8;
+            --subtitle-color: #5C6584;
+            --error-color: #EF4444;
+            --error-bg: rgba(239,68,68,0.08);
+            --error-border: rgba(239,68,68,0.15);
+            --btn-bg: #3B82F6;
+            --btn-hover-bg: #2563EB;
+            --btn-shadow: 0 6px 24px rgba(59,130,246,0.35);
+            --divider-color: #1F1F1F;
+            --divider-text: #3D4663;
+            --security-bg: rgba(59,130,246,0.05);
+            --security-border: rgba(59,130,246,0.08);
+            --security-text: #5C6584;
+            --footer-color: #1F1F1F;
+            --accent-line: linear-gradient(90deg, #3B82F6, #8B5CF6, #3B82F6);
+            --logo-filter: brightness(1.1);
+            --gradient-a: rgba(59,130,246,0.06);
+            --gradient-b: rgba(139,92,246,0.05);
+            --gradient-c: rgba(16,185,129,0.04);
+            --toggle-bg: #111111;
+            --toggle-border: #1F1F1F;
+            --toggle-color: #5C6584;
+            --toggle-hover-color: #F59E0B;
+        }
+
         body {
             font-family: 'DM Sans', -apple-system, sans-serif;
-            background: #0B0F1A;
+            background: var(--login-bg);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -26,6 +99,7 @@
             margin: 0;
             -webkit-font-smoothing: antialiased;
             overflow: hidden;
+            transition: background-color 0.25s ease;
         }
 
         /* ── Subtle animated background ── */
@@ -37,9 +111,9 @@
             width: 200%;
             height: 200%;
             background:
-                radial-gradient(ellipse at 20% 50%, rgba(59,130,246,0.06) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 20%, rgba(139,92,246,0.05) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 80%, rgba(16,185,129,0.04) 0%, transparent 50%);
+                radial-gradient(ellipse at 20% 50%, var(--gradient-a) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, var(--gradient-b) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, var(--gradient-c) 0%, transparent 50%);
             animation: bgDrift 20s ease-in-out infinite alternate;
             z-index: 0;
         }
@@ -76,22 +150,26 @@
             height: 72px;
             width: auto;
             object-fit: contain;
+            filter: var(--logo-filter);
             filter: drop-shadow(0 2px 12px rgba(59,130,246,0.15));
+        }
+
+        [data-theme="dark"] .login-logo img {
+            filter: brightness(1.1) drop-shadow(0 2px 12px rgba(59,130,246,0.15));
         }
 
         /* ── Login Card ── */
         .login-card {
-            background: #1A2035;
-            border: 1px solid #2A3352;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
             padding: 40px 40px 36px;
             border-radius: 20px;
             text-align: center;
             width: 380px;
             position: relative;
             overflow: hidden;
-            box-shadow:
-                0 4px 24px rgba(0,0,0,0.3),
-                0 0 0 1px rgba(59,130,246,0.05);
+            box-shadow: var(--card-shadow);
+            transition: background-color 0.25s ease, border-color 0.25s ease;
         }
 
         /* Top accent line */
@@ -102,7 +180,7 @@
             left: 0;
             right: 0;
             height: 3px;
-            background: linear-gradient(90deg, #3B82F6, #8B5CF6, #3B82F6);
+            background: var(--accent-line);
             background-size: 200% 100%;
             animation: shimmer 3s ease-in-out infinite;
         }
@@ -115,13 +193,13 @@
         .card-title {
             font-size: 20px;
             font-weight: 700;
-            color: #F1F3F8;
+            color: var(--title-color);
             margin-bottom: 6px;
             letter-spacing: -0.3px;
         }
 
         .card-subtitle {
-            color: #5C6584;
+            color: var(--subtitle-color);
             margin-bottom: 28px;
             font-size: 14px;
             line-height: 1.5;
@@ -129,11 +207,11 @@
 
         /* ── Error State ── */
         .error {
-            color: #EF4444;
+            color: var(--error-color);
             margin-bottom: 20px;
             font-size: 13px;
-            background: rgba(239,68,68,0.08);
-            border: 1px solid rgba(239,68,68,0.15);
+            background: var(--error-bg);
+            border: 1px solid var(--error-border);
             padding: 12px 16px;
             border-radius: 10px;
             text-align: left;
@@ -142,7 +220,7 @@
 
         /* ── Microsoft Sign-In Button ── */
         .ms-btn {
-            background: #3B82F6;
+            background: var(--btn-bg);
             color: white;
             border: none;
             padding: 14px 24px;
@@ -173,9 +251,9 @@
         }
 
         .ms-btn:hover {
-            background: #2563EB;
+            background: var(--btn-hover-bg);
             transform: translateY(-2px);
-            box-shadow: 0 6px 24px rgba(59,130,246,0.35);
+            box-shadow: var(--btn-shadow);
         }
 
         .ms-btn:hover::after { opacity: 1; }
@@ -200,12 +278,12 @@
             content: '';
             flex: 1;
             height: 1px;
-            background: #2A3352;
+            background: var(--divider-color);
         }
 
         .login-divider span {
             font-size: 11px;
-            color: #3D4663;
+            color: var(--divider-text);
             text-transform: uppercase;
             letter-spacing: 0.8px;
             font-weight: 500;
@@ -218,28 +296,63 @@
             justify-content: center;
             gap: 8px;
             padding: 10px 16px;
-            background: rgba(59,130,246,0.05);
-            border: 1px solid rgba(59,130,246,0.08);
+            background: var(--security-bg);
+            border: 1px solid var(--security-border);
             border-radius: 10px;
         }
 
         .security-info svg {
             width: 14px;
             height: 14px;
-            color: #5C6584;
+            color: var(--security-text);
             flex-shrink: 0;
         }
 
         .security-info span {
             font-size: 11px;
-            color: #5C6584;
+            color: var(--security-text);
             letter-spacing: 0.2px;
         }
+
+        /* ── Theme Toggle (on login page) ── */
+        .login-theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            border: 1px solid var(--toggle-border);
+            background: var(--toggle-bg);
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--toggle-color);
+            padding: 0;
+        }
+
+        .login-theme-toggle:hover {
+            color: var(--toggle-hover-color);
+            transform: scale(1.05);
+        }
+
+        .login-theme-toggle svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .login-theme-toggle .icon-sun { display: none; }
+        .login-theme-toggle .icon-moon { display: block; }
+        [data-theme="dark"] .login-theme-toggle .icon-sun { display: block; }
+        [data-theme="dark"] .login-theme-toggle .icon-moon { display: none; }
 
         /* ── Footer ── */
         .login-footer {
             font-size: 11px;
-            color: #2A3352;
+            color: var(--footer-color);
             text-align: center;
         }
 
@@ -259,6 +372,16 @@
     </style>
 </head>
 <body>
+    <!-- Theme Toggle -->
+    <button class="login-theme-toggle" id="loginThemeToggle" title="Toggle light/dark mode" aria-label="Toggle theme">
+        <svg class="icon-sun" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/>
+        </svg>
+        <svg class="icon-moon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"/>
+        </svg>
+    </button>
+
     <div class="login-wrapper">
         <!-- Company Logo -->
         <div class="login-logo">
@@ -297,5 +420,21 @@
         <!-- Footer -->
         <div class="login-footer">&copy; {{ now().year if now is defined else '2026' }} The Wheel Group &middot; Internal Use Only</div>
     </div>
+
+    <script>
+    (function() {
+        var toggle = document.getElementById('loginThemeToggle');
+        if (!toggle) return;
+
+        toggle.addEventListener('click', function() {
+            var html = document.documentElement;
+            var current = html.getAttribute('data-theme') || 'light';
+            var next = (current === 'dark') ? 'light' : 'dark';
+
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('twg-theme', next);
+        });
+    })();
+    </script>
 </body>
 </html>
