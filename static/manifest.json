@@ -3,7 +3,7 @@
   "short_name": "TWG Portal",
   "description": "The Wheel Group Internal Portal",
   "start_url": "/",
-  "display": "standalone",
+  "display": "browser",
   "background_color": "#0B0F1A",
   "theme_color": "#111827",
   "icons": [
