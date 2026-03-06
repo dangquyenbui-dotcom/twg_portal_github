@@ -4,7 +4,7 @@ TWG Portal - Main Application
 
 import logging
 import atexit
-from flask import Flask, session, redirect, url_for, request, render_template
+from flask import Flask, session, redirect, url_for, request, render_template, send_from_directory
 from config import Config
 from extensions import cache, scheduler
 import auth.entra_auth as auth_utils
@@ -114,6 +114,15 @@ def create_app():
     # --- Register Blueprints ---
     app.register_blueprint(main_bp)
     app.register_blueprint(sales_bp)
+
+    # --- PWA: Safari looks for apple-touch-icon at site root ---
+    @app.route('/apple-touch-icon.png')
+    @app.route('/apple-touch-icon-precomposed.png')
+    def apple_touch_icon():
+        return send_from_directory(
+            app.static_folder, 'icons/apple-touch-icon.png',
+            mimetype='image/png'
+        )
 
     # --- SSO ROUTES ---
     @app.route("/login")
