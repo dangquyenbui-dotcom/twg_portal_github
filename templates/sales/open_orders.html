@@ -460,7 +460,16 @@
    ════════════════════════════════════════════════ */
 @media (max-width: 480px) {
     .page-container { padding: 12px; }
-    .back-link { font-size: 11px; margin-bottom: 8px; }
+    .back-link {
+        font-size: 14px;
+        margin-bottom: 10px;
+        padding: 10px 14px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        gap: 8px;
+    }
+    .back-link svg { width: 18px; height: 18px; }
     .page-header { margin-bottom: 2px; }
     .page-header h1 { font-size: 17px; }
     .page-header .page-tag { font-size: 10px; padding: 4px 10px; }
@@ -491,8 +500,8 @@
     }
     .stat-card { padding: 10px; }
     .stat-card .label { font-size: 8px; margin-bottom: 4px; }
-    .stat-card .value { font-size: 17px; }
-    .stat-card .usd-equiv { font-size: 10px; margin-top: 2px; }
+    .stat-card .value { font-size: 26px; }
+    .stat-card .usd-equiv { font-size: 11px; margin-top: 2px; }
 
     .released-line { margin-top: 6px; padding-top: 6px; gap: 4px; }
     .released-line .released-icon { width: 11px; height: 11px; }

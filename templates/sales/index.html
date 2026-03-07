@@ -178,6 +178,19 @@
 .back-link:hover { color: var(--text-primary); }
 
 .back-link svg { width: 16px; height: 16px; }
+
+@media (max-width: 480px) {
+    .back-link {
+        font-size: 14px;
+        margin-bottom: 16px;
+        padding: 10px 14px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        gap: 8px;
+    }
+    .back-link svg { width: 18px; height: 18px; }
+}
 {% endblock %}
 
 {% block content %}
