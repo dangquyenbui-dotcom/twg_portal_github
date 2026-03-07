@@ -13,15 +13,17 @@ Export roles do NOT grant view access — they only enable download buttons
 on reports the user can already see. Admin bypasses all checks.
 """
 
+import json
 import math
-from datetime import date
+from datetime import date, datetime
 
-from flask import Blueprint, render_template, session, redirect, url_for
+from flask import Blueprint, render_template, session, redirect, url_for, request, jsonify
 
 from services.data_worker import (
     get_bookings_from_cache, get_bookings_raw_from_cache,
     get_open_orders_from_cache, get_open_orders_raw_from_cache,
 )
+from services.dashboard_service import aggregate_dashboard_data, build_filter_options
 from services.excel_helper import build_export_workbook, send_workbook
 from auth.decorators import require_role, user_has_role
 
@@ -349,3 +351,60 @@ def open_orders_export_ca():
         columns=OPEN_ORDERS_EXPORT_COLUMNS,
     )
     return send_workbook(wb, f'Open_Orders_CA_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+# ═══════════════════════════════════════════════════════════════
+# DASHBOARD — View requires Sales.Dashboard.View
+# ═══════════════════════════════════════════════════════════════
+
+@sales_bp.route('/dashboard')
+@require_role('Sales.Dashboard.View')
+def dashboard():
+    """Executive sales dashboard — aggregates cached raw data into charts and tables."""
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    # Get raw line-item data from cache (same data used for Excel exports)
+    rows_us, rows_ca = get_bookings_raw_from_cache()
+    _, _, _, cad_rate = get_bookings_from_cache()
+
+    # Build filter option lists for the filter panel
+    filter_options = build_filter_options(rows_us, rows_ca)
+
+    # Initial aggregation (no filters applied)
+    dashboard_data = aggregate_dashboard_data(rows_us, rows_ca, cad_rate=cad_rate)
+
+    return render_template(
+        'sales/dashboard.html',
+        user=session["user"],
+        data=dashboard_data,
+        data_json=json.dumps(dashboard_data),
+        filter_options=filter_options,
+        filter_options_json=json.dumps(filter_options),
+        cad_rate=cad_rate,
+        now=datetime.now(),
+    )
+
+
+@sales_bp.route('/dashboard/filter', methods=['POST'])
+@require_role('Sales.Dashboard.View')
+def dashboard_filter():
+    """
+    AJAX endpoint: re-aggregate dashboard data with applied filters.
+    Accepts JSON body with filter selections, returns updated dashboard data.
+    """
+    if not session.get("user"):
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    filters = request.get_json() or {}
+
+    rows_us, rows_ca = get_bookings_raw_from_cache()
+    _, _, _, cad_rate = get_bookings_from_cache()
+
+    dashboard_data = aggregate_dashboard_data(
+        rows_us, rows_ca,
+        filters=filters,
+        cad_rate=cad_rate,
+    )
+
+    return jsonify(dashboard_data)

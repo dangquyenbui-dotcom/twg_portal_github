@@ -83,6 +83,9 @@ class Config:
             'GROUP_SALES_OPENORDERS_VIEW':      'Sales.OpenOrders.View',
             'GROUP_SALES_OPENORDERS_EXPORT':    'Sales.OpenOrders.Export',
 
+            # ── Sales: Dashboard (Executive) ──
+            'GROUP_SALES_DASHBOARD_VIEW':       'Sales.Dashboard.View',
+
             # ── Sales: Shipments (future — uncomment when ready) ──
             # 'GROUP_SALES_SHIPMENTS_VIEW':     'Sales.Shipments.View',
             # 'GROUP_SALES_SHIPMENTS_EXPORT':   'Sales.Shipments.Export',

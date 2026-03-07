@@ -35,6 +35,7 @@ ROLE_HIERARCHY = {
     'Sales.Base': [
         'Sales.Bookings.View',
         'Sales.OpenOrders.View',
+        'Sales.Dashboard.View',
         # Future: add new Sales.*.View roles here
         # 'Sales.Shipments.View',
         # 'Sales.TerrPerf.View',
