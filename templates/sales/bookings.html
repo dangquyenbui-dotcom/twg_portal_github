@@ -298,15 +298,62 @@
     flex-direction: column;
 }
 
+/* ── Ranking Tabs ── */
+.ranking-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .section-title {
     font-size: 14px;
     font-weight: 600;
     color: var(--text-secondary);
-    margin-bottom: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    flex-shrink: 0;
+    margin: 0;
 }
+
+.ranking-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 3px;
+}
+
+.ranking-tab {
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-body);
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.ranking-tab:hover {
+    color: var(--text-secondary);
+    background: var(--bg-card-hover);
+}
+
+.ranking-tab.active {
+    color: var(--text-primary);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Tab content panels */
+.ranking-panel { display: none; }
+.ranking-panel.active { display: block; }
 
 /* ── Top 3 Podium ── */
 .podium {
@@ -602,7 +649,10 @@
     .stat-card .value { font-size: 26px; }
     .stat-card .usd-equiv { font-size: 11px; margin-top: 2px; }
 
-    .section-title { font-size: 11px; margin-bottom: 8px; }
+    .section-title { font-size: 11px; }
+    .ranking-header { gap: 6px; }
+    .ranking-tabs { padding: 2px; }
+    .ranking-tab { padding: 5px 10px; font-size: 11px; }
 
     /* Smaller podium */
     .podium { gap: 8px; margin-bottom: 8px; }
@@ -718,52 +768,136 @@
             </div>
         </div>
 
-        {% if us.territory_ranking %}
+        {% if us.territory_ranking or us.salesman_ranking or us.customer_ranking %}
         <div class="ranking-section">
-            <div class="section-title">Territory Ranking</div>
-
-            {% if us.territory_ranking|length >= 3 %}
-            <div class="podium">
-                <div class="podium-card gold">
-                    <div class="podium-medal">1</div>
-                    <div class="podium-location">{{ us.territory_ranking[0].location }}</div>
-                    <div class="podium-amount">${{ "{:,}".format(us.territory_ranking[0].total|int) }}</div>
-                </div>
-                <div class="podium-card silver">
-                    <div class="podium-medal">2</div>
-                    <div class="podium-location">{{ us.territory_ranking[1].location }}</div>
-                    <div class="podium-amount">${{ "{:,}".format(us.territory_ranking[1].total|int) }}</div>
-                </div>
-                <div class="podium-card bronze">
-                    <div class="podium-medal">3</div>
-                    <div class="podium-location">{{ us.territory_ranking[2].location }}</div>
-                    <div class="podium-amount">${{ "{:,}".format(us.territory_ranking[2].total|int) }}</div>
+            <div class="ranking-header">
+                <div class="section-title">Ranking</div>
+                <div class="ranking-tabs" data-region="us">
+                    <button class="ranking-tab active" data-tab="us-territory">Territory</button>
+                    <button class="ranking-tab" data-tab="us-salesman">Salesman</button>
+                    <button class="ranking-tab" data-tab="us-customer">Customer</button>
                 </div>
             </div>
-            {% endif %}
 
-            {% if us.territory_ranking|length > 3 %}
-            <div class="ranking-wrapper">
-                <table class="ranking-table">
-                    <thead>
-                        <tr>
-                            <th>Location</th>
-                            <th class="col-total">Total</th>
-                            <th class="col-rank">Rank</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in us.territory_ranking[3:] %}
-                        <tr>
-                            <td class="col-location">{{ row.location }}</td>
-                            <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
-                            <td class="col-rank">{{ row.rank }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            {# ── Territory Panel (default) ── #}
+            <div class="ranking-panel active" id="us-territory">
+                {% if us.territory_ranking|length >= 3 %}
+                <div class="podium">
+                    <div class="podium-card gold">
+                        <div class="podium-medal">1</div>
+                        <div class="podium-location">{{ us.territory_ranking[0].location }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(us.territory_ranking[0].total|int) }}</div>
+                    </div>
+                    <div class="podium-card silver">
+                        <div class="podium-medal">2</div>
+                        <div class="podium-location">{{ us.territory_ranking[1].location }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(us.territory_ranking[1].total|int) }}</div>
+                    </div>
+                    <div class="podium-card bronze">
+                        <div class="podium-medal">3</div>
+                        <div class="podium-location">{{ us.territory_ranking[2].location }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(us.territory_ranking[2].total|int) }}</div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if us.territory_ranking|length > 3 %}
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead><tr><th>Location</th><th class="col-total">Total</th><th class="col-rank">Rank</th></tr></thead>
+                        <tbody>
+                            {% for row in us.territory_ranking[3:] %}
+                            <tr>
+                                <td class="col-location">{{ row.location }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
             </div>
-            {% endif %}
+
+            {# ── Salesman Panel ── #}
+            <div class="ranking-panel" id="us-salesman">
+                {% if us.salesman_ranking|length >= 3 %}
+                <div class="podium">
+                    <div class="podium-card gold">
+                        <div class="podium-medal">1</div>
+                        <div class="podium-location">{{ us.salesman_ranking[0].salesman }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(us.salesman_ranking[0].total|int) }}</div>
+                    </div>
+                    <div class="podium-card silver">
+                        <div class="podium-medal">2</div>
+                        <div class="podium-location">{{ us.salesman_ranking[1].salesman }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(us.salesman_ranking[1].total|int) }}</div>
+                    </div>
+                    <div class="podium-card bronze">
+                        <div class="podium-medal">3</div>
+                        <div class="podium-location">{{ us.salesman_ranking[2].salesman }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(us.salesman_ranking[2].total|int) }}</div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if us.salesman_ranking|length > 3 %}
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead><tr><th>Salesman</th><th class="col-total">Total</th><th class="col-rank">Rank</th></tr></thead>
+                        <tbody>
+                            {% for row in us.salesman_ranking[3:] %}
+                            <tr>
+                                <td class="col-location">{{ row.salesman }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+
+            {# ── Customer Panel ── #}
+            <div class="ranking-panel" id="us-customer">
+                {% if us.customer_ranking|length >= 3 %}
+                <div class="podium">
+                    <div class="podium-card gold">
+                        <div class="podium-medal">1</div>
+                        <div class="podium-location">{{ us.customer_ranking[0].customer }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(us.customer_ranking[0].total|int) }}</div>
+                    </div>
+                    <div class="podium-card silver">
+                        <div class="podium-medal">2</div>
+                        <div class="podium-location">{{ us.customer_ranking[1].customer }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(us.customer_ranking[1].total|int) }}</div>
+                    </div>
+                    <div class="podium-card bronze">
+                        <div class="podium-medal">3</div>
+                        <div class="podium-location">{{ us.customer_ranking[2].customer }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(us.customer_ranking[2].total|int) }}</div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if us.customer_ranking|length > 3 %}
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead><tr><th>Customer</th><th class="col-total">Total</th><th class="col-rank">Rank</th></tr></thead>
+                        <tbody>
+                            {% for row in us.customer_ranking[3:] %}
+                            <tr>
+                                <td class="col-location">{{ row.customer }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
         </div>
         {% else %}
         <div class="empty-state">
@@ -826,31 +960,72 @@
             </div>
         </div>
 
-        {% if ca.territory_ranking %}
+        {% if ca.territory_ranking or ca.salesman_ranking or ca.customer_ranking %}
         <div class="ranking-section">
-            <div class="section-title">Territory Ranking</div>
+            <div class="ranking-header">
+                <div class="section-title">Ranking</div>
+                <div class="ranking-tabs" data-region="ca">
+                    <button class="ranking-tab active" data-tab="ca-territory">Territory</button>
+                    <button class="ranking-tab" data-tab="ca-salesman">Salesman</button>
+                    <button class="ranking-tab" data-tab="ca-customer">Customer</button>
+                </div>
+            </div>
 
-            <div class="ranking-wrapper">
-                <table class="ranking-table">
-                    <thead>
-                        <tr>
-                            <th>Location</th>
-                            <th class="col-total">Total (CAD)</th>
-                            <th class="col-usd">≈ USD</th>
-                            <th class="col-rank">Rank</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in ca.territory_ranking %}
-                        <tr>
-                            <td class="col-location">{{ row.location }}</td>
-                            <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
-                            <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
-                            <td class="col-rank">{{ row.rank }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            {# ── Territory Panel (default) ── #}
+            <div class="ranking-panel active" id="ca-territory">
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead><tr><th>Location</th><th class="col-total">Total (CAD)</th><th class="col-usd">≈ USD</th><th class="col-rank">Rank</th></tr></thead>
+                        <tbody>
+                            {% for row in ca.territory_ranking %}
+                            <tr>
+                                <td class="col-location">{{ row.location }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {# ── Salesman Panel ── #}
+            <div class="ranking-panel" id="ca-salesman">
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead><tr><th>Salesman</th><th class="col-total">Total (CAD)</th><th class="col-usd">≈ USD</th><th class="col-rank">Rank</th></tr></thead>
+                        <tbody>
+                            {% for row in ca.salesman_ranking %}
+                            <tr>
+                                <td class="col-location">{{ row.salesman }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {# ── Customer Panel ── #}
+            <div class="ranking-panel" id="ca-customer">
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead><tr><th>Customer</th><th class="col-total">Total (CAD)</th><th class="col-usd">≈ USD</th><th class="col-rank">Rank</th></tr></thead>
+                        <tbody>
+                            {% for row in ca.customer_ranking %}
+                            <tr>
+                                <td class="col-location">{{ row.customer }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
         {% else %}
@@ -866,17 +1041,43 @@
 {% block scripts %}
 <script>
 (function() {
+    // ── Countdown Timer ──
     let seconds = 600;
     const el = document.getElementById('countdownTimer');
-    if (!el) return;
+    if (el) {
+        setInterval(function() {
+            seconds--;
+            if (seconds < 0) seconds = 0;
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            el.textContent = m + ':' + String(s).padStart(2, '0');
+        }, 1000);
+    }
 
-    setInterval(function() {
-        seconds--;
-        if (seconds < 0) seconds = 0;
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        el.textContent = m + ':' + String(s).padStart(2, '0');
-    }, 1000);
+    // ── Ranking Tab Switching ──
+    document.querySelectorAll('.ranking-tabs').forEach(function(tabGroup) {
+        tabGroup.querySelectorAll('.ranking-tab').forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                var targetId = this.getAttribute('data-tab');
+
+                // Deactivate all tabs in this group
+                tabGroup.querySelectorAll('.ranking-tab').forEach(function(t) {
+                    t.classList.remove('active');
+                });
+                this.classList.add('active');
+
+                // Find the parent ranking-section and toggle panels
+                var section = tabGroup.closest('.ranking-section');
+                if (section) {
+                    section.querySelectorAll('.ranking-panel').forEach(function(panel) {
+                        panel.classList.remove('active');
+                    });
+                    var target = document.getElementById(targetId);
+                    if (target) target.classList.add('active');
+                }
+            });
+        });
+    });
 })();
 </script>
 {% endblock %}

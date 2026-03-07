@@ -35,7 +35,9 @@ def _build_bookings_query(database):
              ELSE sm.terr
         END                                     AS terr_code,
         tr.custno,
-        ic.plinid
+        ic.plinid,
+        tr.salesmn,
+        cu.company                              AS cust_name
     FROM {database}.dbo.sotran tr WITH (NOLOCK)
     LEFT JOIN {database}.dbo.somast sm WITH (NOLOCK) ON sm.sono = tr.sono
     LEFT JOIN {database}.dbo.arcust cu WITH (NOLOCK) ON cu.custno = tr.custno
@@ -49,15 +51,20 @@ def _build_bookings_query(database):
 
 def _aggregate_bookings(rows, region='US'):
     """
-    Aggregate raw rows into summary and ranking.
+    Aggregate raw rows into summary and three rankings:
+      - territory_ranking  (default)
+      - salesman_ranking
+      - customer_ranking
     All amounts are rounded up (ceiling) to whole numbers.
     """
     total_amount = 0.0
     total_units = 0
     distinct_orders = set()
     territory_totals = defaultdict(float)
+    salesman_totals = defaultdict(float)
+    customer_totals = defaultdict(lambda: {'name': '', 'amount': 0.0})
 
-    for sono, units, amount, terr_code, custno, plinid in rows:
+    for sono, units, amount, terr_code, custno, plinid, salesmn, cust_name in rows:
         custno_clean = (custno or '').strip().upper()
         if custno_clean in BOOKINGS_EXCLUDED_CUSTOMERS:
             continue
@@ -66,6 +73,10 @@ def _aggregate_bookings(rows, region='US'):
             continue
 
         territory = map_territory(terr_code, region)
+        salesman = (salesmn or '').strip() or 'Unassigned'
+        customer_key = custno_clean
+        customer_display = (cust_name or '').strip() or custno_clean
+
         amt = float(amount or 0)
         qty = int(units or 0)
 
@@ -73,13 +84,31 @@ def _aggregate_bookings(rows, region='US'):
         total_units += qty
         distinct_orders.add(sono)
         territory_totals[territory] += amt
+        salesman_totals[salesman] += amt
+        customer_totals[customer_key]['amount'] += amt
+        customer_totals[customer_key]['name'] = customer_display
 
     total_amount = math.ceil(total_amount)
 
-    ranking_sorted = sorted(territory_totals.items(), key=lambda x: x[1], reverse=True)
-    ranking = [
+    # Territory ranking
+    terr_sorted = sorted(territory_totals.items(), key=lambda x: x[1], reverse=True)
+    territory_ranking = [
         {"location": loc, "total": math.ceil(total), "rank": rank}
-        for rank, (loc, total) in enumerate(ranking_sorted, start=1)
+        for rank, (loc, total) in enumerate(terr_sorted, start=1)
+    ]
+
+    # Salesman ranking
+    sm_sorted = sorted(salesman_totals.items(), key=lambda x: x[1], reverse=True)
+    salesman_ranking = [
+        {"salesman": sm, "total": math.ceil(total), "rank": rank}
+        for rank, (sm, total) in enumerate(sm_sorted, start=1)
+    ]
+
+    # Customer ranking
+    cust_sorted = sorted(customer_totals.items(), key=lambda x: x[1]['amount'], reverse=True)
+    customer_ranking = [
+        {"customer": v['name'], "custno": k, "total": math.ceil(v['amount']), "rank": rank}
+        for rank, (k, v) in enumerate(cust_sorted, start=1)
     ]
 
     summary = {
@@ -90,13 +119,18 @@ def _aggregate_bookings(rows, region='US'):
         "total_territories": len(territory_totals),
     }
 
-    return {"summary": summary, "ranking": ranking}
+    return {
+        "summary": summary,
+        "ranking": territory_ranking,
+        "salesman_ranking": salesman_ranking,
+        "customer_ranking": customer_ranking,
+    }
 
 
 def fetch_bookings_snapshot(database=None, region='US'):
     """
     Fetch today's bookings for a given region.
-    Returns dict with 'summary' and 'ranking', or None on failure.
+    Returns dict with 'summary', 'ranking', 'salesman_ranking', 'customer_ranking', or None on failure.
     """
     db = database or Config.DB_ORDERS
     query = _build_bookings_query(db)

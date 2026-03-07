@@ -111,6 +111,7 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
             "total_territories": 0, "total_lines": 0,
             "territory_ranking": [],
             "salesman_ranking": [],
+            "customer_ranking": [],
             "order_date": None,
         }
 
@@ -124,6 +125,7 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
         "total_lines": summary.get("total_lines", 0),
         "territory_ranking": snapshot.get("ranking", snapshot.get("territory_ranking", [])),
         "salesman_ranking": snapshot.get("salesman_ranking", []),
+        "customer_ranking": snapshot.get("customer_ranking", []),
         "order_date": summary.get("order_date"),
     }
 
@@ -136,6 +138,8 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
         for sm in data["salesman_ranking"]:
             sm["total_usd"] = math.ceil(sm["total"] * cad_rate)
             sm["released_usd"] = math.ceil(sm.get("released", 0) * cad_rate)
+        for cust in data["customer_ranking"]:
+            cust["total_usd"] = math.ceil(cust["total"] * cad_rate)
     else:
         data["total_amount_usd"] = 0
         data["total_released_amount_usd"] = 0
