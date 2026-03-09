@@ -11,7 +11,9 @@ import auth.entra_auth as auth_utils
 from auth.decorators import user_has_role
 from routes.main import main_bp
 from routes.sales import sales_bp
+from routes.admin import admin_bp
 from services.data_worker import refresh_bookings_and_rate, refresh_open_orders_scheduled, refresh_all_on_startup
+from services.dashboard_data_service import refresh_dashboard_current_month
 
 # --- Logging: INFO level only ---
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -49,11 +51,6 @@ def _resolve_roles_from_groups(group_ids):
     """
     Convert a list of Entra ID Security Group Object IDs into internal role names
     using the GROUP_ROLE_MAP from config. Returns a list of role name strings.
-
-    Example:
-        group_ids = ["abc-123", "def-456"]
-        GROUP_ROLE_MAP = {"abc-123": "Sales.Full", "def-456": "Warehouse"}
-        returns ["Sales.Full", "Warehouse"]
     """
     if not group_ids:
         return []
@@ -85,6 +82,7 @@ def create_app():
         scheduler.start()
         logger.info("Scheduler started.")
 
+    # ── Bookings refresh (every 10 min) ──
     if not scheduler.get_job('bookings_refresh'):
         scheduler.add_job(
             id='bookings_refresh',
@@ -95,6 +93,7 @@ def create_app():
         )
         logger.info(f"Scheduled 'bookings_refresh' every {Config.DATA_REFRESH_INTERVAL}s")
 
+    # ── Open orders refresh (every 60 min) ──
     if not scheduler.get_job('open_orders_refresh'):
         scheduler.add_job(
             id='open_orders_refresh',
@@ -105,15 +104,31 @@ def create_app():
         )
         logger.info(f"Scheduled 'open_orders_refresh' every {Config.OPEN_ORDERS_REFRESH_INTERVAL}s")
 
+    # ── Dashboard current month refresh (every 60 min) ──
+    if not scheduler.get_job('dashboard_current_refresh'):
+        scheduler.add_job(
+            id='dashboard_current_refresh',
+            func=refresh_dashboard_current_month,
+            trigger='interval',
+            seconds=Config.DASHBOARD_REFRESH_INTERVAL,
+            misfire_grace_time=120
+        )
+        logger.info(f"Scheduled 'dashboard_current_refresh' every {Config.DASHBOARD_REFRESH_INTERVAL}s")
+
     with app.app_context():
-        logger.info("Running initial data refresh (all sources)...")
+        logger.info("Running initial data refresh (bookings + open orders)...")
         refresh_all_on_startup()
+        # NOTE: Dashboard historical data is NOT fetched on startup — it's fetched
+        # on demand when the first user visits the dashboard page. This keeps
+        # startup fast and avoids unnecessary SQL load.
+        logger.info("Dashboard historical data will be fetched on first visit.")
 
     atexit.register(lambda: scheduler.shutdown() if scheduler.running else None)
 
     # --- Register Blueprints ---
     app.register_blueprint(main_bp)
     app.register_blueprint(sales_bp)
+    app.register_blueprint(admin_bp)
 
     # --- PWA: Safari probes these root paths for the home screen icon ---
     @app.route('/apple-touch-icon.png')

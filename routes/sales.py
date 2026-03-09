@@ -23,7 +23,7 @@ from services.data_worker import (
     get_bookings_from_cache, get_bookings_raw_from_cache,
     get_open_orders_from_cache, get_open_orders_raw_from_cache,
 )
-from services.dashboard_service import aggregate_dashboard_data, build_filter_options
+from services.dashboard_data_service import get_dashboard_data, get_available_years, invalidate_historical_cache
 from services.excel_helper import build_export_workbook, send_workbook
 from auth.decorators import require_role, user_has_role
 
@@ -359,56 +359,57 @@ def open_orders_export_ca():
 
 # ═══════════════════════════════════════════════════════════════
 # DASHBOARD — View requires Sales.Dashboard.View
+# Uses soytrn (historical) + sotran (current month) with Python aggregation.
+# Historical data cached on demand (24hr TTL), current month cached every 60min.
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/dashboard')
 @require_role('Sales.Dashboard.View')
 def dashboard():
-    """Executive sales dashboard — aggregates cached raw data into charts and tables."""
+    """
+    Executive sales dashboard — yearly bookings data from soytrn + sotran.
+    Accepts optional ?year= query parameter (defaults to current year).
+    """
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    # Get raw line-item data from cache (same data used for Excel exports)
-    rows_us, rows_ca = get_bookings_raw_from_cache()
+    # Year selection
+    selected_year = request.args.get('year', type=int, default=date.today().year)
+    available_years = get_available_years()
+    if selected_year not in available_years:
+        selected_year = date.today().year
+
+    # Get exchange rate from bookings cache (shared)
     _, _, _, cad_rate = get_bookings_from_cache()
 
-    # Build filter option lists for the filter panel
-    filter_options = build_filter_options(rows_us, rows_ca)
-
-    # Initial aggregation (no filters applied)
-    dashboard_data = aggregate_dashboard_data(rows_us, rows_ca, cad_rate=cad_rate)
+    # Get dashboard data (fetches on demand if not cached)
+    dashboard_data = get_dashboard_data(year=selected_year, cad_rate=cad_rate)
 
     return render_template(
         'sales/dashboard.html',
         user=session["user"],
         data=dashboard_data,
-        data_json=json.dumps(dashboard_data),
-        filter_options=filter_options,
-        filter_options_json=json.dumps(filter_options),
+        data_json=json.dumps(dashboard_data, default=str),
+        selected_year=selected_year,
+        available_years=available_years,
         cad_rate=cad_rate,
-        now=datetime.now(),
+        last_updated=dashboard_data.get('last_updated'),
     )
 
 
-@sales_bp.route('/dashboard/filter', methods=['POST'])
+@sales_bp.route('/dashboard/refresh', methods=['POST'])
 @require_role('Sales.Dashboard.View')
-def dashboard_filter():
+def dashboard_refresh():
     """
-    AJAX endpoint: re-aggregate dashboard data with applied filters.
-    Accepts JSON body with filter selections, returns updated dashboard data.
+    Manual refresh: invalidate historical cache for a given year and reload.
+    Called via AJAX from the dashboard "Refresh Data" button.
     """
     if not session.get("user"):
         return jsonify({'error': 'Not authenticated'}), 401
 
-    filters = request.get_json() or {}
+    data = request.get_json() or {}
+    year = data.get('year', date.today().year)
 
-    rows_us, rows_ca = get_bookings_raw_from_cache()
-    _, _, _, cad_rate = get_bookings_from_cache()
+    invalidate_historical_cache(year=year)
 
-    dashboard_data = aggregate_dashboard_data(
-        rows_us, rows_ca,
-        filters=filters,
-        cad_rate=cad_rate,
-    )
-
-    return jsonify(dashboard_data)
+    return jsonify({'status': 'ok', 'redirect': url_for('sales.dashboard', year=year)})

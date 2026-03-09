@@ -138,6 +138,10 @@ class Config:
     # Open Orders refresh interval in seconds (60 minutes — less frequent to reduce SQL load)
     OPEN_ORDERS_REFRESH_INTERVAL = 3600
 
+    # Dashboard current month refresh interval in seconds (60 minutes)
+    # Historical data is cached on demand and never auto-refreshed.
+    DASHBOARD_REFRESH_INTERVAL = 3600
+
     @classmethod
     def get_connection_string(cls, database=None):
         """Build a pyodbc connection string for the given database."""

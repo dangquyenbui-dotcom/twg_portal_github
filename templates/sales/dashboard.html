@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Sales Dashboard - TWG Portal{% endblock %}
+{% block title %}Sales Dashboard {{ selected_year }} - TWG Portal{% endblock %}
 
 {% block breadcrumb %}
 <a href="/">Home</a>
@@ -10,50 +10,42 @@
 {% endblock %}
 
 {% block extra_styles %}
-/* ══════════════════════════════════════════════════════════════
-   Sales Dashboard — Executive View
-   ══════════════════════════════════════════════════════════════ */
+/* ── Dashboard Layout ── */
 .dashboard-page { display:flex; flex-direction:column; min-height:calc(100vh - 56px); }
 
 .dash-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; flex-wrap:wrap; gap:8px; }
 .dash-header-left { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .dash-header h1 { font-size:22px; font-weight:700; letter-spacing:-0.4px; }
-.dash-header .date-tag { font-size:13px; color:var(--text-secondary); background:var(--date-tag-bg); border:1px solid var(--date-tag-border); padding:6px 14px; border-radius:20px; font-family:var(--font-mono); font-weight:500; box-shadow:var(--shadow-sm); }
 
 .back-link { display:inline-flex; align-items:center; gap:6px; color:var(--text-secondary); text-decoration:none; font-size:13px; margin-bottom:12px; transition:color 0.15s; }
 .back-link:hover { color:var(--text-primary); }
 .back-link svg { width:16px; height:16px; }
 
-.dash-refresh { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); margin-bottom:16px; }
-.dash-refresh .dot { width:6px; height:6px; border-radius:50%; background:var(--accent-green); animation:pulse 2s ease-in-out infinite; }
+.dash-meta { display:flex; align-items:center; gap:12px; font-size:12px; color:var(--text-muted); margin-bottom:16px; flex-wrap:wrap; }
+.dash-meta .dot { width:6px; height:6px; border-radius:50%; background:var(--accent-green); animation:pulse 2s ease-in-out infinite; }
 @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
 
-/* Filter Toggle */
-.filter-toggle { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; font-size:13px; font-weight:600; font-family:var(--font-body); color:var(--accent-blue); background:rgba(37,99,235,0.06); border:1px solid rgba(37,99,235,0.15); border-radius:var(--radius-md); cursor:pointer; transition:all 0.2s; }
-[data-theme="dark"] .filter-toggle { background:rgba(59,130,246,0.08); border-color:rgba(59,130,246,0.2); }
-.filter-toggle:hover { background:rgba(37,99,235,0.12); border-color:rgba(37,99,235,0.25); }
-.filter-toggle svg { width:16px; height:16px; }
-.filter-toggle .filter-count { background:var(--accent-blue); color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center; padding:0 5px; }
+/* Year Selector */
+.year-select-wrap { display:flex; align-items:center; gap:8px; }
+.year-select {
+    padding:6px 32px 6px 14px; font-size:15px; font-weight:700; font-family:var(--font-mono);
+    background:var(--bg-card); color:var(--text-primary); border:1px solid var(--border);
+    border-radius:var(--radius-md); cursor:pointer; -webkit-appearance:none; appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 10px center; box-shadow:var(--shadow-sm);
+}
+.year-select:focus { outline:none; border-color:var(--accent-blue); }
 
-/* Filter Panel */
-.filter-panel { display:none; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px; margin-bottom:16px; box-shadow:var(--shadow-md); }
-.filter-panel.open { display:block; }
-.filter-panel-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
-.filter-panel-title { font-size:14px; font-weight:700; color:var(--text-primary); }
-.filter-clear-btn { font-size:12px; font-weight:600; color:var(--accent-red); background:none; border:none; cursor:pointer; padding:4px 8px; border-radius:var(--radius-sm); transition:background 0.15s; font-family:var(--font-body); }
-.filter-clear-btn:hover { background:rgba(239,68,68,0.08); }
-
-.filter-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; }
-.filter-group label { display:block; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); margin-bottom:6px; }
-.filter-group select { width:100%; padding:8px 12px; font-size:13px; font-family:var(--font-body); background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer; transition:border-color 0.15s; -webkit-appearance:none; appearance:none; }
-.filter-group select:focus { outline:none; border-color:var(--accent-blue); }
-.filter-group select[multiple] { height:120px; padding:6px; }
-.filter-group select[multiple] option { padding:4px 8px; border-radius:3px; margin-bottom:1px; }
-.filter-group select[multiple] option:checked { background:var(--accent-blue); color:#fff; }
-
-.filter-apply-row { display:flex; justify-content:flex-end; margin-top:16px; gap:8px; }
-.filter-apply-btn { padding:8px 20px; font-size:13px; font-weight:600; font-family:var(--font-body); color:#fff; background:var(--accent-blue); border:none; border-radius:var(--radius-sm); cursor:pointer; transition:all 0.2s; }
-.filter-apply-btn:hover { opacity:0.9; transform:translateY(-1px); }
+/* Refresh Button */
+.btn-refresh {
+    display:inline-flex; align-items:center; gap:6px; padding:6px 14px;
+    font-size:12px; font-weight:600; font-family:var(--font-body);
+    color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border);
+    border-radius:var(--radius-md); cursor:pointer; transition:all 0.2s;
+}
+.btn-refresh:hover { color:var(--accent-blue); border-color:var(--accent-blue); }
+.btn-refresh:disabled { opacity:0.5; cursor:wait; }
+.btn-refresh svg { width:14px; height:14px; }
 
 /* KPI Row */
 .kpi-row { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:20px; }
@@ -72,10 +64,23 @@
 .kpi-card .kpi-value.avg { color:var(--accent-purple); }
 .kpi-card .kpi-value.lines { color:var(--text-secondary); }
 
+/* Region Split Bar */
+.region-bar-wrap { margin-bottom:20px; }
+.region-bar { height:8px; border-radius:4px; overflow:hidden; display:flex; background:var(--border); }
+.region-bar .bar-us { background:var(--accent-blue); transition:width 0.5s ease; }
+.region-bar .bar-ca { background:var(--accent-amber); transition:width 0.5s ease; }
+.region-legend { display:flex; gap:20px; margin-top:8px; }
+.region-legend-item { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); }
+.region-legend-item .legend-dot { width:8px; height:8px; border-radius:50%; }
+.region-legend-item .legend-dot.us { background:var(--accent-blue); }
+.region-legend-item .legend-dot.ca { background:var(--accent-amber); }
+.region-legend-item .legend-val { font-family:var(--font-mono); font-weight:600; color:var(--text-primary); }
+
 /* Chart Grid */
 .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
 .chart-card { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px; box-shadow:var(--shadow-sm); min-height:320px; display:flex; flex-direction:column; transition:background-color 0.25s ease; }
 .chart-card.full-width { grid-column:1/-1; }
+.chart-card.hero { min-height:360px; }
 .chart-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-secondary); margin-bottom:16px; flex-shrink:0; }
 .chart-body { flex:1; position:relative; min-height:0; }
 .chart-body canvas { width:100% !important; height:100% !important; }
@@ -99,18 +104,6 @@
 .dash-table .col-num { text-align:right; font-family:var(--font-mono); color:var(--text-muted); }
 .table-scroll { max-height:400px; overflow-y:auto; }
 
-/* Region Split Bar */
-.region-bar-wrap { margin-bottom:20px; }
-.region-bar { height:8px; border-radius:4px; overflow:hidden; display:flex; background:var(--border); }
-.region-bar .bar-us { background:var(--accent-blue); transition:width 0.5s ease; }
-.region-bar .bar-ca { background:var(--accent-amber); transition:width 0.5s ease; }
-.region-legend { display:flex; gap:20px; margin-top:8px; }
-.region-legend-item { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secondary); }
-.region-legend-item .legend-dot { width:8px; height:8px; border-radius:50%; }
-.region-legend-item .legend-dot.us { background:var(--accent-blue); }
-.region-legend-item .legend-dot.ca { background:var(--accent-amber); }
-.region-legend-item .legend-val { font-family:var(--font-mono); font-weight:600; color:var(--text-primary); }
-
 /* Tablet */
 @media (max-width:1024px) {
     .kpi-row { gap:10px; }
@@ -118,7 +111,7 @@
     .kpi-card { padding:12px; }
     .chart-grid { gap:12px; }
     .chart-card { padding:16px; min-height:280px; }
-    .filter-grid { grid-template-columns:repeat(3,1fr); }
+    .chart-card.hero { min-height:300px; }
 }
 
 /* Phone */
@@ -126,7 +119,7 @@
     .back-link { font-size:14px; margin-bottom:10px; padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); gap:8px; }
     .back-link svg { width:18px; height:18px; }
     .dash-header h1 { font-size:17px; }
-    .dash-header .date-tag { font-size:11px; padding:5px 10px; }
+    .year-select { font-size:14px; padding:5px 28px 5px 10px; }
 
     .kpi-row { grid-template-columns:repeat(2,1fr); gap:8px; margin-bottom:14px; }
     .kpi-card { padding:10px; }
@@ -136,10 +129,8 @@
 
     .chart-grid { grid-template-columns:1fr; gap:12px; }
     .chart-card { padding:14px; min-height:260px; }
+    .chart-card.hero { min-height:280px; }
     .chart-title { font-size:11px; margin-bottom:12px; }
-
-    .filter-grid { grid-template-columns:1fr 1fr; gap:10px; }
-    .filter-panel { padding:14px; }
 
     .dash-table thead th { padding:8px 12px; font-size:10px; }
     .dash-table tbody td { padding:7px 12px; font-size:12px; }
@@ -160,82 +151,51 @@
     <div class="dash-header fade-in stagger-1">
         <div class="dash-header-left">
             <h1>Sales Dashboard</h1>
-            <span class="date-tag">{{ now.strftime('%A, %B %d, %Y') if now is defined else 'Today' }}</span>
+            <div class="year-select-wrap">
+                <select class="year-select" id="yearSelect">
+                    {% for yr in available_years %}
+                    <option value="{{ yr }}" {% if yr == selected_year %}selected{% endif %}>{{ yr }}</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-            <button class="filter-toggle" id="filterToggleBtn">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"/>
-                </svg>
-                Filters
-                <span class="filter-count" id="filterCount" style="display:none;">0</span>
-            </button>
-        </div>
+        <button class="btn-refresh" id="refreshBtn" title="Re-fetch data from SQL Server for this year">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/>
+            </svg>
+            Refresh Data
+        </button>
     </div>
 
-    <div class="dash-refresh fade-in stagger-1">
+    <div class="dash-meta fade-in stagger-1">
         <span class="dot"></span>
-        Today's bookings · US + Canada (CAD → USD)
-    </div>
-
-    {# ── Filter Panel (hidden by default) ── #}
-    <div class="filter-panel" id="filterPanel">
-        <div class="filter-panel-header">
-            <span class="filter-panel-title">Filter Data</span>
-            <button class="filter-clear-btn" id="filterClearBtn">Clear All</button>
-        </div>
-        <div class="filter-grid">
-            <div class="filter-group">
-                <label>Territory</label>
-                <select id="filterTerritory" multiple>
-                    {% for t in filter_options.territories %}
-                    <option value="{{ t }}">{{ t }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>Salesman</label>
-                <select id="filterSalesman" multiple>
-                    {% for s in filter_options.salesmen %}
-                    <option value="{{ s }}">{{ s }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>Product Line</label>
-                <select id="filterProductLine" multiple>
-                    {% for pl in filter_options.product_lines %}
-                    <option value="{{ pl }}">{{ pl }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
-        <div class="filter-apply-row">
-            <button class="filter-apply-btn" id="filterApplyBtn">Apply Filters</button>
-        </div>
+        Bookings · US + Canada (CAD → USD) · {{ selected_year }}
+        {% if last_updated %}
+        <span>· Current month updated {{ last_updated.strftime('%I:%M %p') if last_updated else 'on demand' }}</span>
+        {% endif %}
     </div>
 
     {# ── KPI Summary ── #}
     <div class="kpi-row fade-in stagger-2">
         <div class="kpi-card green">
             <div class="kpi-label">Total Sales (USD)</div>
-            <div class="kpi-value money" id="kpi-total-amount">${{ "{:,}".format(data.summary.total_amount) }}</div>
+            <div class="kpi-value money">${{ "{:,}".format(data.summary.total_amount) }}</div>
         </div>
         <div class="kpi-card blue">
             <div class="kpi-label">Total Units</div>
-            <div class="kpi-value units" id="kpi-total-units">{{ "{:,}".format(data.summary.total_units) }}</div>
+            <div class="kpi-value units">{{ "{:,}".format(data.summary.total_units) }}</div>
         </div>
         <div class="kpi-card amber">
             <div class="kpi-label">Sales Orders</div>
-            <div class="kpi-value orders" id="kpi-total-orders">{{ "{:,}".format(data.summary.total_orders) }}</div>
+            <div class="kpi-value orders">{{ "{:,}".format(data.summary.total_orders) }}</div>
         </div>
         <div class="kpi-card purple">
             <div class="kpi-label">Avg Order Value</div>
-            <div class="kpi-value avg" id="kpi-avg-order">${{ "{:,}".format(data.summary.avg_order_value) }}</div>
+            <div class="kpi-value avg">${{ "{:,}".format(data.summary.avg_order_value) }}</div>
         </div>
         <div class="kpi-card red">
             <div class="kpi-label">Line Items</div>
-            <div class="kpi-value lines" id="kpi-total-lines">{{ "{:,}".format(data.summary.total_lines) }}</div>
+            <div class="kpi-value lines">{{ "{:,}".format(data.summary.total_lines) }}</div>
         </div>
     </div>
 
@@ -245,22 +205,32 @@
     {% set us_pct = (rs.us_amount / total_combined * 100) if total_combined > 0 else 100 %}
     <div class="region-bar-wrap fade-in stagger-2">
         <div class="region-bar">
-            <div class="bar-us" id="bar-us" style="width:{{ "%.1f"|format(us_pct) }}%"></div>
-            <div class="bar-ca" id="bar-ca" style="width:{{ "%.1f"|format(100 - us_pct) }}%"></div>
+            <div class="bar-us" style="width:{{ "%.1f"|format(us_pct) }}%"></div>
+            <div class="bar-ca" style="width:{{ "%.1f"|format(100 - us_pct) }}%"></div>
         </div>
         <div class="region-legend">
             <div class="region-legend-item">
                 <span class="legend-dot us"></span>
-                US: <span class="legend-val" id="legend-us-val">${{ "{:,}".format(rs.us_amount) }}</span>
+                US: <span class="legend-val">${{ "{:,}".format(rs.us_amount) }}</span>
             </div>
             <div class="region-legend-item">
                 <span class="legend-dot ca"></span>
-                Canada: <span class="legend-val" id="legend-ca-val">${{ "{:,}".format(rs.ca_amount_usd) }} (CAD ${{ "{:,}".format(rs.ca_amount) }})</span>
+                Canada: <span class="legend-val">${{ "{:,}".format(rs.ca_amount_usd) }} (CAD ${{ "{:,}".format(rs.ca_amount) }})</span>
             </div>
         </div>
     </div>
 
-    {# ── Charts Row: Territory + Product Line ── #}
+    {# ── Sales by Month (hero chart) ── #}
+    <div class="chart-grid fade-in stagger-3">
+        <div class="chart-card full-width hero">
+            <div class="chart-title">Sales by Month — {{ selected_year }}</div>
+            <div class="chart-body">
+                <canvas id="chartMonthly"></canvas>
+            </div>
+        </div>
+    </div>
+
+    {# ── Territory + Product Line ── #}
     <div class="chart-grid fade-in stagger-3">
         <div class="chart-card">
             <div class="chart-title">Sales by Territory</div>
@@ -276,7 +246,7 @@
         </div>
     </div>
 
-    {# ── Charts Row: Salesman ── #}
+    {# ── Salesman ── #}
     <div class="chart-grid fade-in stagger-3">
         <div class="chart-card full-width">
             <div class="chart-title">Sales by Salesman</div>
@@ -286,10 +256,10 @@
         </div>
     </div>
 
-    {# ── Top Customers Table ── #}
+    {# ── Top Customers ── #}
     <div class="table-card fade-in stagger-4">
         <div class="table-header">
-            <span class="table-title">Top Customers</span>
+            <span class="table-title">Top Customers — {{ selected_year }}</span>
             <span class="table-count" id="customerCount">{{ data.by_customer|length }} customers</span>
         </div>
         <div class="table-scroll">
@@ -322,15 +292,10 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- Chart.js from CDN -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-
-<!-- Pass data to JS -->
 <script>
     window.__DASH_DATA__ = {{ data_json|safe }};
-    window.__FILTER_OPTIONS__ = {{ filter_options_json|safe }};
+    window.__SELECTED_YEAR__ = {{ selected_year }};
 </script>
-
-<!-- Dashboard logic -->
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

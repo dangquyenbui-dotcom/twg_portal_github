@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+{% block title %}Dashboard Data Management - TWG Portal{% endblock %}
+
+{% block breadcrumb %}
+<a href="/">Home</a>
+<span class="sep">/</span>
+<span class="current">Admin — Dashboard Data</span>
+{% endblock %}
+
+{% block extra_styles %}
+.admin-page { max-width:900px; }
+
+.admin-header { margin-bottom:32px; }
+.admin-header h1 { font-size:22px; font-weight:700; letter-spacing:-0.4px; margin-bottom:6px; }
+.admin-header p { color:var(--text-secondary); font-size:14px; line-height:1.6; }
+
+.back-link { display:inline-flex; align-items:center; gap:6px; color:var(--text-secondary); text-decoration:none; font-size:13px; margin-bottom:16px; transition:color 0.15s; }
+.back-link:hover { color:var(--text-primary); }
+.back-link svg { width:16px; height:16px; }
+
+/* Year Card */
+.year-card {
+    background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg);
+    margin-bottom:16px; overflow:hidden; box-shadow:var(--shadow-sm);
+    transition:background-color 0.25s ease;
+}
+
+.year-card-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 20px; border-bottom:1px solid var(--border);
+}
+
+.year-card-title {
+    font-size:18px; font-weight:700; font-family:var(--font-mono);
+    color:var(--text-primary); display:flex; align-items:center; gap:10px;
+}
+
+.year-badge {
+    font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;
+    padding:3px 10px; border-radius:20px;
+}
+.year-badge.current { background:rgba(5,150,105,0.1); color:var(--accent-green); }
+[data-theme="dark"] .year-badge.current { background:rgba(16,185,129,0.12); }
+.year-badge.historical { background:rgba(37,99,235,0.08); color:var(--accent-blue); }
+[data-theme="dark"] .year-badge.historical { background:rgba(59,130,246,0.12); }
+
+.btn-download-year {
+    display:inline-flex; align-items:center; gap:6px; padding:7px 16px;
+    font-size:12px; font-weight:600; font-family:var(--font-body);
+    color:var(--accent-blue); background:rgba(37,99,235,0.06);
+    border:1px solid rgba(37,99,235,0.15); border-radius:var(--radius-sm);
+    cursor:pointer; transition:all 0.2s;
+}
+.btn-download-year:hover { background:rgba(37,99,235,0.12); border-color:rgba(37,99,235,0.25); }
+.btn-download-year:disabled { opacity:0.5; cursor:wait; }
+.btn-download-year svg { width:14px; height:14px; }
+[data-theme="dark"] .btn-download-year { background:rgba(59,130,246,0.08); border-color:rgba(59,130,246,0.2); }
+
+/* Region Rows */
+.region-rows { padding:0; }
+
+.region-row {
+    display:flex; align-items:center; padding:12px 20px;
+    border-bottom:1px solid var(--row-border); gap:16px;
+}
+.region-row:last-child { border-bottom:none; }
+
+.region-label {
+    font-size:13px; font-weight:600; color:var(--text-primary);
+    min-width:40px;
+}
+
+.region-status {
+    flex:1; display:flex; align-items:center; gap:8px; font-size:12px;
+}
+
+.status-dot {
+    width:8px; height:8px; border-radius:50%; flex-shrink:0;
+}
+.status-dot.downloaded { background:var(--accent-green); }
+.status-dot.missing { background:var(--text-muted); opacity:0.4; }
+
+.status-text { color:var(--text-secondary); }
+.status-text .file-size { font-family:var(--font-mono); color:var(--text-muted); font-size:11px; margin-left:4px; }
+.status-text .frozen-date { color:var(--text-muted); font-size:11px; }
+
+.region-actions { display:flex; gap:8px; }
+
+.btn-sm {
+    padding:5px 12px; font-size:11px; font-weight:600; font-family:var(--font-body);
+    border-radius:var(--radius-sm); cursor:pointer; transition:all 0.15s; border:1px solid;
+}
+
+.btn-sm.download {
+    color:var(--accent-green); background:rgba(5,150,105,0.06);
+    border-color:rgba(5,150,105,0.18);
+}
+.btn-sm.download:hover { background:rgba(5,150,105,0.12); }
+[data-theme="dark"] .btn-sm.download { background:rgba(16,185,129,0.08); border-color:rgba(16,185,129,0.2); }
+
+.btn-sm.delete {
+    color:var(--accent-red); background:rgba(220,38,38,0.06);
+    border-color:rgba(220,38,38,0.15);
+}
+.btn-sm.delete:hover { background:rgba(220,38,38,0.1); }
+[data-theme="dark"] .btn-sm.delete { background:rgba(239,68,68,0.08); border-color:rgba(239,68,68,0.15); }
+
+.btn-sm:disabled { opacity:0.4; cursor:wait; }
+
+/* Toast/Status Message */
+.toast {
+    display:none; padding:12px 20px; border-radius:var(--radius-md);
+    font-size:13px; margin-bottom:16px; font-weight:500;
+}
+.toast.show { display:block; }
+.toast.success { background:rgba(5,150,105,0.08); border:1px solid rgba(5,150,105,0.2); color:var(--accent-green); }
+.toast.error { background:rgba(220,38,38,0.08); border:1px solid rgba(220,38,38,0.2); color:var(--accent-red); }
+
+/* Info Box */
+.info-box {
+    background:rgba(37,99,235,0.04); border:1px solid rgba(37,99,235,0.1);
+    border-radius:var(--radius-md); padding:14px 18px; margin-bottom:24px;
+    font-size:12px; color:var(--text-secondary); line-height:1.6;
+}
+[data-theme="dark"] .info-box { background:rgba(59,130,246,0.06); border-color:rgba(59,130,246,0.12); }
+
+/* Phone */
+@media (max-width:480px) {
+    .back-link { font-size:14px; padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); gap:8px; margin-bottom:10px; }
+    .back-link svg { width:18px; height:18px; }
+    .admin-header h1 { font-size:18px; }
+    .year-card-header { padding:12px 16px; flex-wrap:wrap; gap:8px; }
+    .year-card-title { font-size:16px; }
+    .region-row { padding:10px 16px; flex-wrap:wrap; gap:8px; }
+    .region-status { min-width:100%; }
+    .region-actions { min-width:100%; }
+    .btn-sm { flex:1; text-align:center; justify-content:center; padding:8px 12px; }
+}
+{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+    <a href="/" class="back-link fade-in">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
+        </svg>
+        Back to Home
+    </a>
+
+    <div class="admin-header fade-in stagger-1">
+        <h1>Dashboard Data Management</h1>
+        <p>
+            Download historical bookings data from SQL Server and save as compressed files for instant dashboard loading.
+            Downloaded data is stored in the <code>dashboard_data/</code> folder and can be copied to any server.
+            The current year always loads live from SQL — only past years can be downloaded.
+        </p>
+    </div>
+
+    <div class="info-box fade-in stagger-1">
+        <strong>How it works:</strong> Past years are read from frozen files on disk (&lt;1ms).
+        The current year uses live SQL data (soytrn for past months + sotran for this month, cached every 60 min).
+        When you "Download" a year, the app fetches all raw rows from soytrn, aggregates them in Python, and saves the tiny summary as a gzip JSON file (~1-2KB).
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    {% for year_data in years %}
+    <div class="year-card fade-in stagger-2" id="year-{{ year_data.year }}">
+        <div class="year-card-header">
+            <div class="year-card-title">
+                {{ year_data.year }}
+                {% if year_data.is_current_year %}
+                <span class="year-badge current">Current Year — Live</span>
+                {% else %}
+                <span class="year-badge historical">Historical</span>
+                {% endif %}
+            </div>
+            {% if not year_data.is_current_year %}
+            <button class="btn-download-year" onclick="downloadBoth({{ year_data.year }}, this)">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+                Download US + CA
+            </button>
+            {% endif %}
+        </div>
+
+        <div class="region-rows">
+            {% for region_key in ['US', 'CA'] %}
+            {% set r = year_data.regions.get(region_key, {}) %}
+            <div class="region-row" id="row-{{ year_data.year }}-{{ region_key }}">
+                <div class="region-label">{{ region_key }}</div>
+                <div class="region-status">
+                    {% if year_data.is_current_year %}
+                        <span class="status-dot downloaded"></span>
+                        <span class="status-text">Live from SQL (sotran + soytrn) — cached every 60 min</span>
+                    {% elif r.get('exists') %}
+                        <span class="status-dot downloaded"></span>
+                        <span class="status-text">
+                            Downloaded
+                            <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
+                            {% if r.frozen_at %}
+                            <span class="frozen-date">· {{ r.frozen_at[:16].replace('T', ' ') }}</span>
+                            {% endif %}
+                        </span>
+                    {% else %}
+                        <span class="status-dot missing"></span>
+                        <span class="status-text">Not downloaded — will fetch from SQL on demand (~15-20s)</span>
+                    {% endif %}
+                </div>
+
+                {% if not year_data.is_current_year %}
+                <div class="region-actions">
+                    <button class="btn-sm download" onclick="downloadOne({{ year_data.year }}, '{{ region_key }}', this)">
+                        {% if r.get('exists') %}Re-download{% else %}Download{% endif %}
+                    </button>
+                    {% if r.get('exists') %}
+                    <button class="btn-sm delete" onclick="deleteOne({{ year_data.year }}, '{{ region_key }}', this)">
+                        Delete
+                    </button>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showToast(message, type) {
+    var toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = 'toast show ' + (type || 'success');
+    setTimeout(function() { toast.className = 'toast'; }, 8000);
+}
+
+function downloadOne(year, region, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Downloading...';
+    showToast('Fetching ' + region + ' ' + year + ' from SQL Server... This may take 15-20 seconds.', 'success');
+
+    fetch('/admin/dashboard-data/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: year, region: region }),
+    })
+    .then(function(res) { return res.json().then(function(d) { return {ok: res.ok, data: d}; }); })
+    .then(function(r) {
+        if (r.ok) {
+            showToast(r.data.message, 'success');
+            setTimeout(function() { location.reload(); }, 1500);
+        } else {
+            showToast('Error: ' + (r.data.error || 'Unknown error'), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Download';
+        }
+    })
+    .catch(function(err) {
+        showToast('Network error: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Download';
+    });
+}
+
+function downloadBoth(year, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Downloading...';
+    showToast('Fetching US + CA ' + year + ' from SQL Server... This may take 30-40 seconds.', 'success');
+
+    fetch('/admin/dashboard-data/download-both', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: year }),
+    })
+    .then(function(res) { return res.json().then(function(d) { return {ok: res.ok, data: d}; }); })
+    .then(function(r) {
+        if (r.data.status === 'ok' || r.data.status === 'partial') {
+            showToast(r.data.message, r.data.status === 'ok' ? 'success' : 'error');
+            setTimeout(function() { location.reload(); }, 1500);
+        } else {
+            showToast('Error: ' + (r.data.message || 'Unknown error'), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Download US + CA';
+        }
+    })
+    .catch(function(err) {
+        showToast('Network error: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Download US + CA';
+    });
+}
+
+function deleteOne(year, region, btn) {
+    if (!confirm('Delete frozen data for ' + region + ' ' + year + '? The dashboard will fall back to SQL queries for this data.')) return;
+    btn.disabled = true;
+
+    fetch('/admin/dashboard-data/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: year, region: region }),
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        showToast(data.message, 'success');
+        setTimeout(function() { location.reload(); }, 1000);
+    })
+    .catch(function(err) {
+        showToast('Error: ' + err.message, 'error');
+        btn.disabled = false;
+    });
+}
+</script>
+{% endblock %}

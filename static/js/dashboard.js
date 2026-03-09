@@ -1,15 +1,18 @@
 /**
- * TWG Sales Dashboard — Chart rendering & filter interactivity
- * Uses Chart.js for visualizations, vanilla JS for filters.
- * All data passed via window.__DASH_DATA__ and window.__FILTER_OPTIONS__
+ * TWG Sales Dashboard — Chart rendering & year selection
+ * Uses Chart.js for visualizations, vanilla JS for interactivity.
+ * All data passed via window.__DASH_DATA__
  */
 
 (function () {
     'use strict';
 
     var dashData = window.__DASH_DATA__ || {};
-    var filterOpts = window.__FILTER_OPTIONS__ || {};
     var charts = {};
+
+    // Month names for chart labels
+    var MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     // ── Theme-aware colors ──
     function getColors() {
@@ -48,7 +51,6 @@
         Chart.defaults.plugins.tooltip.padding = 10;
     }
 
-    // ── Format number with commas ──
     function fmt(n) {
         return '$' + Number(n || 0).toLocaleString('en-US');
     }
@@ -57,49 +59,91 @@
         return Number(n || 0).toLocaleString('en-US');
     }
 
-    // ══════════════════════════════════════════════════════
-    // KPI UPDATE
-    // ══════════════════════════════════════════════════════
-
-    function updateKPIs(data) {
-        var s = data.summary || {};
-        var el;
-
-        el = document.getElementById('kpi-total-amount');
-        if (el) el.textContent = fmt(s.total_amount);
-
-        el = document.getElementById('kpi-total-units');
-        if (el) el.textContent = fmtNum(s.total_units);
-
-        el = document.getElementById('kpi-total-orders');
-        if (el) el.textContent = fmtNum(s.total_orders);
-
-        el = document.getElementById('kpi-avg-order');
-        if (el) el.textContent = fmt(s.avg_order_value);
-
-        el = document.getElementById('kpi-total-lines');
-        if (el) el.textContent = fmtNum(s.total_lines);
-
-        // Region bar
-        var rs = data.region_split || {};
-        var total = (rs.us_amount || 0) + (rs.ca_amount_usd || 0);
-        var usPct = total > 0 ? ((rs.us_amount / total) * 100) : 100;
-
-        el = document.getElementById('bar-us');
-        if (el) el.style.width = usPct + '%';
-
-        el = document.getElementById('bar-ca');
-        if (el) el.style.width = (100 - usPct) + '%';
-
-        el = document.getElementById('legend-us-val');
-        if (el) el.textContent = fmt(rs.us_amount);
-
-        el = document.getElementById('legend-ca-val');
-        if (el) el.textContent = fmt(rs.ca_amount_usd) + ' (CAD ' + fmt(rs.ca_amount) + ')';
+    function fmtShort(n) {
+        if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000) return '$' + (n / 1000).toFixed(0) + 'K';
+        return '$' + n;
     }
 
     // ══════════════════════════════════════════════════════
-    // CHARTS
+    // SALES BY MONTH CHART (the hero chart)
+    // ══════════════════════════════════════════════════════
+
+    function renderMonthlyChart(data) {
+        var c = getColors();
+        var monthly = data.monthly_totals || [];
+        var canvas = document.getElementById('chartMonthly');
+        if (!canvas) return;
+
+        if (charts.monthly) charts.monthly.destroy();
+
+        // Build labels and data for all 12 months
+        var labels = [];
+        var amounts = [];
+        var units = [];
+
+        for (var i = 0; i < 12; i++) {
+            labels.push(MONTH_NAMES[i]);
+            var found = null;
+            for (var j = 0; j < monthly.length; j++) {
+                if (monthly[j].mo === i + 1) {
+                    found = monthly[j];
+                    break;
+                }
+            }
+            amounts.push(found ? found.amount : 0);
+            units.push(found ? found.units : 0);
+        }
+
+        charts.monthly = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Sales Amount (USD)',
+                    data: amounts,
+                    backgroundColor: amounts.map(function(v) {
+                        return v > 0 ? c.blue : 'rgba(128,128,128,0.15)';
+                    }),
+                    borderRadius: 6,
+                    maxBarThickness: 48,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                var idx = ctx.dataIndex;
+                                return [
+                                    'Sales: ' + fmt(ctx.raw),
+                                    'Units: ' + fmtNum(units[idx])
+                                ];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 12, weight: '600' } }
+                    },
+                    y: {
+                        grid: { color: c.grid },
+                        ticks: {
+                            callback: function (v) { return fmtShort(v); },
+                            font: { family: "'JetBrains Mono', monospace", size: 11 }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // ══════════════════════════════════════════════════════
+    // TERRITORY CHART
     // ══════════════════════════════════════════════════════
 
     function renderTerritoryChart(data) {
@@ -127,27 +171,26 @@
                 maintainAspectRatio: false,
                 plugins: {
                     tooltip: {
-                        callbacks: {
-                            label: function (ctx) { return fmt(ctx.raw); }
-                        }
+                        callbacks: { label: function (ctx) { return fmt(ctx.raw); } }
                     }
                 },
                 scales: {
                     x: {
                         grid: { color: c.grid },
                         ticks: {
-                            callback: function (v) { return '$' + (v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v); },
+                            callback: function (v) { return fmtShort(v); },
                             font: { family: "'JetBrains Mono', monospace", size: 11 }
                         }
                     },
-                    y: {
-                        grid: { display: false },
-                        ticks: { font: { size: 12 } }
-                    }
+                    y: { grid: { display: false }, ticks: { font: { size: 12 } } }
                 }
             }
         });
     }
+
+    // ══════════════════════════════════════════════════════
+    // PRODUCT LINE CHART
+    // ══════════════════════════════════════════════════════
 
     function renderProductLineChart(data) {
         var c = getColors();
@@ -178,12 +221,9 @@
                         display: true,
                         position: 'right',
                         labels: {
-                            boxWidth: 10,
-                            boxHeight: 10,
-                            padding: 8,
+                            boxWidth: 10, boxHeight: 10, padding: 8,
                             font: { size: 11 },
-                            usePointStyle: true,
-                            pointStyle: 'circle',
+                            usePointStyle: true, pointStyle: 'circle',
                         }
                     },
                     tooltip: {
@@ -199,6 +239,10 @@
             }
         });
     }
+
+    // ══════════════════════════════════════════════════════
+    // SALESMAN CHART
+    // ══════════════════════════════════════════════════════
 
     function renderSalesmanChart(data) {
         var c = getColors();
@@ -225,30 +269,25 @@
                 maintainAspectRatio: false,
                 plugins: {
                     tooltip: {
-                        callbacks: {
-                            label: function (ctx) { return fmt(ctx.raw); }
-                        }
+                        callbacks: { label: function (ctx) { return fmt(ctx.raw); } }
                     }
                 },
                 scales: {
                     x: {
                         grid: { color: c.grid },
                         ticks: {
-                            callback: function (v) { return '$' + (v >= 1000 ? (v / 1000).toFixed(0) + 'K' : v); },
+                            callback: function (v) { return fmtShort(v); },
                             font: { family: "'JetBrains Mono', monospace", size: 11 }
                         }
                     },
-                    y: {
-                        grid: { display: false },
-                        ticks: { font: { size: 12 } }
-                    }
+                    y: { grid: { display: false }, ticks: { font: { size: 12 } } }
                 }
             }
         });
     }
 
     // ══════════════════════════════════════════════════════
-    // TABLES
+    // CUSTOMER TABLE
     // ══════════════════════════════════════════════════════
 
     function updateCustomerTable(data) {
@@ -282,98 +321,32 @@
     }
 
     // ══════════════════════════════════════════════════════
-    // FILTERS
+    // REFRESH BUTTON
     // ══════════════════════════════════════════════════════
 
-    function toggleFilterPanel() {
-        var panel = document.getElementById('filterPanel');
-        if (panel) panel.classList.toggle('open');
-    }
-
-    function getActiveFilters() {
-        var filters = {};
-
-        var selTerritory = document.getElementById('filterTerritory');
-        var selSalesman = document.getElementById('filterSalesman');
-        var selProductLine = document.getElementById('filterProductLine');
-
-        if (selTerritory) {
-            var vals = getSelectedValues(selTerritory);
-            if (vals.length) filters.territories = vals;
-        }
-        if (selSalesman) {
-            var vals2 = getSelectedValues(selSalesman);
-            if (vals2.length) filters.salesmen = vals2;
-        }
-        if (selProductLine) {
-            var vals3 = getSelectedValues(selProductLine);
-            if (vals3.length) filters.product_lines = vals3;
+    function handleRefresh() {
+        var year = window.__SELECTED_YEAR__ || new Date().getFullYear();
+        var btn = document.getElementById('refreshBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Refreshing...';
         }
 
-        return filters;
-    }
-
-    function getSelectedValues(select) {
-        var vals = [];
-        for (var i = 0; i < select.options.length; i++) {
-            if (select.options[i].selected && select.options[i].value) {
-                vals.push(select.options[i].value);
-            }
-        }
-        return vals;
-    }
-
-    function countActiveFilters() {
-        var filters = getActiveFilters();
-        var count = 0;
-        for (var key in filters) {
-            if (filters[key] && filters[key].length > 0) count++;
-        }
-        return count;
-    }
-
-    function updateFilterCount() {
-        var countEl = document.getElementById('filterCount');
-        var n = countActiveFilters();
-        if (countEl) {
-            countEl.textContent = n;
-            countEl.style.display = n > 0 ? 'inline-flex' : 'none';
-        }
-    }
-
-    function clearAllFilters() {
-        var selects = document.querySelectorAll('.filter-group select');
-        for (var i = 0; i < selects.length; i++) {
-            var sel = selects[i];
-            for (var j = 0; j < sel.options.length; j++) {
-                sel.options[j].selected = false;
-            }
-        }
-        updateFilterCount();
-        applyFilters();
-    }
-
-    function applyFilters() {
-        var filters = getActiveFilters();
-        updateFilterCount();
-
-        // Show loading state
-        document.body.style.cursor = 'wait';
-
-        fetch('/sales/dashboard/filter', {
+        fetch('/sales/dashboard/refresh', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(filters),
+            body: JSON.stringify({ year: year }),
         })
         .then(function (res) { return res.json(); })
         .then(function (data) {
-            dashData = data;
-            updateAll(data);
-            document.body.style.cursor = '';
+            if (data.redirect) {
+                window.location.href = data.redirect;
+            } else {
+                window.location.reload();
+            }
         })
-        .catch(function (err) {
-            console.error('Filter error:', err);
-            document.body.style.cursor = '';
+        .catch(function () {
+            window.location.reload();
         });
     }
 
@@ -381,9 +354,9 @@
     // MASTER RENDER
     // ══════════════════════════════════════════════════════
 
-    function updateAll(data) {
+    function renderAll(data) {
         setChartDefaults();
-        updateKPIs(data);
+        renderMonthlyChart(data);
         renderTerritoryChart(data);
         renderProductLineChart(data);
         renderSalesmanChart(data);
@@ -394,7 +367,7 @@
     var observer = new MutationObserver(function (mutations) {
         for (var i = 0; i < mutations.length; i++) {
             if (mutations[i].attributeName === 'data-theme') {
-                updateAll(dashData);
+                renderAll(dashData);
                 break;
             }
         }
@@ -402,23 +375,20 @@
 
     // ── Init on DOM ready ──
     document.addEventListener('DOMContentLoaded', function () {
-        // Observe theme changes
         observer.observe(document.documentElement, { attributes: true });
+        renderAll(dashData);
 
-        // Initial render
-        updateAll(dashData);
+        // Refresh button
+        var refreshBtn = document.getElementById('refreshBtn');
+        if (refreshBtn) refreshBtn.addEventListener('click', handleRefresh);
 
-        // Filter toggle
-        var toggleBtn = document.getElementById('filterToggleBtn');
-        if (toggleBtn) toggleBtn.addEventListener('click', toggleFilterPanel);
-
-        // Apply filters button
-        var applyBtn = document.getElementById('filterApplyBtn');
-        if (applyBtn) applyBtn.addEventListener('click', applyFilters);
-
-        // Clear filters button
-        var clearBtn = document.getElementById('filterClearBtn');
-        if (clearBtn) clearBtn.addEventListener('click', clearAllFilters);
+        // Year selector — navigate on change
+        var yearSelect = document.getElementById('yearSelect');
+        if (yearSelect) {
+            yearSelect.addEventListener('change', function () {
+                window.location.href = '/sales/dashboard?year=' + this.value;
+            });
+        }
     });
 
 })();
