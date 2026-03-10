@@ -1,6 +1,7 @@
 """
 Sales Blueprint
-Routes for all sales reports: bookings dashboard, open orders dashboard, and Excel exports.
+Routes for all sales reports: bookings dashboard, open orders dashboard,
+executive dashboard, and Excel exports.
 
 Per-report role mapping (using Security Groups):
   /sales                        → Sales.Base  (auto-implied by ANY Sales.*.View)
@@ -8,6 +9,8 @@ Per-report role mapping (using Security Groups):
   /sales/bookings/export/*      → Sales.Bookings.Export
   /sales/open-orders            → Sales.OpenOrders.View
   /sales/open-orders/export/*   → Sales.OpenOrders.Export
+  /sales/dashboard              → Sales.Dashboard.View
+  /sales/dashboard/export/*     → Sales.Dashboard.View  (export from frozen files)
 
 Export roles do NOT grant view access — they only enable download buttons
 on reports the user can already see. Admin bypasses all checks.
@@ -23,7 +26,10 @@ from services.data_worker import (
     get_bookings_from_cache, get_bookings_raw_from_cache,
     get_open_orders_from_cache, get_open_orders_raw_from_cache,
 )
-from services.dashboard_data_service import get_dashboard_data, get_available_years, invalidate_historical_cache
+from services.dashboard_data_service import (
+    get_dashboard_data, get_available_years, invalidate_historical_cache,
+    get_historical_raw_rows,
+)
 from services.excel_helper import build_export_workbook, send_workbook
 from auth.decorators import require_role, user_has_role
 
@@ -91,6 +97,10 @@ OPEN_ORDERS_EXPORT_COLUMNS = [
     ('Ship Date (shipdate)',      'ShipDate',      18, 'MM/DD/YYYY'),
     ('Ship Via (shipvia)',        'ShipVia',       16, None),
 ]
+
+# Dashboard historical export uses the same 26 columns as bookings
+# (raw rows are stored in frozen files with identical structure)
+DASHBOARD_EXPORT_COLUMNS = BOOKINGS_EXPORT_COLUMNS
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -179,7 +189,6 @@ def bookings():
     if snapshot_us is None and snapshot_ca is None:
         error = "Unable to load data. Please try again shortly."
 
-    # Check if user has export permission (Admin also counts)
     can_export = user_has_role(session["user"], 'Sales.Bookings.Export')
 
     return render_template(
@@ -202,7 +211,6 @@ def bookings_export():
         return redirect(url_for('main.login_page'))
 
     rows_us, rows_ca = get_bookings_raw_from_cache()
-
     if not rows_us and not rows_ca:
         return redirect(url_for('sales.bookings'))
 
@@ -278,7 +286,6 @@ def open_orders():
     if snapshot_us is None and snapshot_ca is None:
         error = "Unable to load data. Please try again shortly."
 
-    # Check if user has export permission (Admin also counts)
     can_export = user_has_role(session["user"], 'Sales.OpenOrders.Export')
 
     return render_template(
@@ -301,7 +308,6 @@ def open_orders_export():
         return redirect(url_for('main.login_page'))
 
     rows_us, rows_ca = get_open_orders_raw_from_cache()
-
     if not rows_us and not rows_ca:
         return redirect(url_for('sales.open_orders'))
 
@@ -361,6 +367,7 @@ def open_orders_export_ca():
 # DASHBOARD — View requires Sales.Dashboard.View
 # Uses soytrn (historical) + sotran (current month) with Python aggregation.
 # Historical data cached on demand (24hr TTL), current month cached every 60min.
+# Historical raw rows stored in frozen files for Excel export.
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/dashboard')
@@ -385,6 +392,13 @@ def dashboard():
     # Get dashboard data (fetches on demand if not cached)
     dashboard_data = get_dashboard_data(year=selected_year, cad_rate=cad_rate)
 
+    # Check if historical raw data is available for export
+    can_export_historical = False
+    if selected_year < date.today().year:
+        us_raw = get_historical_raw_rows(selected_year, 'US')
+        ca_raw = get_historical_raw_rows(selected_year, 'CA')
+        can_export_historical = (us_raw is not None) or (ca_raw is not None)
+
     return render_template(
         'sales/dashboard.html',
         user=session["user"],
@@ -394,6 +408,7 @@ def dashboard():
         available_years=available_years,
         cad_rate=cad_rate,
         last_updated=dashboard_data.get('last_updated'),
+        can_export_historical=can_export_historical,
     )
 
 
@@ -413,3 +428,83 @@ def dashboard_refresh():
     invalidate_historical_cache(year=year)
 
     return jsonify({'status': 'ok', 'redirect': url_for('sales.dashboard', year=year)})
+
+
+@sales_bp.route('/dashboard/export')
+@require_role('Sales.Dashboard.View')
+def dashboard_export():
+    """
+    Export historical dashboard raw data (US + CA combined) — reads from frozen files, zero SQL.
+    Only available for past years that have been downloaded via the admin page.
+    """
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    year = request.args.get('year', type=int)
+    if not year or year >= date.today().year:
+        return redirect(url_for('sales.dashboard'))
+
+    rows_us = get_historical_raw_rows(year, 'US') or []
+    rows_ca = get_historical_raw_rows(year, 'CA') or []
+
+    if not rows_us and not rows_ca:
+        return redirect(url_for('sales.dashboard', year=year))
+
+    for row in rows_us:
+        row['Region'] = 'US'
+    for row in rows_ca:
+        row['Region'] = 'CA'
+
+    wb = build_export_workbook(
+        rows=rows_us + rows_ca,
+        title_label=f'Historical Bookings Raw Data {year} (US + Canada)',
+        columns=DASHBOARD_EXPORT_COLUMNS,
+        include_region_col=True,
+    )
+    return send_workbook(wb, f'Dashboard_Raw_US_CA_{year}.xlsx')
+
+
+@sales_bp.route('/dashboard/export/us')
+@require_role('Sales.Dashboard.View')
+def dashboard_export_us():
+    """Export historical dashboard raw data — US only, from frozen file."""
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    year = request.args.get('year', type=int)
+    if not year or year >= date.today().year:
+        return redirect(url_for('sales.dashboard'))
+
+    rows_us = get_historical_raw_rows(year, 'US')
+    if not rows_us:
+        return redirect(url_for('sales.dashboard', year=year))
+
+    wb = build_export_workbook(
+        rows=rows_us,
+        title_label=f'Historical Bookings Raw Data {year} — United States',
+        columns=DASHBOARD_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'Dashboard_Raw_US_{year}.xlsx')
+
+
+@sales_bp.route('/dashboard/export/ca')
+@require_role('Sales.Dashboard.View')
+def dashboard_export_ca():
+    """Export historical dashboard raw data — Canada only, from frozen file."""
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    year = request.args.get('year', type=int)
+    if not year or year >= date.today().year:
+        return redirect(url_for('sales.dashboard'))
+
+    rows_ca = get_historical_raw_rows(year, 'CA')
+    if not rows_ca:
+        return redirect(url_for('sales.dashboard', year=year))
+
+    wb = build_export_workbook(
+        rows=rows_ca,
+        title_label=f'Historical Bookings Raw Data {year} — Canada',
+        columns=DASHBOARD_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'Dashboard_Raw_CA_{year}.xlsx')

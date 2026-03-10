@@ -15,6 +15,7 @@
 
 .dash-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; flex-wrap:wrap; gap:8px; }
 .dash-header-left { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.dash-header-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .dash-header h1 { font-size:22px; font-weight:700; letter-spacing:-0.4px; }
 
 .back-link { display:inline-flex; align-items:center; gap:6px; color:var(--text-secondary); text-decoration:none; font-size:13px; margin-bottom:12px; transition:color 0.15s; }
@@ -46,6 +47,18 @@
 .btn-refresh:hover { color:var(--accent-blue); border-color:var(--accent-blue); }
 .btn-refresh:disabled { opacity:0.5; cursor:wait; }
 .btn-refresh svg { width:14px; height:14px; }
+
+/* Export Button (dashboard) */
+.btn-export-dash {
+    display:inline-flex; align-items:center; gap:6px; padding:6px 14px;
+    font-size:12px; font-weight:600; font-family:var(--font-body);
+    color:var(--accent-green); background:rgba(5,150,105,0.06);
+    border:1px solid rgba(5,150,105,0.18); border-radius:var(--radius-md);
+    text-decoration:none; cursor:pointer; transition:all 0.2s; white-space:nowrap;
+}
+.btn-export-dash:hover { background:rgba(5,150,105,0.12); border-color:rgba(5,150,105,0.3); color:#34D399; transform:translateY(-1px); }
+.btn-export-dash svg { width:14px; height:14px; }
+.btn-export-dash .btn-export-text { }
 
 /* KPI Row */
 .kpi-row { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:20px; }
@@ -136,6 +149,9 @@
     .dash-table tbody td { padding:7px 12px; font-size:12px; }
     .region-legend { gap:12px; flex-wrap:wrap; }
     .region-legend-item { font-size:11px; }
+
+    .btn-export-dash .btn-export-text { display:none; }
+    .btn-export-dash { padding:5px 10px; font-size:11px; }
 }
 {% endblock %}
 
@@ -159,12 +175,22 @@
                 </select>
             </div>
         </div>
-        <button class="btn-refresh" id="refreshBtn" title="Re-fetch data from SQL Server for this year">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/>
-            </svg>
-            Refresh Data
-        </button>
+        <div class="dash-header-right">
+            {% if can_export_historical %}
+            <a href="{{ url_for('sales.dashboard_export', year=selected_year) }}" class="btn-export-dash" title="Export {{ selected_year }} raw data as Excel (from frozen file — zero SQL)">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                </svg>
+                <span class="btn-export-text">Export {{ selected_year }}</span>
+            </a>
+            {% endif %}
+            <button class="btn-refresh" id="refreshBtn" title="Re-fetch data from SQL Server for this year">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/>
+                </svg>
+                Refresh Data
+            </button>
+        </div>
     </div>
 
     <div class="dash-meta fade-in stagger-1">

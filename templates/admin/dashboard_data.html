@@ -71,7 +71,11 @@
 }
 
 .region-status {
-    flex:1; display:flex; align-items:center; gap:8px; font-size:12px;
+    flex:1; display:flex; flex-direction:column; gap:3px;
+}
+
+.region-status-line {
+    display:flex; align-items:center; gap:8px; font-size:12px;
 }
 
 .status-dot {
@@ -79,10 +83,20 @@
 }
 .status-dot.downloaded { background:var(--accent-green); }
 .status-dot.missing { background:var(--text-muted); opacity:0.4; }
+.status-dot.upgrade { background:var(--accent-amber); }
 
 .status-text { color:var(--text-secondary); }
 .status-text .file-size { font-family:var(--font-mono); color:var(--text-muted); font-size:11px; margin-left:4px; }
 .status-text .frozen-date { color:var(--text-muted); font-size:11px; }
+.status-text .row-count { font-family:var(--font-mono); color:var(--accent-blue); font-size:11px; font-weight:600; }
+
+.status-sub {
+    font-size:11px; color:var(--text-muted); padding-left:16px;
+}
+
+.status-sub.warning {
+    color:var(--accent-amber);
+}
 
 .region-actions { display:flex; gap:8px; }
 
@@ -150,16 +164,15 @@
     <div class="admin-header fade-in stagger-1">
         <h1>Dashboard Data Management</h1>
         <p>
-            Download historical bookings data from SQL Server and save as compressed files for instant dashboard loading.
+            Download historical bookings data from SQL Server and save as compressed files for instant dashboard loading and Excel exports.
             Downloaded data is stored in the <code>dashboard_data/</code> folder and can be copied to any server.
             The current year always loads live from SQL — only past years can be downloaded.
         </p>
     </div>
 
     <div class="info-box fade-in stagger-1">
-        <strong>How it works:</strong> Past years are read from frozen files on disk (&lt;1ms).
-        The current year uses live SQL data (soytrn for past months + sotran for this month, cached every 60 min).
-        When you "Download" a year, the app fetches all raw rows from soytrn, aggregates them in Python, and saves the tiny summary as a gzip JSON file (~1-2KB).
+        <strong>How it works:</strong> When you "Download" a year, the app fetches ALL raw line-item rows (26 columns) from soytrn in a single SQL query, processes and aggregates them on the hosting server, then saves everything — raw rows + pre-aggregated summary — as a gzip JSON file.
+        After download, the dashboard loads the summary instantly (&lt;1ms) and Excel exports read the raw rows directly from disk. SQL Server is never queried again for that year.
     </div>
 
     <div class="toast" id="toast"></div>
@@ -192,27 +205,47 @@
                 <div class="region-label">{{ region_key }}</div>
                 <div class="region-status">
                     {% if year_data.is_current_year %}
-                        <span class="status-dot downloaded"></span>
-                        <span class="status-text">Live from SQL (sotran + soytrn) — cached every 60 min</span>
+                        <div class="region-status-line">
+                            <span class="status-dot downloaded"></span>
+                            <span class="status-text">Live from SQL (sotran + soytrn) — cached every 60 min</span>
+                        </div>
                     {% elif r.get('exists') %}
-                        <span class="status-dot downloaded"></span>
-                        <span class="status-text">
-                            Downloaded
-                            <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
-                            {% if r.frozen_at %}
-                            <span class="frozen-date">· {{ r.frozen_at[:16].replace('T', ' ') }}</span>
+                        <div class="region-status-line">
+                            {% if r.get('has_raw_rows') %}
+                            <span class="status-dot downloaded"></span>
+                            <span class="status-text">
+                                Downloaded
+                                <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
+                                · <span class="row-count">{{ "{:,}".format(r.row_count) }} rows</span>
+                                {% if r.frozen_at %}
+                                <span class="frozen-date">· {{ r.frozen_at[:16].replace('T', ' ') }}</span>
+                                {% endif %}
+                            </span>
+                            {% else %}
+                            <span class="status-dot upgrade"></span>
+                            <span class="status-text">
+                                Downloaded (v{{ r.version }} — summary only, no raw rows)
+                                <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
+                            </span>
                             {% endif %}
-                        </span>
+                        </div>
+                        {% if not r.get('has_raw_rows') %}
+                        <div class="status-sub warning">
+                            Re-download to include raw rows for Excel export
+                        </div>
+                        {% endif %}
                     {% else %}
-                        <span class="status-dot missing"></span>
-                        <span class="status-text">Not downloaded — will fetch from SQL on demand (~15-20s)</span>
+                        <div class="region-status-line">
+                            <span class="status-dot missing"></span>
+                            <span class="status-text">Not downloaded — will fetch from SQL on demand (~15-20s)</span>
+                        </div>
                     {% endif %}
                 </div>
 
                 {% if not year_data.is_current_year %}
                 <div class="region-actions">
                     <button class="btn-sm download" onclick="downloadOne({{ year_data.year }}, '{{ region_key }}', this)">
-                        {% if r.get('exists') %}Re-download{% else %}Download{% endif %}
+                        {% if r.get('exists') and r.get('has_raw_rows') %}Re-download{% elif r.get('exists') %}Upgrade{% else %}Download{% endif %}
                     </button>
                     {% if r.get('exists') %}
                     <button class="btn-sm delete" onclick="deleteOne({{ year_data.year }}, '{{ region_key }}', this)">
@@ -241,7 +274,7 @@ function showToast(message, type) {
 function downloadOne(year, region, btn) {
     btn.disabled = true;
     btn.textContent = 'Downloading...';
-    showToast('Fetching ' + region + ' ' + year + ' from SQL Server... This may take 15-20 seconds.', 'success');
+    showToast('Fetching ' + region + ' ' + year + ' from SQL Server... This may take 15-30 seconds.', 'success');
 
     fetch('/admin/dashboard-data/download', {
         method: 'POST',
@@ -269,7 +302,7 @@ function downloadOne(year, region, btn) {
 function downloadBoth(year, btn) {
     btn.disabled = true;
     btn.textContent = 'Downloading...';
-    showToast('Fetching US + CA ' + year + ' from SQL Server... This may take 30-40 seconds.', 'success');
+    showToast('Fetching US + CA ' + year + ' from SQL Server... This may take 30-60 seconds.', 'success');
 
     fetch('/admin/dashboard-data/download-both', {
         method: 'POST',
@@ -295,7 +328,7 @@ function downloadBoth(year, btn) {
 }
 
 function deleteOne(year, region, btn) {
-    if (!confirm('Delete frozen data for ' + region + ' ' + year + '? The dashboard will fall back to SQL queries for this data.')) return;
+    if (!confirm('Delete frozen data for ' + region + ' ' + year + '?\n\nThis removes both the raw rows and the summary. The dashboard will fall back to SQL queries for this data.')) return;
     btn.disabled = true;
 
     fetch('/admin/dashboard-data/delete', {

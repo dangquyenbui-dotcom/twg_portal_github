@@ -51,6 +51,7 @@ def dashboard_data():
 def dashboard_data_download():
     """
     AJAX: Download (fetch + aggregate + save) data for a specific year + region.
+    Fetches ALL raw rows (26 columns) + pre-aggregated summary in one SQL pass.
     Expects JSON: {"year": 2025, "region": "US"}
     """
     if not session.get("user"):
@@ -68,14 +69,18 @@ def dashboard_data_download():
         logger.info(
             f"Admin: Downloaded {region} {year} — "
             f"${result['total_amount']:,}, {result['months']} months, "
+            f"{result['row_count']:,} raw rows, "
             f"{result['file_size']:,} bytes"
         )
         return jsonify({
             'status': 'ok',
             'result': result,
-            'message': f"{region} {year} downloaded successfully. "
-                       f"${result['total_amount']:,} across {result['months']} months. "
-                       f"File size: {result['file_size']:,} bytes.",
+            'message': (
+                f"{region} {year} downloaded successfully. "
+                f"${result['total_amount']:,} across {result['months']} months. "
+                f"{result['row_count']:,} raw rows stored. "
+                f"File size: {result['file_size']:,} bytes."
+            ),
         })
     except Exception as e:
         logger.error(f"Admin: Download failed for {region} {year}: {e}")
@@ -116,10 +121,16 @@ def dashboard_data_download_both():
             'message': f"Completed with errors: {'; '.join(errors)}",
         }), 207 if results else 500
 
+    total_rows = sum(r['row_count'] for r in results)
+    total_size = sum(r['file_size'] for r in results)
     return jsonify({
         'status': 'ok',
         'results': results,
-        'message': f"US + CA {year} downloaded successfully.",
+        'message': (
+            f"US + CA {year} downloaded successfully. "
+            f"{total_rows:,} total raw rows. "
+            f"Total file size: {total_size:,} bytes."
+        ),
     })
 
 
