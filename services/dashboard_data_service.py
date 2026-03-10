@@ -38,7 +38,7 @@ DASHBOARD_DATA_DIR = Path(__file__).resolve().parent.parent / 'dashboard_data'
 CACHE_KEY_DASH_UPDATED = "dashboard_last_updated"
 DASH_HIST_TIMEOUT = 86400       # 24 hours for historical year cache
 DASH_CURRENT_TIMEOUT = 3900     # 65 min for current month cache
-DASHBOARD_YEARS_BACK = 5
+DASHBOARD_YEARS_BACK = 7
 
 
 # ─────────────────────────────────────────────────────────────
