@@ -110,6 +110,12 @@ class Config:
                 logger.debug(f"Group mapping: {env_key} not set — skipping")
         cls.GROUP_ROLE_MAP = mapping
 
+    # ── Salesman Code Claim (for My Sales Tracker) ──
+    # Name of the Entra ID token claim that contains the user's ERP salesman code.
+    # Typically an extension attribute (e.g., extensionAttribute1) set in Azure AD.
+    # Set to empty string to disable per-user salesman mapping.
+    SALESMAN_CODE_CLAIM = os.getenv('SALESMAN_CODE_CLAIM', '').strip() or None
+
     # SQL Server Settings
     DB_DRIVER = os.getenv('DB_DRIVER', '{ODBC Driver 18 for SQL Server}')
     DB_SERVER = os.getenv('DB_SERVER')

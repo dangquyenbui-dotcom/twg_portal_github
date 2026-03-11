@@ -1,7 +1,7 @@
 """
 Sales Blueprint
 Routes for all sales reports: bookings, bookings summary, shipments (consolidated),
-open orders, executive dashboard, and Excel exports.
+my sales tracker, open orders, executive dashboard, and Excel exports.
 
 Per-report role mapping (using Security Groups):
   /sales                                  → Sales.Base  (auto-implied by ANY Sales.*.View)
@@ -17,6 +17,10 @@ Per-report role mapping (using Security Groups):
   /sales/shipments/export                 → Sales.Shipments.Export  (today's data)
   /sales/shipments/export/<horizon>       → Sales.Shipments.Export  (MTD/QTD/YTD)
   /sales/shipments-summary               → redirects to /sales/shipments
+
+  -- MY SALES TRACKER (per-salesman monthly) --
+  /sales/my-tracker                       → Sales.Shipments.View
+  /sales/my-tracker/export                → Sales.Shipments.Export
 
   -- OTHER --
   /sales/open-orders                      → Sales.OpenOrders.View
@@ -50,6 +54,9 @@ from services.shipments_summary_service import (
 from services.bookings_dashboard_data_service import (
     get_dashboard_data, get_available_years, invalidate_historical_cache,
     get_historical_raw_rows,
+)
+from services.my_tracker_service import (
+    get_salesmen_list, get_tracker_data, fetch_raw_tracker_export, get_available_months,
 )
 from services.excel_helper import build_export_workbook, send_workbook
 from auth.decorators import require_role, user_has_role
@@ -614,6 +621,123 @@ def shipments_summary_export_ca(horizon):
         columns=SHIPMENTS_SUMMARY_EXPORT_COLUMNS,
     )
     return send_workbook(wb, f'Shipments_{label}_CA_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+# ═══════════════════════════════════════════════════════════════
+# MY SALES TRACKER — Per-salesman monthly report
+#   View requires Sales.Shipments.View (reuses existing role)
+#   Export requires Sales.Shipments.Export
+# ═══════════════════════════════════════════════════════════════
+
+@sales_bp.route('/my-tracker')
+@require_role('Sales.Shipments.View')
+def my_tracker():
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    user = session["user"]
+    is_admin = 'Admin' in user.get('roles', [])
+    salesman_code = user.get('salesman_code', '').strip()
+
+    # Parse query params
+    selected_year = request.args.get('year', type=int, default=date.today().year)
+    selected_month = request.args.get('month', type=int, default=date.today().month)
+    selected_region = request.args.get('region', 'US').upper()
+    if selected_region not in ('US', 'CA'):
+        selected_region = 'US'
+
+    # Get available months for the selector
+    available_months = get_available_months()
+
+    # Get salesman list for the selected month + region
+    salesmen = get_salesmen_list(selected_year, selected_month, region=selected_region)
+
+    # Determine which salesman to display
+    if is_admin:
+        # Admin can pick any salesman
+        selected_salesman = request.args.get('salesman', '')
+        if not selected_salesman and salesmen:
+            selected_salesman = salesmen[0]
+        not_configured = False
+    elif salesman_code:
+        # Regular user locked to their code
+        selected_salesman = salesman_code
+        not_configured = False
+    else:
+        # User has no salesman code and is not admin
+        selected_salesman = ''
+        not_configured = True
+
+    # Fetch data if we have a salesman
+    data = None
+    if selected_salesman and not not_configured:
+        data = get_tracker_data(selected_salesman, selected_year, selected_month, region=selected_region)
+
+    can_export = user_has_role(user, 'Sales.Shipments.Export')
+
+    # Currency label for display
+    currency_label = 'CAD' if selected_region == 'CA' else 'USD'
+
+    # Build month label for display
+    month_names = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                   'July', 'August', 'September', 'October', 'November', 'December']
+    month_label = f"{month_names[selected_month]} {selected_year}" if 1 <= selected_month <= 12 else ''
+
+    return render_template(
+        'sales/my_tracker.html',
+        user=user,
+        is_admin=is_admin,
+        salesmen=salesmen,
+        selected_salesman=selected_salesman,
+        selected_year=selected_year,
+        selected_month=selected_month,
+        selected_region=selected_region,
+        available_months=available_months,
+        month_label=month_label,
+        data=data,
+        not_configured=not_configured,
+        can_export=can_export,
+        currency_label=currency_label,
+    )
+
+
+@sales_bp.route('/my-tracker/export')
+@require_role('Sales.Shipments.Export')
+def my_tracker_export():
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    user = session["user"]
+    is_admin = 'Admin' in user.get('roles', [])
+    salesman_code = user.get('salesman_code', '').strip()
+
+    salesman = request.args.get('salesman', '')
+    year = request.args.get('year', type=int, default=date.today().year)
+    month = request.args.get('month', type=int, default=date.today().month)
+    region = request.args.get('region', 'US').upper()
+    if region not in ('US', 'CA'):
+        region = 'US'
+
+    # Enforce: non-admin can only export their own data
+    if not is_admin and salesman_code:
+        salesman = salesman_code
+    elif not is_admin:
+        return redirect(url_for('sales.my_tracker'))
+
+    if not salesman:
+        return redirect(url_for('sales.my_tracker'))
+
+    rows = fetch_raw_tracker_export(salesman, year, month, region=region)
+    if not rows:
+        return redirect(url_for('sales.my_tracker', salesman=salesman, year=year, month=month, region=region))
+
+    region_label = 'CA' if region == 'CA' else 'US'
+    wb = build_export_workbook(
+        rows=rows,
+        title_label=f'My Sales Tracker — {salesman} ({region_label}) — {year}-{month:02d}',
+        columns=SHIPMENTS_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'MyTracker_{salesman}_{region_label}_{year}{month:02d}_{date.today().strftime("%Y%m%d")}.xlsx')
 
 
 # ═══════════════════════════════════════════════════════════════

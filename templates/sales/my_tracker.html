@@ -1,0 +1,654 @@
+{% extends "base.html" %}
+{% block title %}My Sales Tracker - TWG Portal{% endblock %}
+
+{% block breadcrumb %}
+<a href="/">Home</a>
+<span class="sep">/</span>
+<a href="/sales">Sales</a>
+<span class="sep">/</span>
+<span class="current">My Sales Tracker</span>
+{% endblock %}
+
+{% block extra_styles %}
+/* ── Page header ── */
+.tracker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 28px;
+}
+
+.tracker-header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.tracker-header h1 .icon-wrap {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background: rgba(5,150,105,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-green);
+}
+[data-theme="dark"] .tracker-header h1 .icon-wrap { background: rgba(16,185,129,0.12); }
+.tracker-header h1 .icon-wrap svg { width: 20px; height: 20px; }
+
+/* ── Filter row ── */
+.filter-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.filter-select {
+    padding: 7px 32px 7px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236B7280' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 5.5l6.5 6.5 6.5-6.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    box-shadow: var(--shadow-sm);
+    min-width: 160px;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+
+.filter-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+}
+
+/* ── KPI row ── */
+.kpi-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 28px;
+}
+
+.kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+}
+
+.kpi-card.green::before { background: linear-gradient(90deg, var(--accent-green), #34D399); }
+.kpi-card.blue::before { background: linear-gradient(90deg, var(--accent-blue), #60A5FA); }
+.kpi-card.amber::before { background: linear-gradient(90deg, var(--accent-amber), #FBBF24); }
+
+.kpi-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.kpi-value {
+    font-size: 32px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    letter-spacing: -1px;
+}
+
+.kpi-value.money { color: var(--accent-green); }
+.kpi-value.blue-text { color: var(--accent-blue); }
+.kpi-value.amber-text { color: var(--accent-amber); }
+
+/* ── Chart grid ── */
+.chart-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: 20px;
+    margin-bottom: 28px;
+}
+
+.chart-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+}
+
+.chart-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.chart-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.chart-wrap.donut { height: 320px; }
+.chart-wrap.combo { height: 320px; }
+
+/* ── Export button ── */
+.export-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 16px;
+}
+
+.btn-export {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--bg-card);
+    color: var(--accent-green);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    box-shadow: var(--shadow-sm);
+}
+
+.btn-export:hover {
+    border-color: var(--accent-green);
+    background: rgba(5,150,105,0.06);
+}
+
+.btn-export svg { width: 14px; height: 14px; }
+
+/* ── No-data state ── */
+.no-data {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+}
+
+.no-data .icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 16px;
+    color: var(--text-muted);
+    opacity: 0.4;
+}
+
+.no-data h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text-secondary);
+}
+
+.no-data p { font-size: 13px; }
+
+/* ── Not configured state ── */
+.config-notice {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 40px;
+    text-align: center;
+    max-width: 500px;
+    margin: 60px auto;
+    box-shadow: var(--shadow-sm);
+}
+
+.config-notice .icon-big {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 16px;
+    color: var(--accent-amber);
+}
+
+.config-notice h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.config-notice p {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+    .tracker-header { flex-direction: column; align-items: flex-start; }
+    .kpi-row { grid-template-columns: 1fr; }
+    .chart-grid { grid-template-columns: 1fr; }
+    .kpi-value { font-size: 26px; }
+}
+
+@media (max-width: 480px) {
+    .filter-row { flex-direction: column; align-items: stretch; }
+    .filter-select { min-width: 100%; }
+    .chart-wrap.donut, .chart-wrap.combo { height: 260px; }
+}
+{% endblock %}
+
+{% block content %}
+
+{# ════════════════ HEADER + FILTERS ════════════════ #}
+<div class="tracker-header fade-in">
+    <h1>
+        <span class="icon-wrap">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
+            </svg>
+        </span>
+        My Sales Tracker
+    </h1>
+
+    <div class="filter-row">
+        <div>
+            <div class="filter-label">Country</div>
+            <select class="filter-select" id="regionSelect" style="min-width:100px;">
+                <option value="US" {% if selected_region == 'US' %}selected{% endif %}>🇺🇸 US</option>
+                <option value="CA" {% if selected_region == 'CA' %}selected{% endif %}>🇨🇦 CA</option>
+            </select>
+        </div>
+
+        {% if is_admin %}
+        <div>
+            <div class="filter-label">Salesman</div>
+            <select class="filter-select" id="salesmanSelect">
+                {% for s in salesmen %}
+                <option value="{{ s }}" {% if s == selected_salesman %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% else %}
+        <div>
+            <div class="filter-label">Salesman</div>
+            <div style="font-size:15px; font-weight:700; font-family:var(--font-mono); padding:7px 0;">{{ selected_salesman }}</div>
+        </div>
+        {% endif %}
+
+        <div>
+            <div class="filter-label">Month</div>
+            <select class="filter-select" id="monthSelect">
+                {% for y, m, label in available_months %}
+                <option value="{{ y }}-{{ '%02d'|format(m) }}" {% if y == selected_year and m == selected_month %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+</div>
+
+{% if not_configured %}
+{# ════════════════ NOT CONFIGURED ════════════════ #}
+<div class="config-notice fade-in stagger-1">
+    <svg class="icon-big" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+    </svg>
+    <h3>Salesman Code Not Configured</h3>
+    <p>Your account does not have a salesman code assigned. Please contact your administrator to set up your salesman code in Azure AD.</p>
+</div>
+
+{% elif data %}
+{# ════════════════ EXPORT BUTTON ════════════════ #}
+{% if can_export %}
+<div class="export-row fade-in stagger-1">
+    <a href="/sales/my-tracker/export?salesman={{ selected_salesman }}&year={{ selected_year }}&month={{ selected_month }}&region={{ selected_region }}" class="btn-export">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+        </svg>
+        Export {{ selected_salesman }} ({{ selected_region }}) — {{ month_label }}
+    </a>
+</div>
+{% endif %}
+
+{# ════════════════ KPI CARDS ════════════════ #}
+<div class="kpi-row fade-in stagger-2">
+    <div class="kpi-card green">
+        <div class="kpi-label">Sales ({{ currency_label }})</div>
+        <div class="kpi-value money">${{ "{:,}".format(data.total_sales) }}</div>
+    </div>
+    <div class="kpi-card blue">
+        <div class="kpi-label">Margin ({{ currency_label }})</div>
+        <div class="kpi-value blue-text">${{ "{:,}".format(data.total_margin) }}</div>
+    </div>
+    <div class="kpi-card amber">
+        <div class="kpi-label">Margin %</div>
+        <div class="kpi-value amber-text">{{ data.margin_pct }}%</div>
+    </div>
+</div>
+
+{# ════════════════ CHARTS ════════════════ #}
+{% if data.total_sales > 0 %}
+<div class="chart-grid fade-in stagger-3">
+    {# ── Donut: Sales by Category ── #}
+    <div class="chart-card">
+        <div class="chart-title">MTD Sales by Category</div>
+        <div class="chart-wrap donut">
+            <canvas id="donutChart"></canvas>
+        </div>
+    </div>
+
+    {# ── Combo: Sales & Margin % Trended ── #}
+    <div class="chart-card">
+        <div class="chart-title">Sales &amp; Margin % Trended</div>
+        <div class="chart-wrap combo">
+            <canvas id="comboChart"></canvas>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="no-data fade-in stagger-3">
+    <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.125l2.25 2.25m0 0l2.25 2.25M12 13.875l2.25-2.25M12 13.875l-2.25 2.25M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
+    </svg>
+    <h3>No Shipments Found</h3>
+    <p>No shipment data for {{ selected_salesman }} in {{ month_label }}.</p>
+</div>
+{% endif %}
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{% if data and data.total_sales > 0 %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function() {
+    /* ── Data from Flask ── */
+    var productData = {{ data.by_product_line | tojson }};
+    var dayData = {{ data.by_day | tojson }};
+
+    /* ── Theme colors ── */
+    function getColors() {
+        var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        return {
+            green:   isDark ? '#10B981' : '#059669',
+            blue:    isDark ? '#3B82F6' : '#2563EB',
+            amber:   isDark ? '#F59E0B' : '#D97706',
+            red:     isDark ? '#EF4444' : '#DC2626',
+            text:    isDark ? '#8B95B0' : '#4B5563',
+            grid:    isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+            bg:      isDark ? '#111111' : '#FFFFFF',
+            line:    isDark ? '#E5E7EB' : '#1F2937',
+            bar:     isDark ? '#F97316' : '#EA580C',
+            palette: isDark
+                ? ['#10B981','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16','#F97316','#6366F1','#14B8A6','#F43F5E','#A855F7','#0EA5E9','#22C55E','#E11D48']
+                : ['#059669','#2563EB','#D97706','#DC2626','#7C3AED','#DB2777','#0891B2','#65A30D','#EA580C','#4F46E5','#0D9488','#E11D48','#9333EA','#0284C7','#16A34A','#BE123C']
+        };
+    }
+
+    /* ── Formatters ── */
+    function fmt(n) { return '$' + Number(n || 0).toLocaleString('en-US'); }
+    function fmtShort(n) {
+        if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
+        if (n >= 1000) return '$' + (n / 1000).toFixed(1) + 'K';
+        return '$' + Math.round(n);
+    }
+
+    /* ── Charts ── */
+    var donutChart = null;
+    var comboChart = null;
+
+    function renderDonut() {
+        var c = getColors();
+        var ctx = document.getElementById('donutChart');
+        if (!ctx) return;
+
+        if (donutChart) donutChart.destroy();
+
+        var labels = productData.map(function(d) { return d.name; });
+        var amounts = productData.map(function(d) { return d.amount; });
+        var total = amounts.reduce(function(a, b) { return a + b; }, 0);
+
+        donutChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: amounts,
+                    backgroundColor: c.palette.slice(0, labels.length),
+                    borderWidth: 2,
+                    borderColor: c.bg,
+                    hoverOffset: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '50%',
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 10,
+                            boxHeight: 10,
+                            padding: 10,
+                            font: { size: 11, family: "'DM Sans', sans-serif" },
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            color: c.text
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: c.bg,
+                        titleColor: c.text,
+                        bodyColor: c.text,
+                        borderColor: c.grid,
+                        borderWidth: 1,
+                        padding: 10,
+                        bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                        callbacks: {
+                            label: function(ctx) {
+                                var pct = total > 0 ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+                                return ' ' + ctx.label + ': ' + fmt(ctx.raw) + ' (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderCombo() {
+        var c = getColors();
+        var ctx = document.getElementById('comboChart');
+        if (!ctx) return;
+
+        if (comboChart) comboChart.destroy();
+
+        var labels = dayData.map(function(d) { return d.date_str; });
+        var sales = dayData.map(function(d) { return d.sales; });
+        var margins = dayData.map(function(d) { return d.margin_pct; });
+
+        comboChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Sales Amount',
+                        data: sales,
+                        backgroundColor: c.bar + 'CC',
+                        borderRadius: 4,
+                        maxBarThickness: 32,
+                        order: 2,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Margin %',
+                        data: margins,
+                        type: 'line',
+                        borderColor: c.line,
+                        backgroundColor: 'transparent',
+                        borderWidth: 2.5,
+                        pointRadius: 3,
+                        pointBackgroundColor: c.line,
+                        pointBorderColor: c.bg,
+                        pointBorderWidth: 2,
+                        tension: 0.3,
+                        order: 1,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 10,
+                            boxHeight: 10,
+                            padding: 10,
+                            font: { size: 11, family: "'DM Sans', sans-serif" },
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            color: c.text
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: c.bg,
+                        titleColor: c.text,
+                        bodyColor: c.text,
+                        borderColor: c.grid,
+                        borderWidth: 1,
+                        padding: 10,
+                        bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                        callbacks: {
+                            label: function(ctx) {
+                                if (ctx.datasetIndex === 0) return ' Sales: ' + fmt(ctx.raw);
+                                return ' Margin: ' + ctx.raw.toFixed(1) + '%';
+                            }
+                        }
+                    },
+                    /* data labels plugin not included — use tooltip instead */
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: {
+                            font: { size: 10, family: "'DM Sans', sans-serif" },
+                            color: c.text,
+                            maxRotation: 45,
+                            autoSkip: true,
+                            maxTicksLimit: 16
+                        }
+                    },
+                    y: {
+                        position: 'left',
+                        grid: { color: c.grid },
+                        ticks: {
+                            callback: function(v) { return fmtShort(v); },
+                            font: { size: 11, family: "'JetBrains Mono', monospace" },
+                            color: c.text
+                        }
+                    },
+                    y1: {
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        min: 0,
+                        max: Math.max(60, Math.ceil(Math.max.apply(null, margins.length ? margins : [0]) / 10) * 10 + 10),
+                        ticks: {
+                            callback: function(v) { return v + '%'; },
+                            font: { size: 11, family: "'JetBrains Mono', monospace" },
+                            color: c.text
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderAll() {
+        renderDonut();
+        renderCombo();
+    }
+
+    /* ── Theme observer ── */
+    var observer = new MutationObserver(function(mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+            if (mutations[i].attributeName === 'data-theme') {
+                renderAll();
+                break;
+            }
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        observer.observe(document.documentElement, { attributes: true });
+        renderAll();
+    });
+})();
+</script>
+{% endif %}
+
+{# ── Navigation on filter change ── #}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var regionEl = document.getElementById('regionSelect');
+    var salesmanEl = document.getElementById('salesmanSelect');
+    var monthEl = document.getElementById('monthSelect');
+
+    function navigate(resetSalesman) {
+        var region = regionEl ? regionEl.value : '{{ selected_region }}';
+        var salesman = salesmanEl ? salesmanEl.value : '{{ selected_salesman }}';
+        var parts = monthEl.value.split('-');
+        var year = parts[0];
+        var month = parts[1];
+
+        var url = '/sales/my-tracker?region=' + region + '&year=' + year + '&month=' + month;
+        /* When country changes, don't pass salesman — let server pick the first available */
+        if (!resetSalesman && salesman) {
+            url += '&salesman=' + encodeURIComponent(salesman);
+        }
+        window.location.href = url;
+    }
+
+    if (regionEl) regionEl.addEventListener('change', function() { navigate(true); });
+    if (salesmanEl) salesmanEl.addEventListener('change', function() { navigate(false); });
+    if (monthEl) monthEl.addEventListener('change', function() { navigate(false); });
+});
+</script>
+{% endblock %}

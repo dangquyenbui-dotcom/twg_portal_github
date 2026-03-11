@@ -323,6 +323,26 @@
             </div>
         </a>
 
+        {# My Sales Tracker #}
+        <a href="/sales/my-tracker" class="report-card">
+            <div class="report-icon green">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
+                </svg>
+            </div>
+            <div class="report-info">
+                <h3>My Sales Tracker</h3>
+                <p>Per-salesman monthly sales, margin, product breakdown, and daily trend charts.</p>
+                <div class="report-tags">
+                    <span class="report-tag new">New</span>
+                    <span class="report-tag live">Live</span>
+                    {% if user_has_role(user, 'Sales.Shipments.Export') %}
+                    <span class="report-tag export">Export</span>
+                    {% endif %}
+                </div>
+            </div>
+        </a>
+
     </div>
 </div>
 {% endif %}

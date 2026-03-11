@@ -218,6 +218,13 @@ def create_app():
             group_ids = user_claims.get("groups", [])
             roles = _resolve_roles_from_groups(group_ids)
 
+            # ── Extract salesman code from custom Entra ID claim ──
+            salesman_code = ''
+            if Config.SALESMAN_CODE_CLAIM:
+                salesman_code = (user_claims.get(Config.SALESMAN_CODE_CLAIM) or '').strip()
+                if salesman_code:
+                    logger.info(f"User salesman_code: {salesman_code} (from claim: {Config.SALESMAN_CODE_CLAIM})")
+
             session["user"] = {
                 "name": user_claims.get("name"),
                 "email": user_claims.get("preferred_username"),
@@ -225,6 +232,7 @@ def create_app():
                 "tid": user_claims.get("tid"),
                 "groups": group_ids,
                 "roles": roles,
+                "salesman_code": salesman_code,
             }
             session.pop("flow", None)
             logger.info(
