@@ -47,8 +47,6 @@ class Config:
     #   GROUP_ADMIN                         → Admin (full bypass)
     #   GROUP_SALES_<REPORT>_VIEW           → Sales.<Report>.View (dashboard access)
     #   GROUP_SALES_<REPORT>_EXPORT         → Sales.<Report>.Export (Excel download)
-    #   GROUP_WAREHOUSE_<REPORT>_VIEW       → Warehouse.<Report>.View (future)
-    #   GROUP_WAREHOUSE_<REPORT>_EXPORT     → Warehouse.<Report>.Export (future)
     #
     # Export roles do NOT grant view access — they only enable download buttons
     # on reports the user can already see via the corresponding View role.
@@ -61,17 +59,6 @@ class Config:
         """
         Build the group-to-role mapping from environment variables.
         Each GROUP_* env var maps a Security Group Object ID to an internal role name.
-
-        Pattern:
-          GROUP_ADMIN                             → Admin
-          GROUP_SALES_BOOKINGS_VIEW               → Sales.Bookings.View
-          GROUP_SALES_BOOKINGS_EXPORT             → Sales.Bookings.Export
-          GROUP_SALES_BOOKINGSSUMMARY_VIEW        → Sales.BookingsSummary.View
-          GROUP_SALES_BOOKINGSSUMMARY_EXPORT      → Sales.BookingsSummary.Export
-          GROUP_SALES_OPENORDERS_VIEW             → Sales.OpenOrders.View
-          GROUP_SALES_OPENORDERS_EXPORT           → Sales.OpenOrders.Export
-          GROUP_SALES_DASHBOARD_VIEW              → Sales.Dashboard.View
-          (add more reports by following the same pattern)
         """
         mapping = {}
         group_vars = {
@@ -86,16 +73,20 @@ class Config:
             'GROUP_SALES_BOOKINGSSUMMARY_VIEW':     'Sales.BookingsSummary.View',
             'GROUP_SALES_BOOKINGSSUMMARY_EXPORT':   'Sales.BookingsSummary.Export',
 
+            # ── Sales: Daily Shipments ──
+            'GROUP_SALES_SHIPMENTS_VIEW':           'Sales.Shipments.View',
+            'GROUP_SALES_SHIPMENTS_EXPORT':         'Sales.Shipments.Export',
+
+            # ── Sales: Shipments Summary (MTD / QTD / YTD) ──
+            'GROUP_SALES_SHIPMENTSSUMMARY_VIEW':    'Sales.ShipmentsSummary.View',
+            'GROUP_SALES_SHIPMENTSSUMMARY_EXPORT':  'Sales.ShipmentsSummary.Export',
+
             # ── Sales: Open Orders ──
             'GROUP_SALES_OPENORDERS_VIEW':          'Sales.OpenOrders.View',
             'GROUP_SALES_OPENORDERS_EXPORT':        'Sales.OpenOrders.Export',
 
             # ── Sales: Dashboard (Executive) ──
             'GROUP_SALES_DASHBOARD_VIEW':           'Sales.Dashboard.View',
-
-            # ── Sales: Shipments (future — uncomment when ready) ──
-            # 'GROUP_SALES_SHIPMENTS_VIEW':         'Sales.Shipments.View',
-            # 'GROUP_SALES_SHIPMENTS_EXPORT':       'Sales.Shipments.Export',
 
             # ── Sales: Territory Performance (future) ──
             # 'GROUP_SALES_TERRPERF_VIEW':          'Sales.TerrPerf.View',
@@ -151,6 +142,9 @@ class Config:
 
     # Bookings Summary (MTD/QTD/YTD) refresh interval in seconds (30 minutes)
     BOOKINGS_SUMMARY_REFRESH_INTERVAL = int(os.getenv('BOOKINGS_SUMMARY_REFRESH_INTERVAL', '1800'))
+
+    # Shipments Summary (MTD/QTD/YTD) refresh interval in seconds (30 minutes)
+    SHIPMENTS_SUMMARY_REFRESH_INTERVAL = int(os.getenv('SHIPMENTS_SUMMARY_REFRESH_INTERVAL', '1800'))
 
     @classmethod
     def get_connection_string(cls, database=None):

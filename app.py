@@ -15,6 +15,7 @@ from routes.admin import admin_bp
 from services.data_worker import refresh_bookings_and_rate, refresh_open_orders_scheduled, refresh_all_on_startup
 from services.dashboard_data_service import refresh_dashboard_current_month
 from services.bookings_summary_service import refresh_bookings_summary_scheduled
+from services.shipments_summary_service import refresh_shipments_summary_scheduled
 
 # --- Logging: INFO level only ---
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -83,7 +84,7 @@ def create_app():
         scheduler.start()
         logger.info("Scheduler started.")
 
-    # ── Bookings refresh (every 10 min) ──
+    # ── Bookings + Shipments refresh (every 10 min) ──
     if not scheduler.get_job('bookings_refresh'):
         scheduler.add_job(
             id='bookings_refresh',
@@ -127,15 +128,28 @@ def create_app():
         )
         logger.info(f"Scheduled 'bookings_summary_refresh' every {Config.BOOKINGS_SUMMARY_REFRESH_INTERVAL}s")
 
+    # ── Shipments Summary MTD/QTD/YTD refresh (every 30 min) ──
+    if not scheduler.get_job('shipments_summary_refresh'):
+        scheduler.add_job(
+            id='shipments_summary_refresh',
+            func=refresh_shipments_summary_scheduled,
+            trigger='interval',
+            seconds=Config.SHIPMENTS_SUMMARY_REFRESH_INTERVAL,
+            misfire_grace_time=120
+        )
+        logger.info(f"Scheduled 'shipments_summary_refresh' every {Config.SHIPMENTS_SUMMARY_REFRESH_INTERVAL}s")
+
     with app.app_context():
         logger.info("Running initial startup refresh (all data + dashboard current year)...")
         refresh_all_on_startup()
         # refresh_all_on_startup now handles:
         #   1. Exchange rate
         #   2. Daily bookings (snapshot + raw)
-        #   3. Open orders (snapshot + raw)
-        #   4. Bookings Summary MTD/QTD/YTD + prior year comparisons
-        #   5. Dashboard current year cache (populated as side effect of YTD)
+        #   3. Daily shipments (snapshot + raw)
+        #   4. Open orders (snapshot + raw)
+        #   5. Bookings Summary MTD/QTD/YTD + prior year comparisons
+        #   6. Shipments Summary MTD/QTD/YTD + prior year comparisons
+        #   7. Dashboard current year cache (populated as side effect of YTD)
         # Past years on the dashboard still use frozen files — no change.
         logger.info("All caches warm. Every page loads instantly from first request.")
 

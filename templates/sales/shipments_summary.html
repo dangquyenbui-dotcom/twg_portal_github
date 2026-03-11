@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+{% block title %}Shipments Summary - TWG Portal{% endblock %}
+
+{% block breadcrumb %}
+<a href="/">Home</a>
+<span class="sep">/</span>
+<a href="/sales">Sales</a>
+<span class="sep">/</span>
+<span class="current">Shipments Summary</span>
+{% endblock %}
+
+{% block extra_styles %}
+.summary-page { display: flex; flex-direction: column; min-height: calc(100vh - 56px); }
+.back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); text-decoration: none; font-size: 13px; margin-bottom: 12px; transition: color 0.15s; flex-shrink: 0; }
+.back-link:hover { color: var(--text-primary); }
+.back-link svg { width: 16px; height: 16px; }
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+.page-header-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.page-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; }
+.refresh-bar { display: flex; align-items: center; margin-bottom: 16px; flex-shrink: 0; }
+.last-updated { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.last-updated .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+.last-updated .refresh-note { color: var(--text-muted); font-size: 11px; opacity: 0.7; margin-left: 8px; }
+.btn-download { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; font-family: var(--font-body); color: var(--accent-green); background: var(--download-bg); border: 1px solid var(--download-border); border-radius: var(--radius-md); text-decoration: none; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+.btn-download svg { width: 16px; height: 16px; flex-shrink: 0; }
+.btn-download:hover { background: var(--download-hover-bg); border-color: var(--download-hover-border); color: #34D399; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16,185,129,0.15); }
+.horizon-tabs { display: flex; gap: 4px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 4px; margin-bottom: 20px; width: fit-content; flex-shrink: 0; }
+.horizon-tab { padding: 8px 24px; font-size: 13px; font-weight: 600; font-family: var(--font-body); color: var(--text-muted); background: transparent; border: none; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s; white-space: nowrap; position: relative; }
+.horizon-tab:hover { color: var(--text-secondary); background: var(--bg-card-hover); }
+.horizon-tab.active { color: var(--text-primary); background: var(--bg-card); box-shadow: var(--shadow-sm); }
+.horizon-tab .tab-sub { display: block; font-size: 10px; font-weight: 500; color: var(--text-muted); margin-top: 1px; }
+.horizon-tab.active .tab-sub { color: var(--text-secondary); }
+.horizon-panel { display: none; }
+.horizon-panel.active { display: block; }
+.date-range-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; flex-wrap: wrap; }
+.date-range-label .range-dates { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border); padding: 4px 12px; border-radius: 20px; }
+.date-range-label .range-vs { font-size: 11px; color: var(--text-muted); font-style: italic; }
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; flex-shrink: 0; }
+.stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-sm); transition: background-color 0.25s ease; }
+.stat-card .label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 6px; }
+.stat-card .value { font-size: 24px; font-weight: 700; font-family: var(--font-mono); letter-spacing: -0.5px; }
+.stat-card .value.money { color: var(--accent-green); }
+.stat-card .value.units { color: var(--accent-blue); }
+.stat-card .value.invoices { color: var(--accent-amber); }
+.yoy-indicator { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; font-weight: 600; font-family: var(--font-mono); }
+.yoy-indicator.up { color: var(--accent-green); }
+.yoy-indicator.down { color: var(--accent-red); }
+.yoy-indicator.flat { color: var(--text-muted); }
+.yoy-indicator svg { width: 14px; height: 14px; }
+.yoy-prior { font-size: 10px; color: var(--text-muted); font-weight: 500; margin-left: 4px; font-family: var(--font-mono); }
+.region-split-mini { display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--text-muted); margin-bottom: 20px; padding: 10px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.region-split-mini .split-label { font-weight: 600; color: var(--text-secondary); }
+.region-split-mini .split-dot { width: 8px; height: 8px; border-radius: 50%; }
+.region-split-mini .split-dot.us { background: var(--accent-blue); }
+.region-split-mini .split-dot.ca { background: var(--accent-amber); }
+.region-split-mini .split-val { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); }
+.ranking-section { display: flex; flex-direction: column; }
+.ranking-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.section-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin: 0; }
+.ranking-tabs { display: flex; gap: 4px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 3px; }
+.ranking-tab { padding: 6px 14px; font-size: 12px; font-weight: 600; font-family: var(--font-body); color: var(--text-muted); background: transparent; border: none; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.ranking-tab:hover { color: var(--text-secondary); background: var(--bg-card-hover); }
+.ranking-tab.active { color: var(--text-primary); background: var(--bg-card); box-shadow: var(--shadow-sm); }
+.ranking-panel { display: none; }
+.ranking-panel.active { display: block; }
+.podium { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+.podium-card { position: relative; background: var(--bg-card); border-radius: var(--radius-lg); padding: 20px 16px 16px; text-align: center; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; box-shadow: var(--shadow-sm); }
+.podium-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+.podium-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.podium-card.gold   { border: 1px solid var(--podium-gold-border); }
+.podium-card.silver { border: 1px solid var(--podium-silver-border); }
+.podium-card.bronze { border: 1px solid var(--podium-bronze-border); }
+.podium-card.gold::before   { background: var(--podium-gold-bar); }
+.podium-card.silver::before { background: var(--podium-silver-bar); }
+.podium-card.bronze::before { background: var(--podium-bronze-bar); }
+.podium-medal { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; font-size: 16px; font-weight: 700; font-family: var(--font-mono); }
+.podium-card.gold .podium-medal   { background: var(--podium-gold-medal-bg); color: var(--podium-gold-medal-color); box-shadow: 0 0 20px var(--podium-gold-medal-shadow); }
+.podium-card.silver .podium-medal { background: var(--podium-silver-medal-bg); color: var(--podium-silver-medal-color); box-shadow: 0 0 16px var(--podium-silver-medal-shadow); }
+.podium-card.bronze .podium-medal { background: var(--podium-bronze-medal-bg); color: var(--podium-bronze-medal-color); box-shadow: 0 0 16px var(--podium-bronze-medal-shadow); }
+.podium-location { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.podium-amount { font-size: 18px; font-family: var(--font-mono); font-weight: 700; letter-spacing: -0.3px; }
+.podium-card.gold .podium-amount   { color: var(--podium-gold-amount); }
+.podium-card.silver .podium-amount { color: var(--podium-silver-amount); }
+.podium-card.bronze .podium-amount { color: var(--podium-bronze-amount); }
+.ranking-wrapper { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+.ranking-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.ranking-table thead th { text-align: left; padding: 10px 24px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--ranking-header-font); background: var(--ranking-header-bg); border-bottom: 1px solid var(--ranking-header-border); position: sticky; top: 0; z-index: 1; }
+.ranking-table thead th.col-total, .ranking-table thead th.col-rank { text-align: right; }
+.ranking-table tbody td { padding: 9px 24px; border-bottom: 1px solid var(--row-border); color: var(--text-secondary); font-size: 14px; }
+.ranking-table tbody tr:last-child td { border-bottom: none; }
+.ranking-table tbody tr:hover { background: var(--ranking-hover); }
+.ranking-table tbody tr:hover td { color: var(--text-primary); }
+.ranking-table .col-location { font-weight: 500; color: var(--text-primary); }
+.ranking-table .col-total { text-align: right; font-family: var(--font-mono); font-weight: 500; color: var(--accent-green); }
+.ranking-table .col-rank { text-align: right; font-family: var(--font-mono); color: var(--text-muted); font-weight: 500; }
+.export-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.export-row .btn-download { font-size: 11px; padding: 5px 12px; gap: 5px; }
+.export-row .btn-download svg { width: 13px; height: 13px; }
+.error-banner { background: var(--error-bg); border: 1px solid var(--error-border); border-radius: var(--radius-md); padding: 16px 20px; margin-bottom: 16px; color: var(--accent-red); font-size: 14px; }
+.empty-state { text-align: center; padding: 24px 20px; color: var(--text-muted); }
+.empty-state p { font-size: 14px; }
+@media (max-width: 1024px) { .stats-row { gap: 10px; } .stat-card { padding: 12px; } .stat-card .value { font-size: 20px; } .stat-card .label { font-size: 9px; } .yoy-indicator { font-size: 11px; } .podium-card { padding: 16px 12px 12px; } .podium-medal { width: 36px; height: 36px; font-size: 14px; } .podium-location { font-size: 13px; } .podium-amount { font-size: 16px; } .ranking-table tbody td { padding: 8px 16px; font-size: 13px; } .ranking-table thead th { padding: 8px 16px; font-size: 11px; } }
+@media (max-width: 480px) { .page-container { padding: 12px; } .back-link { font-size: 14px; margin-bottom: 10px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); gap: 8px; } .back-link svg { width: 18px; height: 18px; } .page-header { margin-bottom: 2px; } .page-header h1 { font-size: 17px; } .horizon-tabs { width: 100%; } .horizon-tab { flex: 1; text-align: center; padding: 6px 8px; font-size: 12px; } .horizon-tab .tab-sub { font-size: 9px; } .stats-row { grid-template-columns: repeat(2, 1fr); gap: 8px; } .stat-card { padding: 10px; } .stat-card .label { font-size: 8px; margin-bottom: 4px; } .stat-card .value { font-size: 26px; } .yoy-indicator { font-size: 11px; margin-top: 4px; } .yoy-prior { font-size: 9px; } .region-split-mini { flex-wrap: wrap; gap: 8px; font-size: 10px; padding: 8px 12px; } .section-title { font-size: 11px; } .ranking-header { gap: 6px; } .ranking-tabs { padding: 2px; } .ranking-tab { padding: 5px 10px; font-size: 11px; } .podium { gap: 8px; margin-bottom: 8px; } .podium-card { padding: 12px 8px 10px; } .podium-medal { width: 28px; height: 28px; font-size: 12px; margin-bottom: 6px; } .podium-location { font-size: 11px; margin-bottom: 2px; } .podium-amount { font-size: 13px; } .ranking-table tbody td { padding: 6px 12px; font-size: 12px; } .ranking-table thead th { padding: 6px 12px; font-size: 10px; } .btn-download { padding: 6px 10px; font-size: 11px; gap: 5px; } .btn-download svg { width: 14px; height: 14px; } .btn-download .btn-download-text { display: none; } .date-range-label { font-size: 11px; } .date-range-label .range-dates { font-size: 10px; padding: 3px 8px; } }
+{% endblock %}
+
+{% block content %}
+<div class="summary-page">
+    <a href="/sales" class="back-link fade-in">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg>
+        Back to Sales
+    </a>
+
+    <div class="page-header fade-in stagger-1">
+        <div class="page-header-left"><h1>Shipments Summary</h1></div>
+    </div>
+
+    <div class="refresh-bar fade-in stagger-1">
+        <div class="last-updated">
+            <span class="dot"></span>
+            {% if last_updated %}
+                Last updated: {{ last_updated.strftime('%I:%M %p') }}
+                <span class="refresh-note">· Refreshes every 30 min · US + Canada combined (CAD → USD)</span>
+            {% else %}
+                Loading data...
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="horizon-tabs fade-in stagger-1">
+        <button class="horizon-tab active" data-horizon="mtd">MTD<span class="tab-sub">Month-to-Date</span></button>
+        <button class="horizon-tab" data-horizon="qtd">QTD<span class="tab-sub">Quarter-to-Date</span></button>
+        <button class="horizon-tab" data-horizon="ytd">YTD<span class="tab-sub">Year-to-Date</span></button>
+    </div>
+
+    {% macro yoy_arrow(direction) %}
+    {% if direction == 'up' %}
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25"/></svg>
+    {% elif direction == 'down' %}
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5l15 15m0 0V8.25m0 11.25H8.25"/></svg>
+    {% else %}
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15"/></svg>
+    {% endif %}
+    {% endmacro %}
+
+    {% macro render_horizon(horizon_key, horizon_data, dr, is_active) %}
+    {% set s = horizon_data.summary %}
+    {% set yoy = horizon_data.get('yoy', {}) %}
+    {% set rs = horizon_data.get('region_split', {}) %}
+    <div class="horizon-panel {{ 'active' if is_active else '' }}" id="panel-{{ horizon_key }}">
+        <div class="date-range-label">
+            <span>{{ dr.label }}</span>
+            <span class="range-dates">{{ dr.start }} → {{ dr.end }}</span>
+            {% if horizon_data.get('prior_label') %}
+            <span class="range-vs">{{ horizon_data.prior_label }}</span>
+            {% endif %}
+        </div>
+
+        {% if can_export %}
+        <div class="export-row">
+            <a href="{{ url_for('sales.shipments_summary_export', horizon=horizon_key) }}" class="btn-download" title="Export {{ horizon_key|upper }} raw data (US + CA)">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                <span class="btn-download-text">Export {{ horizon_key|upper }}</span>
+            </a>
+        </div>
+        {% endif %}
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="label">Total Shipped (USD)</div>
+                <div class="value money">${{ "{:,}".format(s.total_amount|int) }}</div>
+                {% if yoy.amount %}
+                <div class="yoy-indicator {{ yoy.amount.direction }}">
+                    {{ yoy_arrow(yoy.amount.direction) }}
+                    {{ yoy.amount.pct }}%
+                    <span class="yoy-prior">vs ${{ "{:,}".format(yoy.amount.prior|int) }}</span>
+                </div>
+                {% endif %}
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Units</div>
+                <div class="value units">{{ "{:,}".format(s.total_units|int) }}</div>
+                {% if yoy.units %}
+                <div class="yoy-indicator {{ yoy.units.direction }}">
+                    {{ yoy_arrow(yoy.units.direction) }}
+                    {{ yoy.units.pct }}%
+                    <span class="yoy-prior">vs {{ "{:,}".format(yoy.units.prior|int) }}</span>
+                </div>
+                {% endif %}
+            </div>
+            <div class="stat-card">
+                <div class="label">Invoices</div>
+                <div class="value invoices">{{ "{:,}".format(s.get('total_invoices', s.get('total_orders', 0))|int) }}</div>
+                {% if yoy.invoices %}
+                <div class="yoy-indicator {{ yoy.invoices.direction }}">
+                    {{ yoy_arrow(yoy.invoices.direction) }}
+                    {{ yoy.invoices.pct }}%
+                    <span class="yoy-prior">vs {{ "{:,}".format(yoy.invoices.prior|int) }}</span>
+                </div>
+                {% endif %}
+            </div>
+            <div class="stat-card">
+                <div class="label">Territories Active</div>
+                <div class="value">{{ s.total_territories }}</div>
+            </div>
+        </div>
+
+        {% if rs and (rs.us_amount or rs.ca_amount_usd) %}
+        <div class="region-split-mini">
+            <span class="split-label">Region:</span>
+            <span class="split-dot us"></span> US: <span class="split-val">${{ "{:,}".format(rs.us_amount|int) }}</span>
+            <span class="split-dot ca"></span> CA: <span class="split-val">${{ "{:,}".format(rs.ca_amount_usd|int) }}</span>
+            <span style="color:var(--text-muted);font-size:10px;">(CAD ${{ "{:,}".format(rs.ca_amount|int) }})</span>
+        </div>
+        {% endif %}
+
+        {% if horizon_data.territory_ranking or horizon_data.salesman_ranking or horizon_data.customer_ranking %}
+        <div class="ranking-section">
+            <div class="ranking-header">
+                <div class="section-title">Ranking — {{ horizon_key|upper }}</div>
+                <div class="ranking-tabs" data-region="{{ horizon_key }}">
+                    <button class="ranking-tab active" data-tab="{{ horizon_key }}-territory">Territory</button>
+                    <button class="ranking-tab" data-tab="{{ horizon_key }}-salesman">Salesman</button>
+                    <button class="ranking-tab" data-tab="{{ horizon_key }}-customer">Customer</button>
+                </div>
+            </div>
+
+            {% for tab_suffix, tab_label, items, name_field in [
+                ('territory', 'Location', horizon_data.territory_ranking, 'location'),
+                ('salesman', 'Salesman', horizon_data.salesman_ranking, 'salesman'),
+                ('customer', 'Customer', horizon_data.customer_ranking, 'customer'),
+            ] %}
+            <div class="ranking-panel {{ 'active' if loop.first else '' }}" id="{{ horizon_key }}-{{ tab_suffix }}">
+                {% if items|length >= 3 %}
+                <div class="podium">
+                    {% for cls in ['gold', 'silver', 'bronze'] %}
+                    {% set item = items[loop.index0] %}
+                    <div class="podium-card {{ cls }}">
+                        <div class="podium-medal">{{ loop.index }}</div>
+                        <div class="podium-location">{{ item[name_field] }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(item.total|int) }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if items|length > 3 %}
+                <div class="ranking-wrapper">
+                    <table class="ranking-table">
+                        <thead><tr><th>{{ tab_label }}</th><th class="col-total">Total</th><th class="col-rank">Rank</th></tr></thead>
+                        <tbody>
+                            {% for row in items[3:] %}
+                            <tr>
+                                <td class="col-location">{{ row[name_field] }}</td>
+                                <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-rank">{{ row.rank }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state"><p>No shipments data found for this period.</p></div>
+        {% endif %}
+    </div>
+    {% endmacro %}
+
+    <div class="fade-in stagger-2">
+        {{ render_horizon('mtd', data.mtd, data.date_ranges.mtd, true) }}
+        {{ render_horizon('qtd', data.qtd, data.date_ranges.qtd, false) }}
+        {{ render_horizon('ytd', data.ytd, data.date_ranges.ytd, false) }}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    document.querySelectorAll('.horizon-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            var horizon = this.getAttribute('data-horizon');
+            document.querySelectorAll('.horizon-tab').forEach(function(t) { t.classList.remove('active'); });
+            this.classList.add('active');
+            document.querySelectorAll('.horizon-panel').forEach(function(panel) { panel.classList.remove('active'); });
+            var target = document.getElementById('panel-' + horizon);
+            if (target) target.classList.add('active');
+        });
+    });
+
+    document.querySelectorAll('.ranking-tabs').forEach(function(tabGroup) {
+        tabGroup.querySelectorAll('.ranking-tab').forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                var targetId = this.getAttribute('data-tab');
+                tabGroup.querySelectorAll('.ranking-tab').forEach(function(t) { t.classList.remove('active'); });
+                this.classList.add('active');
+                var section = tabGroup.closest('.ranking-section');
+                if (section) {
+                    section.querySelectorAll('.ranking-panel').forEach(function(panel) { panel.classList.remove('active'); });
+                    var target = document.getElementById(targetId);
+                    if (target) target.classList.add('active');
+                }
+            });
+        });
+    });
+})();
+</script>
+{% endblock %}

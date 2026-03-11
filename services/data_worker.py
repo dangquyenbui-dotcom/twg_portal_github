@@ -6,18 +6,22 @@ Pages and exports never query SQL directly — they read from cache for instant 
 Refreshes:
   - US bookings snapshot + raw (PRO05)     — every 10 min
   - CA bookings snapshot + raw (PRO06)     — every 10 min
+  - US shipments snapshot + raw (PRO05)    — every 10 min
+  - CA shipments snapshot + raw (PRO06)    — every 10 min
   - US open orders snapshot + raw (PRO05)  — every 60 min
   - CA open orders snapshot + raw (PRO06)  — every 60 min
   - CAD → USD exchange rate                — every 10 min
   - Bookings Summary MTD/QTD/YTD           — every 30 min (+ on startup)
+  - Shipments Summary MTD/QTD/YTD          — every 30 min (+ on startup)
 
 On startup:
   1. Exchange rate
   2. Daily bookings (snapshot + raw, today only)
-  3. Open orders (snapshot + raw, all open lines)
-  4. Bookings Summary: auto-freeze completed months → read from disk → query only
-     current month from sotran → assemble MTD/QTD/YTD → populate dashboard cache
-  Total startup: ~5-8 seconds (frozen files load in <1ms each, only current month hits SQL)
+  3. Daily shipments (snapshot + raw, today only)
+  4. Open orders (snapshot + raw, all open lines)
+  5. Bookings Summary MTD/QTD/YTD + prior year comparisons
+  6. Shipments Summary MTD/QTD/YTD + prior year comparisons
+  7. Dashboard current year cache (populated as side effect of YTD)
 """
 
 import logging
@@ -27,6 +31,10 @@ from extensions import cache
 from services.bookings_service import (
     fetch_bookings_snapshot_us, fetch_bookings_snapshot_ca,
     fetch_bookings_raw_us, fetch_bookings_raw_ca,
+)
+from services.shipments_service import (
+    fetch_shipments_snapshot_us, fetch_shipments_snapshot_ca,
+    fetch_shipments_raw_us, fetch_shipments_raw_ca,
 )
 from services.open_orders_service import (
     fetch_open_orders_snapshot_us, fetch_open_orders_snapshot_ca,
@@ -45,6 +53,15 @@ CACHE_KEY_BOOKINGS_UPDATED = "bookings_last_updated"
 # Bookings — raw export data
 CACHE_KEY_BOOKINGS_RAW_US = "bookings_raw_us"
 CACHE_KEY_BOOKINGS_RAW_CA = "bookings_raw_ca"
+
+# Shipments — dashboard snapshots
+CACHE_KEY_SHIPMENTS_US = "shipments_snapshot_us"
+CACHE_KEY_SHIPMENTS_CA = "shipments_snapshot_ca"
+CACHE_KEY_SHIPMENTS_UPDATED = "shipments_last_updated"
+
+# Shipments — raw export data
+CACHE_KEY_SHIPMENTS_RAW_US = "shipments_raw_us"
+CACHE_KEY_SHIPMENTS_RAW_CA = "shipments_raw_ca"
 
 # Open Orders — dashboard snapshots
 CACHE_KEY_OPEN_ORDERS_US = "open_orders_snapshot_us"
@@ -195,6 +212,98 @@ def get_bookings_raw_from_cache():
 
 
 # ─────────────────────────────────────────────────────────────
+# Shipments Cache (snapshot + raw)
+# ─────────────────────────────────────────────────────────────
+
+def refresh_shipments_cache():
+    """
+    Fetch fresh shipments data from SQL for both US and Canada.
+    Caches both the dashboard snapshot AND raw export data in one pass.
+    """
+    logger.info("Worker: Refreshing shipments cache (US + CA)...")
+
+    try:
+        # ── US snapshot ──
+        result_us = fetch_shipments_snapshot_us()
+        if result_us is not None:
+            cache.set(CACHE_KEY_SHIPMENTS_US, result_us, timeout=BOOKINGS_CACHE_TIMEOUT)
+            logger.info("Worker: US shipments snapshot cache updated.")
+        else:
+            logger.warning("Worker: US shipments snapshot returned None — keeping stale cache.")
+
+        # ── CA snapshot ──
+        result_ca = fetch_shipments_snapshot_ca()
+        if result_ca is not None:
+            cache.set(CACHE_KEY_SHIPMENTS_CA, result_ca, timeout=BOOKINGS_CACHE_TIMEOUT)
+            logger.info("Worker: CA shipments snapshot cache updated.")
+        else:
+            logger.warning("Worker: CA shipments snapshot returned None — keeping stale cache.")
+
+        # ── US raw export data ──
+        raw_us = fetch_shipments_raw_us()
+        if raw_us is not None:
+            cache.set(CACHE_KEY_SHIPMENTS_RAW_US, raw_us, timeout=BOOKINGS_CACHE_TIMEOUT)
+            logger.info(f"Worker: US shipments raw cache updated ({len(raw_us)} rows).")
+        else:
+            logger.warning("Worker: US shipments raw query returned None — keeping stale cache.")
+
+        # ── CA raw export data ──
+        raw_ca = fetch_shipments_raw_ca()
+        if raw_ca is not None:
+            cache.set(CACHE_KEY_SHIPMENTS_RAW_CA, raw_ca, timeout=BOOKINGS_CACHE_TIMEOUT)
+            logger.info(f"Worker: CA shipments raw cache updated ({len(raw_ca)} rows).")
+        else:
+            logger.warning("Worker: CA shipments raw query returned None — keeping stale cache.")
+
+        # ── Timestamp ──
+        if any(x is not None for x in [result_us, result_ca, raw_us, raw_ca]):
+            cache.set(CACHE_KEY_SHIPMENTS_UPDATED, datetime.now(), timeout=BOOKINGS_CACHE_TIMEOUT)
+
+    except Exception as e:
+        logger.error(f"Worker: Failed to refresh shipments cache: {e}")
+
+
+def get_shipments_from_cache():
+    """
+    Read shipments dashboard data from cache. If empty, do a one-time synchronous fetch.
+    Returns (us_snapshot, ca_snapshot, last_updated, cad_to_usd_rate)
+    """
+    data_us = cache.get(CACHE_KEY_SHIPMENTS_US)
+    data_ca = cache.get(CACHE_KEY_SHIPMENTS_CA)
+    updated = cache.get(CACHE_KEY_SHIPMENTS_UPDATED)
+    cad_rate = cache.get(CACHE_KEY_CAD_RATE)
+
+    if data_us is None and data_ca is None:
+        logger.info("Shipments cache miss — running synchronous fetch.")
+        refresh_shipments_cache()
+        data_us = cache.get(CACHE_KEY_SHIPMENTS_US)
+        data_ca = cache.get(CACHE_KEY_SHIPMENTS_CA)
+        updated = cache.get(CACHE_KEY_SHIPMENTS_UPDATED)
+
+    if cad_rate is None:
+        cad_rate = DEFAULT_CAD_TO_USD
+
+    return data_us, data_ca, updated, cad_rate
+
+
+def get_shipments_raw_from_cache():
+    """
+    Read shipments raw export data from cache. If empty, do a one-time synchronous fetch.
+    Returns (us_rows, ca_rows) — each is a list of dicts or empty list.
+    """
+    raw_us = cache.get(CACHE_KEY_SHIPMENTS_RAW_US)
+    raw_ca = cache.get(CACHE_KEY_SHIPMENTS_RAW_CA)
+
+    if raw_us is None and raw_ca is None:
+        logger.info("Shipments raw cache miss — running synchronous fetch.")
+        refresh_shipments_cache()
+        raw_us = cache.get(CACHE_KEY_SHIPMENTS_RAW_US)
+        raw_ca = cache.get(CACHE_KEY_SHIPMENTS_RAW_CA)
+
+    return raw_us or [], raw_ca or []
+
+
+# ─────────────────────────────────────────────────────────────
 # Open Orders Cache (snapshot + raw)
 # ─────────────────────────────────────────────────────────────
 
@@ -295,16 +404,17 @@ def get_open_orders_raw_from_cache():
 def refresh_bookings_and_rate():
     """
     Called by scheduler every 10 minutes.
-    Refreshes bookings snapshot + raw (US + CA) and the exchange rate.
+    Refreshes bookings + shipments snapshot + raw (US + CA) and the exchange rate.
     """
-    logger.info("Worker: ═══ Bookings refresh (every 10 min) ═══")
+    logger.info("Worker: ═══ Bookings + Shipments refresh (every 10 min) ═══")
 
     rate = _fetch_cad_to_usd_rate()
     cache.set(CACHE_KEY_CAD_RATE, rate, timeout=OO_CACHE_TIMEOUT)
 
     refresh_bookings_cache()
+    refresh_shipments_cache()
 
-    logger.info("Worker: ═══ Bookings refresh complete ═══")
+    logger.info("Worker: ═══ Bookings + Shipments refresh complete ═══")
 
 
 def refresh_open_orders_scheduled():
@@ -324,16 +434,18 @@ def refresh_all_on_startup():
     Startup sequence:
       1. Exchange rate (needed by everything)
       2. Daily bookings (snapshot + raw, today only)
-      3. Open orders (snapshot + raw, all open lines)
-      4. Bookings Summary MTD/QTD/YTD:
+      3. Daily shipments (snapshot + raw, today only)
+      4. Open orders (snapshot + raw, all open lines)
+      5. Bookings Summary MTD/QTD/YTD:
          - Auto-freezes any completed months missing from disk (one-time SQL per month)
          - Reads frozen files from disk (<1ms each)
          - Queries only current month from sotran (small, fast)
          - Assembles MTD/QTD/YTD with YoY from prior year frozen files
          - Populates Executive Dashboard cache for current year (side effect)
-
-    First startup with no frozen files: ~15-20 sec (freezes all prior months from SQL)
-    Subsequent startups: ~3-5 sec (reads from disk, only current month from SQL)
+      6. Shipments Summary MTD/QTD/YTD:
+         - Same pattern as bookings but using artran/arytrn tables
+         - Auto-freezes completed months from arytrn
+         - Queries only current month from artran
     """
     logger.info("Worker: ═══ Initial startup refresh ═══")
 
@@ -344,12 +456,20 @@ def refresh_all_on_startup():
     # 2. Daily bookings
     refresh_bookings_cache()
 
-    # 3. Open orders
+    # 3. Daily shipments
+    refresh_shipments_cache()
+
+    # 4. Open orders
     refresh_open_orders_cache()
 
-    # 4. Bookings Summary (frozen files + current month) + Dashboard cache
+    # 5. Bookings Summary (frozen files + current month) + Dashboard cache
     from services.bookings_summary_service import refresh_bookings_summary
     logger.info("Worker: Refreshing Bookings Summary (frozen months + live current month)...")
     refresh_bookings_summary(cad_rate=rate)
+
+    # 6. Shipments Summary (frozen files + current month)
+    from services.shipments_summary_service import refresh_shipments_summary
+    logger.info("Worker: Refreshing Shipments Summary (frozen months + live current month)...")
+    refresh_shipments_summary(cad_rate=rate)
 
     logger.info("Worker: ═══ Startup complete — all caches warm ═══")

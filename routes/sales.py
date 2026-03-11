@@ -1,18 +1,28 @@
 """
 Sales Blueprint
-Routes for all sales reports: bookings dashboard, bookings summary (MTD/QTD/YTD),
-open orders dashboard, executive dashboard, and Excel exports.
+Routes for all sales reports: bookings, bookings summary, shipments, shipments summary,
+open orders, executive dashboard, and Excel exports.
 
 Per-report role mapping (using Security Groups):
-  /sales                              → Sales.Base  (auto-implied by ANY Sales.*.View)
-  /sales/bookings                     → Sales.Bookings.View
-  /sales/bookings/export/*            → Sales.Bookings.Export
-  /sales/bookings-summary             → Sales.BookingsSummary.View
-  /sales/bookings-summary/export/*    → Sales.BookingsSummary.Export
-  /sales/open-orders                  → Sales.OpenOrders.View
-  /sales/open-orders/export/*         → Sales.OpenOrders.Export
-  /sales/dashboard                    → Sales.Dashboard.View
-  /sales/dashboard/export/*           → Sales.Dashboard.View  (export from frozen files)
+  /sales                                  → Sales.Base  (auto-implied by ANY Sales.*.View)
+
+  -- BOOKINGS (orders placed) --
+  /sales/bookings                         → Sales.Bookings.View
+  /sales/bookings/export/*                → Sales.Bookings.Export
+  /sales/bookings-summary                 → Sales.BookingsSummary.View
+  /sales/bookings-summary/export/*        → Sales.BookingsSummary.Export
+
+  -- SHIPMENTS (orders invoiced/shipped) --
+  /sales/shipments                        → Sales.Shipments.View
+  /sales/shipments/export/*               → Sales.Shipments.Export
+  /sales/shipments-summary                → Sales.ShipmentsSummary.View
+  /sales/shipments-summary/export/*       → Sales.ShipmentsSummary.Export
+
+  -- OTHER --
+  /sales/open-orders                      → Sales.OpenOrders.View
+  /sales/open-orders/export/*             → Sales.OpenOrders.Export
+  /sales/dashboard                        → Sales.Dashboard.View
+  /sales/dashboard/export/*               → Sales.Dashboard.View  (export from frozen files)
 
 Export roles do NOT grant view access — they only enable download buttons
 on reports the user can already see. Admin bypasses all checks.
@@ -26,10 +36,16 @@ from flask import Blueprint, render_template, session, redirect, url_for, reques
 
 from services.data_worker import (
     get_bookings_from_cache, get_bookings_raw_from_cache,
+    get_shipments_from_cache, get_shipments_raw_from_cache,
     get_open_orders_from_cache, get_open_orders_raw_from_cache,
 )
 from services.bookings_summary_service import (
-    get_bookings_summary_from_cache, fetch_raw_export_data,
+    get_bookings_summary_from_cache,
+    fetch_raw_export_data as fetch_bookings_raw_export_data,
+)
+from services.shipments_summary_service import (
+    get_shipments_summary_from_cache,
+    fetch_raw_export_data as fetch_shipments_raw_export_data,
 )
 from services.dashboard_data_service import (
     get_dashboard_data, get_available_years, invalidate_historical_cache,
@@ -74,6 +90,35 @@ BOOKINGS_EXPORT_COLUMNS = [
     ('Ship Via (shipvia)',        'ShipVia',       16, None),
 ]
 
+SHIPMENTS_EXPORT_COLUMNS = [
+    ('Invoice No (invno)',        'InvoiceNo',     20, None),
+    ('Sales Order (sono)',        'SalesOrder',    20, None),
+    ('Line# (tranlineno)',        'LineNo',        10, '#,##0'),
+    ('Invoice Date (invdte)',     'InvoiceDate',   18, 'MM/DD/YYYY'),
+    ('Customer No (custno)',      'CustomerNo',    20, None),
+    ('Customer Name (company)',   'CustomerName',  30, None),
+    ('Item (item)',               'Item',          18, None),
+    ('Description (descrip)',     'Description',   32, None),
+    ('Product Line (plinid)',     'ProductLine',   18, None),
+    ('Qty Ordered (qtyord)',      'QtyOrdered',    18, '#,##0'),
+    ('Qty Shipped (qtyshp)',      'QtyShipped',    18, '#,##0'),
+    ('Unit Price (price)',        'UnitPrice',     16, '$#,##0.00'),
+    ('Discount % (disc)',         'Discount',      14, '0.000'),
+    ('Ext Price (extprice)',      'ExtPrice',      18, '$#,##0.00'),
+    ('Unit Cost (cost)',          'UnitCost',      16, '$#,##0.00'),
+    ('Invoice Status (arstat)',   'InvoiceStatus', 18, None),
+    ('Invoice Type (artype)',     'InvoiceType',   16, None),
+    ('Territory (mapped)',        'Territory',     18, None),
+    ('Terr Code (resolved)',      'TerrCode',      16, None),
+    ('Tran Terr (tr.terr)',       'TranTerr',      16, None),
+    ('Cust Terr (cu.terr)',       'CustTerr',      16, None),
+    ('Salesman (salesmn)',        'Salesman',      16, None),
+    ('Location (loctid)',         'Location',      16, None),
+    ('PO Number (ponum)',         'PONumber',      18, None),
+    ('Batch (batch)',             'Batch',         14, None),
+    ('Currency (currid)',         'Currency',      12, None),
+]
+
 OPEN_ORDERS_EXPORT_COLUMNS = [
     ('Sales Order (sono)',        'SalesOrder',    20, None),
     ('Line# (tranlineno)',        'LineNo',        10, '#,##0'),
@@ -107,6 +152,9 @@ OPEN_ORDERS_EXPORT_COLUMNS = [
 DASHBOARD_EXPORT_COLUMNS = BOOKINGS_EXPORT_COLUMNS
 BOOKINGS_SUMMARY_EXPORT_COLUMNS = BOOKINGS_EXPORT_COLUMNS
 
+# Shipments Summary export uses the shipments column layout
+SHIPMENTS_SUMMARY_EXPORT_COLUMNS = SHIPMENTS_EXPORT_COLUMNS
+
 
 # ═══════════════════════════════════════════════════════════════
 # Helper: build region data dict with USD conversion for Canada
@@ -115,14 +163,14 @@ BOOKINGS_SUMMARY_EXPORT_COLUMNS = BOOKINGS_EXPORT_COLUMNS
 def _build_region_data(snapshot, cad_rate=None, is_canada=False):
     """
     Build a template-ready data dict from a cache snapshot.
-    Handles both bookings and open orders shapes.
+    Handles bookings, shipments, and open orders shapes.
     For Canada, adds USD equivalents to monetary fields.
     """
     if snapshot is None:
         return {
             "total_amount": 0, "total_amount_usd": 0,
             "total_released_amount": 0, "total_released_amount_usd": 0,
-            "total_units": 0, "total_orders": 0,
+            "total_units": 0, "total_orders": 0, "total_invoices": 0,
             "total_territories": 0, "total_lines": 0,
             "territory_ranking": [],
             "salesman_ranking": [],
@@ -135,7 +183,8 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
         "total_amount": summary["total_amount"],
         "total_released_amount": summary.get("total_released_amount", 0),
         "total_units": summary["total_units"],
-        "total_orders": summary["total_orders"],
+        "total_orders": summary.get("total_orders", 0),
+        "total_invoices": summary.get("total_invoices", 0),
         "total_territories": summary.get("total_territories", 0),
         "total_lines": summary.get("total_lines", 0),
         "territory_ranking": snapshot.get("ranking", snapshot.get("territory_ranking", [])),
@@ -236,7 +285,6 @@ def bookings_export():
 @sales_bp.route('/bookings/export/us')
 @require_role('Sales.Bookings.Export')
 def bookings_export_us():
-    """Export today's raw US bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
@@ -255,7 +303,6 @@ def bookings_export_us():
 @sales_bp.route('/bookings/export/ca')
 @require_role('Sales.Bookings.Export')
 def bookings_export_ca():
-    """Export today's raw Canada bookings data — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
@@ -273,26 +320,16 @@ def bookings_export_ca():
 
 # ═══════════════════════════════════════════════════════════════
 # BOOKINGS SUMMARY (MTD / QTD / YTD)
-# View requires Sales.BookingsSummary.View
-# Export requires Sales.BookingsSummary.Export
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/bookings-summary')
 @require_role('Sales.BookingsSummary.View')
 def bookings_summary():
-    """
-    Bookings Summary — MTD / QTD / YTD with year-over-year comparison.
-    Combined US + CA (CAD → USD), with territory/salesman/customer rankings.
-    """
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    # Get exchange rate from the shared bookings cache
     _, _, _, cad_rate = get_bookings_from_cache()
-
-    # Get summary data (all three horizons)
     summary_data = get_bookings_summary_from_cache(cad_rate)
-
     can_export = user_has_role(session["user"], 'Sales.BookingsSummary.Export')
 
     return render_template(
@@ -308,20 +345,13 @@ def bookings_summary():
 @sales_bp.route('/bookings-summary/export/<horizon>')
 @require_role('Sales.BookingsSummary.Export')
 def bookings_summary_export(horizon):
-    """
-    Export bookings summary raw data for a given horizon (mtd/qtd/ytd).
-    US + CA combined with Region column.
-    """
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
-
     if horizon not in ('mtd', 'qtd', 'ytd'):
         return redirect(url_for('sales.bookings_summary'))
 
-    # Get exchange rate
     _, _, _, cad_rate = get_bookings_from_cache()
-
-    rows_us, rows_ca = fetch_raw_export_data(horizon, cad_rate)
+    rows_us, rows_ca = fetch_bookings_raw_export_data(horizon, cad_rate)
     if not rows_us and not rows_ca:
         return redirect(url_for('sales.bookings_summary'))
 
@@ -330,33 +360,26 @@ def bookings_summary_export(horizon):
     for row in rows_ca:
         row['Region'] = 'CA'
 
-    horizon_labels = {'mtd': 'MTD', 'qtd': 'QTD', 'ytd': 'YTD'}
-    label = horizon_labels.get(horizon, horizon.upper())
-
+    label = horizon.upper()
     wb = build_export_workbook(
         rows=rows_us + rows_ca,
         title_label=f'Bookings {label} Raw Data (US + Canada)',
         columns=BOOKINGS_SUMMARY_EXPORT_COLUMNS,
         include_region_col=True,
     )
-    return send_workbook(
-        wb,
-        f'Bookings_{label}_US_CA_{date.today().strftime("%Y%m%d")}.xlsx'
-    )
+    return send_workbook(wb, f'Bookings_{label}_US_CA_{date.today().strftime("%Y%m%d")}.xlsx')
 
 
 @sales_bp.route('/bookings-summary/export/<horizon>/us')
 @require_role('Sales.BookingsSummary.Export')
 def bookings_summary_export_us(horizon):
-    """Export bookings summary raw data — US only."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
-
     if horizon not in ('mtd', 'qtd', 'ytd'):
         return redirect(url_for('sales.bookings_summary'))
 
     _, _, _, cad_rate = get_bookings_from_cache()
-    rows_us, _ = fetch_raw_export_data(horizon, cad_rate)
+    rows_us, _ = fetch_bookings_raw_export_data(horizon, cad_rate)
     if not rows_us:
         return redirect(url_for('sales.bookings_summary'))
 
@@ -372,15 +395,13 @@ def bookings_summary_export_us(horizon):
 @sales_bp.route('/bookings-summary/export/<horizon>/ca')
 @require_role('Sales.BookingsSummary.Export')
 def bookings_summary_export_ca(horizon):
-    """Export bookings summary raw data — Canada only."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
-
     if horizon not in ('mtd', 'qtd', 'ytd'):
         return redirect(url_for('sales.bookings_summary'))
 
     _, _, _, cad_rate = get_bookings_from_cache()
-    _, rows_ca = fetch_raw_export_data(horizon, cad_rate)
+    _, rows_ca = fetch_bookings_raw_export_data(horizon, cad_rate)
     if not rows_ca:
         return redirect(url_for('sales.bookings_summary'))
 
@@ -391,6 +412,201 @@ def bookings_summary_export_ca(horizon):
         columns=BOOKINGS_SUMMARY_EXPORT_COLUMNS,
     )
     return send_workbook(wb, f'Bookings_{label}_CA_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+# ═══════════════════════════════════════════════════════════════
+# DAILY SHIPMENTS — View requires Sales.Shipments.View
+#                   Export requires Sales.Shipments.Export
+# ═══════════════════════════════════════════════════════════════
+
+@sales_bp.route('/shipments')
+@require_role('Sales.Shipments.View')
+def shipments():
+    """Daily Shipments dashboard — today's invoiced/shipped lines from artran."""
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    snapshot_us, snapshot_ca, last_updated, cad_rate = get_shipments_from_cache()
+
+    us_data = _build_region_data(snapshot_us, cad_rate, is_canada=False)
+    ca_data = _build_region_data(snapshot_ca, cad_rate, is_canada=True)
+
+    error = None
+    if snapshot_us is None and snapshot_ca is None:
+        error = "Unable to load data. Please try again shortly."
+
+    can_export = user_has_role(session["user"], 'Sales.Shipments.Export')
+
+    return render_template(
+        'sales/shipments.html',
+        user=session["user"],
+        error=error,
+        us=us_data,
+        ca=ca_data,
+        cad_rate=cad_rate,
+        last_updated=last_updated,
+        can_export=can_export,
+    )
+
+
+@sales_bp.route('/shipments/export')
+@require_role('Sales.Shipments.Export')
+def shipments_export():
+    """Export today's raw shipments data (US + Canada combined) — reads from cache, zero SQL."""
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    rows_us, rows_ca = get_shipments_raw_from_cache()
+    if not rows_us and not rows_ca:
+        return redirect(url_for('sales.shipments'))
+
+    for row in rows_us:
+        row['Region'] = 'US'
+    for row in rows_ca:
+        row['Region'] = 'CA'
+
+    wb = build_export_workbook(
+        rows=rows_us + rows_ca,
+        title_label='Daily Shipments Raw Data (US + Canada)',
+        columns=SHIPMENTS_EXPORT_COLUMNS,
+        include_region_col=True,
+    )
+    return send_workbook(wb, f'Shipments_Raw_US_CA_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+@sales_bp.route('/shipments/export/us')
+@require_role('Sales.Shipments.Export')
+def shipments_export_us():
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    rows_us, _ = get_shipments_raw_from_cache()
+    if not rows_us:
+        return redirect(url_for('sales.shipments'))
+
+    wb = build_export_workbook(
+        rows=rows_us,
+        title_label='Daily Shipments Raw Data — United States',
+        columns=SHIPMENTS_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'Shipments_Raw_US_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+@sales_bp.route('/shipments/export/ca')
+@require_role('Sales.Shipments.Export')
+def shipments_export_ca():
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    _, rows_ca = get_shipments_raw_from_cache()
+    if not rows_ca:
+        return redirect(url_for('sales.shipments'))
+
+    wb = build_export_workbook(
+        rows=rows_ca,
+        title_label='Daily Shipments Raw Data — Canada',
+        columns=SHIPMENTS_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'Shipments_Raw_CA_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+# ═══════════════════════════════════════════════════════════════
+# SHIPMENTS SUMMARY (MTD / QTD / YTD)
+# View requires Sales.ShipmentsSummary.View
+# Export requires Sales.ShipmentsSummary.Export
+# ═══════════════════════════════════════════════════════════════
+
+@sales_bp.route('/shipments-summary')
+@require_role('Sales.ShipmentsSummary.View')
+def shipments_summary():
+    """Shipments Summary — MTD / QTD / YTD with year-over-year comparison."""
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+
+    _, _, _, cad_rate = get_shipments_from_cache()
+    summary_data = get_shipments_summary_from_cache(cad_rate)
+    can_export = user_has_role(session["user"], 'Sales.ShipmentsSummary.Export')
+
+    return render_template(
+        'sales/shipments_summary.html',
+        user=session["user"],
+        data=summary_data,
+        cad_rate=cad_rate,
+        last_updated=summary_data.get('last_updated'),
+        can_export=can_export,
+    )
+
+
+@sales_bp.route('/shipments-summary/export/<horizon>')
+@require_role('Sales.ShipmentsSummary.Export')
+def shipments_summary_export(horizon):
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+    if horizon not in ('mtd', 'qtd', 'ytd'):
+        return redirect(url_for('sales.shipments_summary'))
+
+    _, _, _, cad_rate = get_shipments_from_cache()
+    rows_us, rows_ca = fetch_shipments_raw_export_data(horizon, cad_rate)
+    if not rows_us and not rows_ca:
+        return redirect(url_for('sales.shipments_summary'))
+
+    for row in rows_us:
+        row['Region'] = 'US'
+    for row in rows_ca:
+        row['Region'] = 'CA'
+
+    label = horizon.upper()
+    wb = build_export_workbook(
+        rows=rows_us + rows_ca,
+        title_label=f'Shipments {label} Raw Data (US + Canada)',
+        columns=SHIPMENTS_SUMMARY_EXPORT_COLUMNS,
+        include_region_col=True,
+    )
+    return send_workbook(wb, f'Shipments_{label}_US_CA_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+@sales_bp.route('/shipments-summary/export/<horizon>/us')
+@require_role('Sales.ShipmentsSummary.Export')
+def shipments_summary_export_us(horizon):
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+    if horizon not in ('mtd', 'qtd', 'ytd'):
+        return redirect(url_for('sales.shipments_summary'))
+
+    _, _, _, cad_rate = get_shipments_from_cache()
+    rows_us, _ = fetch_shipments_raw_export_data(horizon, cad_rate)
+    if not rows_us:
+        return redirect(url_for('sales.shipments_summary'))
+
+    label = horizon.upper()
+    wb = build_export_workbook(
+        rows=rows_us,
+        title_label=f'Shipments {label} Raw Data — United States',
+        columns=SHIPMENTS_SUMMARY_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'Shipments_{label}_US_{date.today().strftime("%Y%m%d")}.xlsx')
+
+
+@sales_bp.route('/shipments-summary/export/<horizon>/ca')
+@require_role('Sales.ShipmentsSummary.Export')
+def shipments_summary_export_ca(horizon):
+    if not session.get("user"):
+        return redirect(url_for('main.login_page'))
+    if horizon not in ('mtd', 'qtd', 'ytd'):
+        return redirect(url_for('sales.shipments_summary'))
+
+    _, _, _, cad_rate = get_shipments_from_cache()
+    _, rows_ca = fetch_shipments_raw_export_data(horizon, cad_rate)
+    if not rows_ca:
+        return redirect(url_for('sales.shipments_summary'))
+
+    label = horizon.upper()
+    wb = build_export_workbook(
+        rows=rows_ca,
+        title_label=f'Shipments {label} Raw Data — Canada',
+        columns=SHIPMENTS_SUMMARY_EXPORT_COLUMNS,
+    )
+    return send_workbook(wb, f'Shipments_{label}_CA_{date.today().strftime("%Y%m%d")}.xlsx')
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -430,7 +646,6 @@ def open_orders():
 @sales_bp.route('/open-orders/export')
 @require_role('Sales.OpenOrders.Export')
 def open_orders_export():
-    """Export open orders (US + Canada combined) — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
@@ -455,7 +670,6 @@ def open_orders_export():
 @sales_bp.route('/open-orders/export/us')
 @require_role('Sales.OpenOrders.Export')
 def open_orders_export_us():
-    """Export open orders US only — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
@@ -474,7 +688,6 @@ def open_orders_export_us():
 @sales_bp.route('/open-orders/export/ca')
 @require_role('Sales.OpenOrders.Export')
 def open_orders_export_ca():
-    """Export open orders Canada only — reads from cache, zero SQL."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
@@ -492,34 +705,22 @@ def open_orders_export_ca():
 
 # ═══════════════════════════════════════════════════════════════
 # DASHBOARD — View requires Sales.Dashboard.View
-# Uses soytrn (historical) + sotran (current month) with Python aggregation.
-# Historical data cached on demand (24hr TTL), current month cached every 60min.
-# Historical raw rows stored in frozen files for Excel export.
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/dashboard')
 @require_role('Sales.Dashboard.View')
 def dashboard():
-    """
-    Executive sales dashboard — yearly bookings data from soytrn + sotran.
-    Accepts optional ?year= query parameter (defaults to current year).
-    """
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    # Year selection
     selected_year = request.args.get('year', type=int, default=date.today().year)
     available_years = get_available_years()
     if selected_year not in available_years:
         selected_year = date.today().year
 
-    # Get exchange rate from bookings cache (shared)
     _, _, _, cad_rate = get_bookings_from_cache()
-
-    # Get dashboard data (fetches on demand if not cached)
     dashboard_data = get_dashboard_data(year=selected_year, cad_rate=cad_rate)
 
-    # Check if historical raw data is available for export
     can_export_historical = False
     if selected_year < date.today().year:
         us_raw = get_historical_raw_rows(selected_year, 'US')
@@ -542,16 +743,11 @@ def dashboard():
 @sales_bp.route('/dashboard/refresh', methods=['POST'])
 @require_role('Sales.Dashboard.View')
 def dashboard_refresh():
-    """
-    Manual refresh: invalidate historical cache for a given year and reload.
-    Called via AJAX from the dashboard "Refresh Data" button.
-    """
     if not session.get("user"):
         return jsonify({'error': 'Not authenticated'}), 401
 
     data = request.get_json() or {}
     year = data.get('year', date.today().year)
-
     invalidate_historical_cache(year=year)
 
     return jsonify({'status': 'ok', 'redirect': url_for('sales.dashboard', year=year)})
@@ -560,10 +756,6 @@ def dashboard_refresh():
 @sales_bp.route('/dashboard/export')
 @require_role('Sales.Dashboard.View')
 def dashboard_export():
-    """
-    Export historical dashboard raw data (US + CA combined) — reads from frozen files, zero SQL.
-    Only available for past years that have been downloaded via the admin page.
-    """
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
@@ -594,7 +786,6 @@ def dashboard_export():
 @sales_bp.route('/dashboard/export/us')
 @require_role('Sales.Dashboard.View')
 def dashboard_export_us():
-    """Export historical dashboard raw data — US only, from frozen file."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
@@ -617,7 +808,6 @@ def dashboard_export_us():
 @sales_bp.route('/dashboard/export/ca')
 @require_role('Sales.Dashboard.View')
 def dashboard_export_ca():
-    """Export historical dashboard raw data — Canada only, from frozen file."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
