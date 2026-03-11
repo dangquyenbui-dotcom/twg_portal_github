@@ -913,8 +913,8 @@ def refresh_shipments_summary(cad_rate=None):
                 f"(download {dr['prior_start'].year} via admin page when ready)"
             )
 
-        # YoY
-        yoy = _compute_yoy(current_merged, prior_merged)
+        # YoY — only compute if prior year data actually exists
+        yoy = _compute_yoy(current_merged, prior_merged) if prior_merged is not None else {}
         current_merged['label'] = dr['label']
         current_merged['start_date'] = dr['start'].isoformat()
         current_merged['end_date'] = dr['end'].isoformat()

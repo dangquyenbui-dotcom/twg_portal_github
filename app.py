@@ -13,7 +13,7 @@ from routes.main import main_bp
 from routes.sales import sales_bp
 from routes.admin import admin_bp
 from services.data_worker import refresh_bookings_and_rate, refresh_open_orders_scheduled, refresh_all_on_startup
-from services.dashboard_data_service import refresh_dashboard_current_month
+from services.bookings_dashboard_data_service import refresh_dashboard_current_month
 from services.bookings_summary_service import refresh_bookings_summary_scheduled
 from services.shipments_summary_service import refresh_shipments_summary_scheduled
 

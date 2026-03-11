@@ -1,6 +1,6 @@
 """
 Sales Blueprint
-Routes for all sales reports: bookings, bookings summary, shipments, shipments summary,
+Routes for all sales reports: bookings, bookings summary, shipments (consolidated),
 open orders, executive dashboard, and Excel exports.
 
 Per-report role mapping (using Security Groups):
@@ -12,11 +12,11 @@ Per-report role mapping (using Security Groups):
   /sales/bookings-summary                 → Sales.BookingsSummary.View
   /sales/bookings-summary/export/*        → Sales.BookingsSummary.Export
 
-  -- SHIPMENTS (orders invoiced/shipped) --
+  -- SHIPMENTS (consolidated: daily + MTD/QTD/YTD) --
   /sales/shipments                        → Sales.Shipments.View
-  /sales/shipments/export/*               → Sales.Shipments.Export
-  /sales/shipments-summary                → Sales.ShipmentsSummary.View
-  /sales/shipments-summary/export/*       → Sales.ShipmentsSummary.Export
+  /sales/shipments/export                 → Sales.Shipments.Export  (today's data)
+  /sales/shipments/export/<horizon>       → Sales.Shipments.Export  (MTD/QTD/YTD)
+  /sales/shipments-summary               → redirects to /sales/shipments
 
   -- OTHER --
   /sales/open-orders                      → Sales.OpenOrders.View
@@ -47,7 +47,7 @@ from services.shipments_summary_service import (
     get_shipments_summary_from_cache,
     fetch_raw_export_data as fetch_shipments_raw_export_data,
 )
-from services.dashboard_data_service import (
+from services.bookings_dashboard_data_service import (
     get_dashboard_data, get_available_years, invalidate_historical_cache,
     get_historical_raw_rows,
 )
@@ -415,21 +415,41 @@ def bookings_summary_export_ca(horizon):
 
 
 # ═══════════════════════════════════════════════════════════════
-# DAILY SHIPMENTS — View requires Sales.Shipments.View
-#                   Export requires Sales.Shipments.Export
+# SHIPMENTS (consolidated: daily pulse + MTD/QTD/YTD summary)
+# View requires Sales.Shipments.View
+# Export requires Sales.Shipments.Export
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/shipments')
 @require_role('Sales.Shipments.View')
 def shipments():
-    """Daily Shipments dashboard — today's invoiced/shipped lines from artran."""
+    """Consolidated Shipments — today's pulse + MTD/QTD/YTD summary with YoY."""
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
 
-    snapshot_us, snapshot_ca, last_updated, cad_rate = get_shipments_from_cache()
+    # --- Today's data (daily snapshot) ---
+    snapshot_us, snapshot_ca, last_updated_daily, cad_rate = get_shipments_from_cache()
 
     us_data = _build_region_data(snapshot_us, cad_rate, is_canada=False)
     ca_data = _build_region_data(snapshot_ca, cad_rate, is_canada=True)
+
+    # Build combined US + CA totals for "Today's Pulse" section
+    today_combined = {
+        "total_amount": us_data["total_amount"] + ca_data.get("total_amount_usd", 0),
+        "total_units": us_data["total_units"] + ca_data["total_units"],
+        "total_invoices": us_data["total_invoices"] + ca_data["total_invoices"],
+        "total_orders": us_data.get("total_orders", 0) + ca_data.get("total_orders", 0),
+        "us_amount": us_data["total_amount"],
+        "ca_amount": ca_data["total_amount"],
+        "ca_amount_usd": ca_data.get("total_amount_usd", 0),
+    }
+
+    # Today's date label
+    order_date = us_data.get("order_date") or ca_data.get("order_date")
+    today_label = order_date.strftime('%A, %B %d, %Y') if order_date else 'Today'
+
+    # --- Summary data (MTD / QTD / YTD) ---
+    summary_data = get_shipments_summary_from_cache(cad_rate)
 
     error = None
     if snapshot_us is None and snapshot_ca is None:
@@ -441,10 +461,12 @@ def shipments():
         'sales/shipments.html',
         user=session["user"],
         error=error,
-        us=us_data,
-        ca=ca_data,
+        today_combined=today_combined,
+        today_label=today_label,
+        summary_data=summary_data,
         cad_rate=cad_rate,
-        last_updated=last_updated,
+        last_updated_daily=last_updated_daily,
+        last_updated_summary=summary_data.get('last_updated'),
         can_export=can_export,
     )
 
@@ -511,44 +533,29 @@ def shipments_export_ca():
 
 
 # ═══════════════════════════════════════════════════════════════
-# SHIPMENTS SUMMARY (MTD / QTD / YTD)
-# View requires Sales.ShipmentsSummary.View
-# Export requires Sales.ShipmentsSummary.Export
+# SHIPMENTS SUMMARY EXPORTS (MTD / QTD / YTD)
+# Now served under /shipments/export/<horizon>
+# Old /shipments-summary URL redirects to /shipments
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/shipments-summary')
-@require_role('Sales.ShipmentsSummary.View')
-def shipments_summary():
-    """Shipments Summary — MTD / QTD / YTD with year-over-year comparison."""
-    if not session.get("user"):
-        return redirect(url_for('main.login_page'))
-
-    _, _, _, cad_rate = get_shipments_from_cache()
-    summary_data = get_shipments_summary_from_cache(cad_rate)
-    can_export = user_has_role(session["user"], 'Sales.ShipmentsSummary.Export')
-
-    return render_template(
-        'sales/shipments_summary.html',
-        user=session["user"],
-        data=summary_data,
-        cad_rate=cad_rate,
-        last_updated=summary_data.get('last_updated'),
-        can_export=can_export,
-    )
+def shipments_summary_redirect():
+    """Redirect old /shipments-summary URL to consolidated /shipments page."""
+    return redirect(url_for('sales.shipments'), code=302)
 
 
-@sales_bp.route('/shipments-summary/export/<horizon>')
-@require_role('Sales.ShipmentsSummary.Export')
+@sales_bp.route('/shipments/export/<horizon>')
+@require_role('Sales.Shipments.Export')
 def shipments_summary_export(horizon):
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
     if horizon not in ('mtd', 'qtd', 'ytd'):
-        return redirect(url_for('sales.shipments_summary'))
+        return redirect(url_for('sales.shipments'))
 
     _, _, _, cad_rate = get_shipments_from_cache()
     rows_us, rows_ca = fetch_shipments_raw_export_data(horizon, cad_rate)
     if not rows_us and not rows_ca:
-        return redirect(url_for('sales.shipments_summary'))
+        return redirect(url_for('sales.shipments'))
 
     for row in rows_us:
         row['Region'] = 'US'
@@ -565,18 +572,18 @@ def shipments_summary_export(horizon):
     return send_workbook(wb, f'Shipments_{label}_US_CA_{date.today().strftime("%Y%m%d")}.xlsx')
 
 
-@sales_bp.route('/shipments-summary/export/<horizon>/us')
-@require_role('Sales.ShipmentsSummary.Export')
+@sales_bp.route('/shipments/export/<horizon>/us')
+@require_role('Sales.Shipments.Export')
 def shipments_summary_export_us(horizon):
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
     if horizon not in ('mtd', 'qtd', 'ytd'):
-        return redirect(url_for('sales.shipments_summary'))
+        return redirect(url_for('sales.shipments'))
 
     _, _, _, cad_rate = get_shipments_from_cache()
     rows_us, _ = fetch_shipments_raw_export_data(horizon, cad_rate)
     if not rows_us:
-        return redirect(url_for('sales.shipments_summary'))
+        return redirect(url_for('sales.shipments'))
 
     label = horizon.upper()
     wb = build_export_workbook(
@@ -587,18 +594,18 @@ def shipments_summary_export_us(horizon):
     return send_workbook(wb, f'Shipments_{label}_US_{date.today().strftime("%Y%m%d")}.xlsx')
 
 
-@sales_bp.route('/shipments-summary/export/<horizon>/ca')
-@require_role('Sales.ShipmentsSummary.Export')
+@sales_bp.route('/shipments/export/<horizon>/ca')
+@require_role('Sales.Shipments.Export')
 def shipments_summary_export_ca(horizon):
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
     if horizon not in ('mtd', 'qtd', 'ytd'):
-        return redirect(url_for('sales.shipments_summary'))
+        return redirect(url_for('sales.shipments'))
 
     _, _, _, cad_rate = get_shipments_from_cache()
     _, rows_ca = fetch_shipments_raw_export_data(horizon, cad_rate)
     if not rows_ca:
-        return redirect(url_for('sales.shipments_summary'))
+        return redirect(url_for('sales.shipments'))
 
     label = horizon.upper()
     wb = build_export_workbook(

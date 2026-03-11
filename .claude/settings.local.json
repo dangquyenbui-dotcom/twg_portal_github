@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"C:\\\\twg_portal_github\")",
+      "Bash(del \"C:\\\\twg_portal_github\\\\templates\\\\sales\\\\shipments_summary.html\")",
+      "Bash(command -v rm)",
+      "Bash(command -v del)",
+      "Bash(git -C \"C:/twg_portal_github\" rm \"templates/sales/shipments_summary.html\")",
+      "Bash(test -d \"C:\\\\twg_portal_github\\\\dashboard_data\")",
+      "Bash(test -d \"C:\\\\twg_portal_github\\\\summary_data\")",
+      "Bash(test -d \"C:\\\\twg_portal_github\\\\shipments_dashboard_data\")",
+      "Bash(test -d \"C:\\\\twg_portal_github\\\\shipments_summary_data\")",
+      "Bash(git mv services/dashboard_data_service.py services/bookings_dashboard_data_service.py)",
+      "Bash(ls -d */)",
+      "Bash(dir /S /B *.py)",
+      "Bash(findstr /V \"venv\")",
+      "Bash(ls -1d \"C:\\\\twg_portal_github/static/\"*/)",
+      "Bash(python3 -c \":*)",
+      "Bash(venv/Scripts/python -c \":*)"
+    ]
+  }
+}

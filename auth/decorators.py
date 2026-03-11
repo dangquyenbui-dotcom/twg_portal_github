@@ -10,10 +10,8 @@ Role naming convention:
   Sales.Bookings.Export          → Download Bookings Excel (requires View to be useful)
   Sales.BookingsSummary.View     → View Bookings Summary (MTD/QTD/YTD)
   Sales.BookingsSummary.Export   → Download Bookings Summary Excel
-  Sales.Shipments.View           → View Daily Shipments dashboard
-  Sales.Shipments.Export         → Download Shipments Excel
-  Sales.ShipmentsSummary.View   → View Shipments Summary (MTD/QTD/YTD)
-  Sales.ShipmentsSummary.Export → Download Shipments Summary Excel
+  Sales.Shipments.View           → View consolidated Shipments page (daily + MTD/QTD/YTD)
+  Sales.Shipments.Export         → Download Shipments Excel (daily + summary)
   Sales.OpenOrders.View          → View Open Orders dashboard
   Sales.OpenOrders.Export        → Download Open Orders Excel (requires View)
   Sales.Dashboard.View           → View Executive Dashboard
@@ -43,7 +41,6 @@ ROLE_HIERARCHY = {
         'Sales.Bookings.View',
         'Sales.BookingsSummary.View',
         'Sales.Shipments.View',
-        'Sales.ShipmentsSummary.View',
         'Sales.OpenOrders.View',
         'Sales.Dashboard.View',
         # Future: add new Sales.*.View roles here

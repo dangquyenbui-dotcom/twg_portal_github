@@ -296,15 +296,13 @@
 {% endif %}
 
 {# ════════════════════════════════════════════════════════════
-   SHIPMENTS — Orders Shipped / Invoiced
+   SHIPMENTS — Orders Shipped / Invoiced (consolidated)
    ════════════════════════════════════════════════════════════ #}
-{% if user_has_role(user, 'Sales.Shipments.View') or user_has_role(user, 'Sales.ShipmentsSummary.View') %}
+{% if user_has_role(user, 'Sales.Shipments.View') %}
 <div class="report-section fade-in stagger-2">
     <div class="section-label">Shipments — Orders Shipped &amp; Invoiced</div>
     <div class="report-grid">
 
-        {# Daily Shipments #}
-        {% if user_has_role(user, 'Sales.Shipments.View') %}
         <a href="/sales/shipments" class="report-card">
             <div class="report-icon green">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
@@ -312,11 +310,10 @@
                 </svg>
             </div>
             <div class="report-info">
-                <h3>Daily Shipments</h3>
-                <p>Today's invoiced shipments by territory, salesman, and customer. Auto-refreshes every 10 min.</p>
+                <h3>Shipments</h3>
+                <p>Today's shipments pulse plus MTD, QTD, and YTD with year-over-year comparison.</p>
                 <div class="report-tags">
                     <span class="report-tag live">Live</span>
-                    <span class="report-tag new">New</span>
                     {% if user_has_role(user, 'Sales.Shipments.Export') %}
                     <span class="report-tag export">Export</span>
                     {% else %}
@@ -325,31 +322,6 @@
                 </div>
             </div>
         </a>
-        {% endif %}
-
-        {# Shipments Summary #}
-        {% if user_has_role(user, 'Sales.ShipmentsSummary.View') %}
-        <a href="/sales/shipments-summary" class="report-card">
-            <div class="report-icon green">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
-                </svg>
-            </div>
-            <div class="report-info">
-                <h3>Shipments Summary</h3>
-                <p>Month-to-date, quarter-to-date, and year-to-date shipments with year-over-year comparison.</p>
-                <div class="report-tags">
-                    <span class="report-tag live">Live</span>
-                    <span class="report-tag new">New</span>
-                    {% if user_has_role(user, 'Sales.ShipmentsSummary.Export') %}
-                    <span class="report-tag export">Export</span>
-                    {% else %}
-                    <span class="report-tag view-only">View Only</span>
-                    {% endif %}
-                </div>
-            </div>
-        </a>
-        {% endif %}
 
     </div>
 </div>

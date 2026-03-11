@@ -18,6 +18,32 @@
 .back-link:hover { color:var(--text-primary); }
 .back-link svg { width:16px; height:16px; }
 
+/* Data Type Tabs */
+.data-type-tabs {
+    display:flex; gap:0; margin-bottom:24px; border-bottom:2px solid var(--border);
+}
+
+.data-type-tab {
+    padding:10px 24px; font-size:14px; font-weight:600; font-family:var(--font-body);
+    color:var(--text-muted); background:none; border:none; cursor:pointer;
+    border-bottom:2px solid transparent; margin-bottom:-2px; transition:all 0.2s;
+}
+.data-type-tab:hover { color:var(--text-secondary); }
+.data-type-tab.active {
+    color:var(--accent-blue); border-bottom-color:var(--accent-blue);
+}
+
+.data-type-panel { display:none; }
+.data-type-panel.active { display:block; }
+
+/* Info Box */
+.info-box {
+    background:rgba(37,99,235,0.04); border:1px solid rgba(37,99,235,0.1);
+    border-radius:var(--radius-md); padding:14px 18px; margin-bottom:24px;
+    font-size:12px; color:var(--text-secondary); line-height:1.6;
+}
+[data-theme="dark"] .info-box { background:rgba(59,130,246,0.06); border-color:rgba(59,130,246,0.12); }
+
 /* Year Card */
 .year-card {
     background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg);
@@ -126,23 +152,30 @@
     display:none; padding:12px 20px; border-radius:var(--radius-md);
     font-size:13px; margin-bottom:16px; font-weight:500;
 }
-.toast.show { display:block; }
+.toast.show { display:flex; align-items:center; gap:10px; }
 .toast.success { background:rgba(5,150,105,0.08); border:1px solid rgba(5,150,105,0.2); color:var(--accent-green); }
 .toast.error { background:rgba(220,38,38,0.08); border:1px solid rgba(220,38,38,0.2); color:var(--accent-red); }
+.toast.running { background:rgba(37,99,235,0.06); border:1px solid rgba(37,99,235,0.15); color:var(--accent-blue); }
+[data-theme="dark"] .toast.running { background:rgba(59,130,246,0.08); border-color:rgba(59,130,246,0.2); }
 
-/* Info Box */
-.info-box {
-    background:rgba(37,99,235,0.04); border:1px solid rgba(37,99,235,0.1);
-    border-radius:var(--radius-md); padding:14px 18px; margin-bottom:24px;
-    font-size:12px; color:var(--text-secondary); line-height:1.6;
+.toast-spinner {
+    width:16px; height:16px; border:2px solid rgba(37,99,235,0.2);
+    border-top-color:var(--accent-blue); border-radius:50%;
+    animation:spin 0.8s linear infinite; flex-shrink:0;
 }
-[data-theme="dark"] .info-box { background:rgba(59,130,246,0.06); border-color:rgba(59,130,246,0.12); }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+.toast-elapsed {
+    margin-left:auto; font-family:var(--font-mono); font-size:11px;
+    opacity:0.7; flex-shrink:0;
+}
 
 /* Phone */
 @media (max-width:480px) {
     .back-link { font-size:14px; padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); gap:8px; margin-bottom:10px; }
     .back-link svg { width:18px; height:18px; }
     .admin-header h1 { font-size:18px; }
+    .data-type-tab { padding:10px 16px; font-size:13px; }
     .year-card-header { padding:12px 16px; flex-wrap:wrap; gap:8px; }
     .year-card-title { font-size:16px; }
     .region-row { padding:10px 16px; flex-wrap:wrap; gap:8px; }
@@ -164,177 +197,353 @@
     <div class="admin-header fade-in stagger-1">
         <h1>Dashboard Data Management</h1>
         <p>
-            Download historical bookings data from SQL Server and save as compressed files for instant dashboard loading and Excel exports.
-            Downloaded data is stored in the <code>dashboard_data/</code> folder and can be copied to any server.
+            Download historical data from SQL Server and save as compressed files for instant dashboard loading and Excel exports.
+            Downloaded data is stored on disk and can be copied to any server.
             The current year always loads live from SQL — only past years can be downloaded.
         </p>
     </div>
 
-    <div class="info-box fade-in stagger-1">
-        <strong>How it works:</strong> When you "Download" a year, the app fetches ALL raw line-item rows (26 columns) from soytrn in a single SQL query, processes and aggregates them on the hosting server, then saves everything — raw rows + pre-aggregated summary — as a gzip JSON file.
-        After download, the dashboard loads the summary instantly (&lt;1ms) and Excel exports read the raw rows directly from disk. SQL Server is never queried again for that year.
-    </div>
-
     <div class="toast" id="toast"></div>
 
-    {% for year_data in years %}
-    <div class="year-card fade-in stagger-2" id="year-{{ year_data.year }}">
-        <div class="year-card-header">
-            <div class="year-card-title">
-                {{ year_data.year }}
-                {% if year_data.is_current_year %}
-                <span class="year-badge current">Current Year — Live</span>
-                {% else %}
-                <span class="year-badge historical">Historical</span>
-                {% endif %}
-            </div>
-            {% if not year_data.is_current_year %}
-            <button class="btn-download-year" onclick="downloadBoth({{ year_data.year }}, this)">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
-                </svg>
-                Download US + CA
-            </button>
-            {% endif %}
-        </div>
-
-        <div class="region-rows">
-            {% for region_key in ['US', 'CA'] %}
-            {% set r = year_data.regions.get(region_key, {}) %}
-            <div class="region-row" id="row-{{ year_data.year }}-{{ region_key }}">
-                <div class="region-label">{{ region_key }}</div>
-                <div class="region-status">
-                    {% if year_data.is_current_year %}
-                        <div class="region-status-line">
-                            <span class="status-dot downloaded"></span>
-                            <span class="status-text">Live from SQL (sotran + soytrn) — cached every 60 min</span>
-                        </div>
-                    {% elif r.get('exists') %}
-                        <div class="region-status-line">
-                            {% if r.get('has_raw_rows') %}
-                            <span class="status-dot downloaded"></span>
-                            <span class="status-text">
-                                Downloaded
-                                <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
-                                · <span class="row-count">{{ "{:,}".format(r.row_count) }} rows</span>
-                                {% if r.frozen_at %}
-                                <span class="frozen-date">· {{ r.frozen_at[:16].replace('T', ' ') }}</span>
-                                {% endif %}
-                            </span>
-                            {% else %}
-                            <span class="status-dot upgrade"></span>
-                            <span class="status-text">
-                                Downloaded (v{{ r.version }} — summary only, no raw rows)
-                                <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
-                            </span>
-                            {% endif %}
-                        </div>
-                        {% if not r.get('has_raw_rows') %}
-                        <div class="status-sub warning">
-                            Re-download to include raw rows for Excel export
-                        </div>
-                        {% endif %}
-                    {% else %}
-                        <div class="region-status-line">
-                            <span class="status-dot missing"></span>
-                            <span class="status-text">Not downloaded — will fetch from SQL on demand (~15-20s)</span>
-                        </div>
-                    {% endif %}
-                </div>
-
-                {% if not year_data.is_current_year %}
-                <div class="region-actions">
-                    <button class="btn-sm download" onclick="downloadOne({{ year_data.year }}, '{{ region_key }}', this)">
-                        {% if r.get('exists') and r.get('has_raw_rows') %}Re-download{% elif r.get('exists') %}Upgrade{% else %}Download{% endif %}
-                    </button>
-                    {% if r.get('exists') %}
-                    <button class="btn-sm delete" onclick="deleteOne({{ year_data.year }}, '{{ region_key }}', this)">
-                        Delete
-                    </button>
-                    {% endif %}
-                </div>
-                {% endif %}
-            </div>
-            {% endfor %}
-        </div>
+    <!-- Data Type Tabs -->
+    <div class="data-type-tabs fade-in stagger-1">
+        <button class="data-type-tab active" onclick="switchDataType('bookings')">Bookings</button>
+        <button class="data-type-tab" onclick="switchDataType('shipments')">Shipments</button>
     </div>
-    {% endfor %}
+
+    <!-- ════════════ BOOKINGS PANEL ════════════ -->
+    <div class="data-type-panel active" id="panel-bookings">
+        <div class="info-box">
+            <strong>Bookings data</strong> is fetched from <code>soytrn</code> (historical orders).
+            Each download pulls all raw line items (26 columns), aggregates them, and saves to <code>bookings_dashboard_data/</code>.
+            After download, the dashboard and Excel exports read directly from disk — SQL Server is never queried again for that year.
+        </div>
+
+        {% for year_data in bookings_years %}
+        <div class="year-card fade-in stagger-2" id="bookings-year-{{ year_data.year }}">
+            <div class="year-card-header">
+                <div class="year-card-title">
+                    {{ year_data.year }}
+                    {% if year_data.is_current_year %}
+                    <span class="year-badge current">Current Year — Live</span>
+                    {% else %}
+                    <span class="year-badge historical">Historical</span>
+                    {% endif %}
+                </div>
+                {% if not year_data.is_current_year %}
+                <button class="btn-download-year" onclick="downloadBoth({{ year_data.year }}, 'bookings', this)">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                    </svg>
+                    Download US + CA
+                </button>
+                {% endif %}
+            </div>
+
+            <div class="region-rows">
+                {% for region_key in ['US', 'CA'] %}
+                {% set r = year_data.regions.get(region_key, {}) %}
+                <div class="region-row" id="bookings-row-{{ year_data.year }}-{{ region_key }}">
+                    <div class="region-label">{{ region_key }}</div>
+                    <div class="region-status">
+                        {% if year_data.is_current_year %}
+                            <div class="region-status-line">
+                                <span class="status-dot downloaded"></span>
+                                <span class="status-text">Live from SQL (sotran + soytrn) — cached every 60 min</span>
+                            </div>
+                        {% elif r.get('exists') %}
+                            <div class="region-status-line">
+                                {% if r.get('has_raw_rows') %}
+                                <span class="status-dot downloaded"></span>
+                                <span class="status-text">
+                                    Downloaded
+                                    <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
+                                    · <span class="row-count">{{ "{:,}".format(r.row_count) }} rows</span>
+                                    {% if r.frozen_at %}
+                                    <span class="frozen-date">· {{ r.frozen_at[:16].replace('T', ' ') }}</span>
+                                    {% endif %}
+                                </span>
+                                {% else %}
+                                <span class="status-dot upgrade"></span>
+                                <span class="status-text">
+                                    Downloaded (v{{ r.version }} — summary only, no raw rows)
+                                    <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% if not r.get('has_raw_rows') %}
+                            <div class="status-sub warning">
+                                Re-download to include raw rows for Excel export
+                            </div>
+                            {% endif %}
+                        {% else %}
+                            <div class="region-status-line">
+                                <span class="status-dot missing"></span>
+                                <span class="status-text">Not downloaded — will fetch from SQL on demand (~15-20s)</span>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    {% if not year_data.is_current_year %}
+                    <div class="region-actions">
+                        <button class="btn-sm download" onclick="downloadOne({{ year_data.year }}, '{{ region_key }}', 'bookings', this)">
+                            {% if r.get('exists') and r.get('has_raw_rows') %}Re-download{% elif r.get('exists') %}Upgrade{% else %}Download{% endif %}
+                        </button>
+                        {% if r.get('exists') %}
+                        <button class="btn-sm delete" onclick="deleteOne({{ year_data.year }}, '{{ region_key }}', 'bookings', this)">
+                            Delete
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- ════════════ SHIPMENTS PANEL ════════════ -->
+    <div class="data-type-panel" id="panel-shipments">
+        <div class="info-box">
+            <strong>Shipments data</strong> is fetched from <code>arytrn</code> (historical invoices).
+            Each download pulls all raw line items (26 columns), aggregates them, and saves to <code>shipments_dashboard_data/</code>.
+            After download, the dashboard YoY comparisons and Excel exports read directly from disk.
+        </div>
+
+        {% for year_data in shipments_years %}
+        <div class="year-card fade-in stagger-2" id="shipments-year-{{ year_data.year }}">
+            <div class="year-card-header">
+                <div class="year-card-title">
+                    {{ year_data.year }}
+                    {% if year_data.is_current_year %}
+                    <span class="year-badge current">Current Year — Live</span>
+                    {% else %}
+                    <span class="year-badge historical">Historical</span>
+                    {% endif %}
+                </div>
+                {% if not year_data.is_current_year %}
+                <button class="btn-download-year" onclick="downloadBoth({{ year_data.year }}, 'shipments', this)">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+                    </svg>
+                    Download US + CA
+                </button>
+                {% endif %}
+            </div>
+
+            <div class="region-rows">
+                {% for region_key in ['US', 'CA'] %}
+                {% set r = year_data.regions.get(region_key, {}) %}
+                <div class="region-row" id="shipments-row-{{ year_data.year }}-{{ region_key }}">
+                    <div class="region-label">{{ region_key }}</div>
+                    <div class="region-status">
+                        {% if year_data.is_current_year %}
+                            <div class="region-status-line">
+                                <span class="status-dot downloaded"></span>
+                                <span class="status-text">Live from SQL (artran + arytrn) — cached every 30 min</span>
+                            </div>
+                        {% elif r.get('exists') %}
+                            <div class="region-status-line">
+                                {% if r.get('has_raw_rows') %}
+                                <span class="status-dot downloaded"></span>
+                                <span class="status-text">
+                                    Downloaded
+                                    <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
+                                    · <span class="row-count">{{ "{:,}".format(r.row_count) }} rows</span>
+                                    {% if r.frozen_at %}
+                                    <span class="frozen-date">· {{ r.frozen_at[:16].replace('T', ' ') }}</span>
+                                    {% endif %}
+                                </span>
+                                {% else %}
+                                <span class="status-dot upgrade"></span>
+                                <span class="status-text">
+                                    Downloaded (v{{ r.version }} — summary only, no raw rows)
+                                    <span class="file-size">({{ "{:,}".format(r.file_size) }} bytes)</span>
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% if not r.get('has_raw_rows') %}
+                            <div class="status-sub warning">
+                                Re-download to include raw rows for Excel export
+                            </div>
+                            {% endif %}
+                        {% else %}
+                            <div class="region-status-line">
+                                <span class="status-dot missing"></span>
+                                <span class="status-text">Not downloaded — will fetch from SQL on demand (~15-20s)</span>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    {% if not year_data.is_current_year %}
+                    <div class="region-actions">
+                        <button class="btn-sm download" onclick="downloadOne({{ year_data.year }}, '{{ region_key }}', 'shipments', this)">
+                            {% if r.get('exists') and r.get('has_raw_rows') %}Re-download{% elif r.get('exists') %}Upgrade{% else %}Download{% endif %}
+                        </button>
+                        {% if r.get('exists') %}
+                        <button class="btn-sm delete" onclick="deleteOne({{ year_data.year }}, '{{ region_key }}', 'shipments', this)">
+                            Delete
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function showToast(message, type) {
-    var toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.className = 'toast show ' + (type || 'success');
-    setTimeout(function() { toast.className = 'toast'; }, 8000);
+/* ── Tab switching ── */
+function switchDataType(type) {
+    document.querySelectorAll('.data-type-tab').forEach(function(tab) {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.data-type-panel').forEach(function(panel) {
+        panel.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    document.getElementById('panel-' + type).classList.add('active');
+    window.location.hash = type;
 }
 
-function downloadOne(year, region, btn) {
+/* ── Toast with spinner + elapsed ── */
+function showToast(message, type) {
+    var toast = document.getElementById('toast');
+    if (type === 'running') {
+        toast.innerHTML = '<span class="toast-spinner"></span><span class="toast-msg">' + message + '</span><span class="toast-elapsed"></span>';
+    } else {
+        toast.innerHTML = '<span class="toast-msg">' + message + '</span>';
+    }
+    toast.className = 'toast show ' + (type || 'success');
+    if (type !== 'running') {
+        setTimeout(function() { toast.className = 'toast'; }, 8000);
+    }
+}
+
+function updateToastMessage(message, elapsed) {
+    var msg = document.querySelector('.toast-msg');
+    var el = document.querySelector('.toast-elapsed');
+    if (msg) msg.textContent = message;
+    if (el) {
+        var min = Math.floor(elapsed / 60);
+        var sec = elapsed % 60;
+        el.textContent = min > 0 ? min + 'm ' + sec + 's' : sec + 's';
+    }
+}
+
+/* ── Poll for task status ── */
+function pollTask(taskId, btn, originalText) {
+    var pollInterval = setInterval(function() {
+        fetch('/admin/dashboard-data/task-status/' + taskId)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (data.status === 'running') {
+                updateToastMessage(data.message, data.elapsed);
+            } else if (data.status === 'completed') {
+                clearInterval(pollInterval);
+                showToast(data.message, 'success');
+                setTimeout(function() {
+                    /* Preserve active tab on reload */
+                    location.reload();
+                }, 1500);
+            } else if (data.status === 'error') {
+                clearInterval(pollInterval);
+                showToast('Error: ' + data.message, 'error');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
+            } else {
+                clearInterval(pollInterval);
+                showToast('Task lost. Please try again.', 'error');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
+            }
+        })
+        .catch(function() {
+            /* Network blip — keep polling, don't give up */
+        });
+    }, 3000);
+}
+
+/* ── Download single region ── */
+function downloadOne(year, region, dataType, btn) {
+    var originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Downloading...';
-    showToast('Fetching ' + region + ' ' + year + ' from SQL Server... This may take 15-30 seconds.', 'success');
+    var label = dataType.charAt(0).toUpperCase() + dataType.slice(1) + ' ' + region + ' ' + year;
+    showToast('Starting download for ' + label + '...', 'running');
 
     fetch('/admin/dashboard-data/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year: year, region: region }),
+        body: JSON.stringify({ year: year, region: region, data_type: dataType }),
     })
-    .then(function(res) { return res.json().then(function(d) { return {ok: res.ok, data: d}; }); })
-    .then(function(r) {
-        if (r.ok) {
-            showToast(r.data.message, 'success');
-            setTimeout(function() { location.reload(); }, 1500);
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (data.task_id) {
+            pollTask(data.task_id, btn, originalText);
         } else {
-            showToast('Error: ' + (r.data.error || 'Unknown error'), 'error');
+            showToast('Error: ' + (data.error || 'Failed to start download'), 'error');
             btn.disabled = false;
-            btn.textContent = 'Download';
+            btn.textContent = originalText;
         }
     })
     .catch(function(err) {
         showToast('Network error: ' + err.message, 'error');
         btn.disabled = false;
-        btn.textContent = 'Download';
+        btn.textContent = originalText;
     });
 }
 
-function downloadBoth(year, btn) {
+/* ── Download both US + CA ── */
+function downloadBoth(year, dataType, btn) {
+    var originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Downloading...';
-    showToast('Fetching US + CA ' + year + ' from SQL Server... This may take 30-60 seconds.', 'success');
+    var label = dataType.charAt(0).toUpperCase() + dataType.slice(1) + ' US + CA ' + year;
+    showToast('Starting download for ' + label + '...', 'running');
 
     fetch('/admin/dashboard-data/download-both', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year: year }),
+        body: JSON.stringify({ year: year, data_type: dataType }),
     })
-    .then(function(res) { return res.json().then(function(d) { return {ok: res.ok, data: d}; }); })
-    .then(function(r) {
-        if (r.data.status === 'ok' || r.data.status === 'partial') {
-            showToast(r.data.message, r.data.status === 'ok' ? 'success' : 'error');
-            setTimeout(function() { location.reload(); }, 1500);
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (data.task_id) {
+            pollTask(data.task_id, btn, originalText);
         } else {
-            showToast('Error: ' + (r.data.message || 'Unknown error'), 'error');
+            showToast('Error: ' + (data.error || 'Failed to start download'), 'error');
             btn.disabled = false;
-            btn.textContent = 'Download US + CA';
+            btn.textContent = originalText;
         }
     })
     .catch(function(err) {
         showToast('Network error: ' + err.message, 'error');
         btn.disabled = false;
-        btn.textContent = 'Download US + CA';
+        btn.textContent = originalText;
     });
 }
 
-function deleteOne(year, region, btn) {
-    if (!confirm('Delete frozen data for ' + region + ' ' + year + '?\n\nThis removes both the raw rows and the summary. The dashboard will fall back to SQL queries for this data.')) return;
+/* ── Delete ── */
+function deleteOne(year, region, dataType, btn) {
+    var label = dataType.charAt(0).toUpperCase() + dataType.slice(1);
+    if (!confirm('Delete frozen ' + label.toLowerCase() + ' data for ' + region + ' ' + year + '?\n\nThis removes both the raw rows and the summary. The dashboard will fall back to SQL queries for this data.')) return;
     btn.disabled = true;
 
     fetch('/admin/dashboard-data/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year: year, region: region }),
+        body: JSON.stringify({ year: year, region: region, data_type: dataType }),
     })
     .then(function(res) { return res.json(); })
     .then(function(data) {
@@ -346,5 +555,20 @@ function deleteOne(year, region, btn) {
         btn.disabled = false;
     });
 }
+
+/* ── Preserve active tab on reload ── */
+(function() {
+    var hash = window.location.hash.replace('#', '');
+    if (hash === 'shipments') {
+        document.querySelectorAll('.data-type-tab').forEach(function(tab) {
+            tab.classList.remove('active');
+            if (tab.textContent.trim() === 'Shipments') tab.classList.add('active');
+        });
+        document.querySelectorAll('.data-type-panel').forEach(function(panel) {
+            panel.classList.remove('active');
+        });
+        document.getElementById('panel-shipments').classList.add('active');
+    }
+})();
 </script>
 {% endblock %}

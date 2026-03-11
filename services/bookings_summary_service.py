@@ -8,7 +8,7 @@ Data sources:
 
 Monthly Frozen File Strategy (current year only):
   Completed months in the CURRENT YEAR are frozen as tiny gzip JSON files in
-  summary_data/. Each file stores both the simple summary format (for Bookings
+  bookings_summary_data/. Each file stores both the simple summary format (for Bookings
   Summary rankings) and the dashboard format (for Executive Dashboard sharing).
 
   Auto-freeze: When the app detects a new month has started (e.g., it's March
@@ -16,7 +16,7 @@ Monthly Frozen File Strategy (current year only):
   February from soytrn. No admin action needed.
 
   File structure:
-    summary_data/
+    bookings_summary_data/
     ├── us_2026_01.json.gz   # Jan 2026 US (auto-frozen when Feb started)
     ├── us_2026_02.json.gz   # Feb 2026 US (auto-frozen when Mar started)
     ├── ca_2026_01.json.gz   # Jan 2026 CA
@@ -24,7 +24,7 @@ Monthly Frozen File Strategy (current year only):
 
 Prior Year Data (for YoY comparison):
   Prior year data is read from the DASHBOARD's existing yearly frozen files
-  (dashboard_data/us_2025.json.gz, etc.) which are already downloaded by the
+  (bookings_dashboard_data/us_2025.json.gz, etc.) which are already downloaded by the
   admin via the Dashboard Data Management page. These files contain monthly_totals
   breakdowns, so we can extract the exact months needed for MTD/QTD/YTD YoY.
 
@@ -66,8 +66,8 @@ from extensions import cache
 logger = logging.getLogger(__name__)
 
 # ── Directories ──
-SUMMARY_DATA_DIR = Path(__file__).resolve().parent.parent / 'summary_data'
-DASHBOARD_DATA_DIR = Path(__file__).resolve().parent.parent / 'dashboard_data'
+SUMMARY_DATA_DIR = Path(__file__).resolve().parent.parent / 'bookings_summary_data'
+DASHBOARD_DATA_DIR = Path(__file__).resolve().parent.parent / 'bookings_dashboard_data'
 
 # ── Cache keys ──
 CACHE_KEY_PREFIX = "bookings_summary"
@@ -147,7 +147,7 @@ def _months_in_range(start_date, end_date):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Monthly frozen file I/O (current year only — summary_data/)
+# Monthly frozen file I/O (current year only — bookings_summary_data/)
 # ═══════════════════════════════════════════════════════════════
 
 def _ensure_data_dir():
@@ -210,12 +210,12 @@ def delete_frozen_month(region, year, month):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Dashboard yearly frozen file reader (prior year — dashboard_data/)
+# Dashboard yearly frozen file reader (prior year — bookings_dashboard_data/)
 # ═══════════════════════════════════════════════════════════════
 
 def _load_dashboard_yearly_file(region, year):
     """
-    Load the dashboard's yearly frozen file (dashboard_data/{region}_{year}.json.gz).
+    Load the dashboard's yearly frozen file (bookings_dashboard_data/{region}_{year}.json.gz).
     Returns the 'data' dict with monthly_totals, by_territory, etc., or None.
     """
     filepath = DASHBOARD_DATA_DIR / f"{region.lower()}_{year}.json.gz"
@@ -774,7 +774,7 @@ def _assemble_current_year_region(region, completed_months, include_current, cur
     # Merge dashboard parts using dashboard_data_service's merge
     merged_dashboard = None
     if dashboard_parts:
-        from services.dashboard_data_service import _merge_summaries
+        from services.bookings_dashboard_data_service import _merge_summaries
         merged_dashboard = dashboard_parts[0]
         for part in dashboard_parts[1:]:
             merged_dashboard = _merge_summaries(merged_dashboard, part)
@@ -789,7 +789,7 @@ def _assemble_current_year_region(region, completed_months, include_current, cur
 def _assemble_prior_year_region(region, prior_start, prior_end):
     """
     Assemble prior-year comparison data for a single region.
-    Reads from the dashboard's yearly frozen file (dashboard_data/).
+    Reads from the dashboard's yearly frozen file (bookings_dashboard_data/).
     Returns summary_data or None if file doesn't exist.
     """
     return _extract_prior_year_summary(region, prior_start, prior_end)
@@ -920,9 +920,9 @@ def _compute_yoy(current_summary, prior_summary):
 def refresh_bookings_summary(cad_rate=None):
     """
     Main refresh: assemble MTD/QTD/YTD from:
-      - Current year completed months: frozen files in summary_data/
+      - Current year completed months: frozen files in bookings_summary_data/
       - Current month: live from sotran
-      - Prior year (YoY): dashboard yearly files in dashboard_data/
+      - Prior year (YoY): dashboard yearly files in bookings_dashboard_data/
 
     Also populates dashboard cache for current year as a side effect.
     """
@@ -975,8 +975,8 @@ def refresh_bookings_summary(cad_rate=None):
                 f"(download {dr['prior_start'].year} via admin page)"
             )
 
-        # YoY
-        yoy = _compute_yoy(current_merged, prior_merged)
+        # YoY — only compute if prior year data actually exists
+        yoy = _compute_yoy(current_merged, prior_merged) if prior_merged is not None else {}
         current_merged['label'] = dr['label']
         current_merged['start_date'] = dr['start'].isoformat()
         current_merged['end_date'] = dr['end'].isoformat()
@@ -1026,7 +1026,7 @@ def refresh_bookings_summary(cad_rate=None):
 
 def _populate_dashboard_cache(current_year, current_month, us_current_rows, ca_current_rows):
     """Populate the Executive Dashboard's cache for the current year from frozen files + live."""
-    from services.dashboard_data_service import (
+    from services.bookings_dashboard_data_service import (
         _cache_key_hist, _cache_key_current,
         DASH_HIST_TIMEOUT, DASH_CURRENT_TIMEOUT,
         CACHE_KEY_DASH_UPDATED, _merge_summaries,

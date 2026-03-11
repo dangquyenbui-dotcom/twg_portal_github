@@ -13,9 +13,11 @@ __pycache__/
 # 4. App-generated data
 cache-data/
 flask_session/
-dashboard_data/
-summary_data/
+bookings_dashboard_data/
+bookings_summary_data/
+shipments_dashboard_data/
 shipments_summary_data/
+
 
 # 5. Editor settings (Optional, keeps repo clean)
 .vscode/

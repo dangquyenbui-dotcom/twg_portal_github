@@ -1,13 +1,13 @@
 """
-Dashboard Data Service
+Bookings Dashboard Data Service
 Fetches and caches bookings data for the executive dashboard.
 
 Data priority (fastest to slowest):
-  1. Frozen disk files (dashboard_data/*.json.gz) - for completed years, <1ms read
+  1. Frozen disk files (bookings_dashboard_data/*.json.gz) - for completed years, <1ms read
   2. In-memory cache (Flask-Caching) - for current year, sub-millisecond
   3. SQL Server (soytrn + sotran) - on-demand fetch, ~15-20 seconds for a full year
 
-Storage: dashboard_data/{region}_{year}.json.gz  (e.g., us_2025.json.gz)
+Storage: bookings_dashboard_data/{region}_{year}.json.gz  (e.g., us_2025.json.gz)
 Each file contains:
   - meta: region, year, frozen_at, version, row_count
   - raw_rows: list of dicts (same 26 columns as bookings Excel export)
@@ -34,7 +34,7 @@ from extensions import cache
 
 logger = logging.getLogger(__name__)
 
-DASHBOARD_DATA_DIR = Path(__file__).resolve().parent.parent / 'dashboard_data'
+DASHBOARD_DATA_DIR = Path(__file__).resolve().parent.parent / 'bookings_dashboard_data'
 CACHE_KEY_DASH_UPDATED = "dashboard_last_updated"
 DASH_HIST_TIMEOUT = 86400       # 24 hours for historical year cache
 DASH_CURRENT_TIMEOUT = 3900     # 65 min for current month cache
@@ -62,7 +62,7 @@ def _frozen_file_path(region, year):
     return DASHBOARD_DATA_DIR / f"{region.lower()}_{year}.json.gz"
 
 def _ensure_data_dir():
-    """Create the dashboard_data directory if it doesn't exist."""
+    """Create the bookings_dashboard_data directory if it doesn't exist."""
     DASHBOARD_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -163,10 +163,39 @@ def delete_frozen_data(region, year):
     return False
 
 
+def _read_meta_only(filepath):
+    """
+    Read only the meta block from a frozen file without loading the full file.
+    Decompresses ~2KB instead of the entire file (which can be 10-50MB).
+    """
+    try:
+        with gzip.open(filepath, 'rt', encoding='utf-8') as f:
+            chunk = f.read(2048)
+        # meta is always the first key: {"meta":{...},"data":...
+        meta_start = chunk.find('"meta"')
+        if meta_start == -1:
+            return None
+        brace_start = chunk.find('{', meta_start + 6)
+        if brace_start == -1:
+            return None
+        depth = 0
+        for i in range(brace_start, len(chunk)):
+            if chunk[i] == '{':
+                depth += 1
+            elif chunk[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    return json.loads(chunk[brace_start:i + 1])
+        return None
+    except Exception:
+        return None
+
+
 def get_frozen_status():
     """
     Get the status of all frozen files for the admin page.
     Returns a list of dicts with year, region, exists, file_size, frozen_at, version, row_count.
+    Only reads the first ~2KB of each file (meta block) instead of the full contents.
     """
     _ensure_data_dir()
     current_year = date.today().year
@@ -192,16 +221,12 @@ def get_frozen_status():
             if filepath.exists():
                 entry['exists'] = True
                 entry['file_size'] = filepath.stat().st_size
-                try:
-                    with gzip.open(filepath, 'rt', encoding='utf-8') as f:
-                        wrapper = json.load(f)
-                    meta = wrapper.get('meta', {})
+                meta = _read_meta_only(filepath)
+                if meta:
                     entry['frozen_at'] = meta.get('frozen_at')
                     entry['version'] = meta.get('version', 2)
                     entry['row_count'] = meta.get('row_count', 0)
                     entry['has_raw_rows'] = entry['version'] >= 3 and entry['row_count'] > 0
-                except Exception:
-                    pass
 
             statuses.append(entry)
 
