@@ -63,45 +63,52 @@ class Config:
         Each GROUP_* env var maps a Security Group Object ID to an internal role name.
 
         Pattern:
-          GROUP_ADMIN                        → Admin
-          GROUP_SALES_BOOKINGS_VIEW          → Sales.Bookings.View
-          GROUP_SALES_BOOKINGS_EXPORT        → Sales.Bookings.Export
-          GROUP_SALES_OPENORDERS_VIEW        → Sales.OpenOrders.View
-          GROUP_SALES_OPENORDERS_EXPORT      → Sales.OpenOrders.Export
+          GROUP_ADMIN                             → Admin
+          GROUP_SALES_BOOKINGS_VIEW               → Sales.Bookings.View
+          GROUP_SALES_BOOKINGS_EXPORT             → Sales.Bookings.Export
+          GROUP_SALES_BOOKINGSSUMMARY_VIEW        → Sales.BookingsSummary.View
+          GROUP_SALES_BOOKINGSSUMMARY_EXPORT      → Sales.BookingsSummary.Export
+          GROUP_SALES_OPENORDERS_VIEW             → Sales.OpenOrders.View
+          GROUP_SALES_OPENORDERS_EXPORT           → Sales.OpenOrders.Export
+          GROUP_SALES_DASHBOARD_VIEW              → Sales.Dashboard.View
           (add more reports by following the same pattern)
         """
         mapping = {}
         group_vars = {
             # ── Admin (full access to everything) ──
-            'GROUP_ADMIN':                      'Admin',
+            'GROUP_ADMIN':                          'Admin',
 
             # ── Sales: Daily Bookings ──
-            'GROUP_SALES_BOOKINGS_VIEW':        'Sales.Bookings.View',
-            'GROUP_SALES_BOOKINGS_EXPORT':      'Sales.Bookings.Export',
+            'GROUP_SALES_BOOKINGS_VIEW':            'Sales.Bookings.View',
+            'GROUP_SALES_BOOKINGS_EXPORT':          'Sales.Bookings.Export',
+
+            # ── Sales: Bookings Summary (MTD / QTD / YTD) ──
+            'GROUP_SALES_BOOKINGSSUMMARY_VIEW':     'Sales.BookingsSummary.View',
+            'GROUP_SALES_BOOKINGSSUMMARY_EXPORT':   'Sales.BookingsSummary.Export',
 
             # ── Sales: Open Orders ──
-            'GROUP_SALES_OPENORDERS_VIEW':      'Sales.OpenOrders.View',
-            'GROUP_SALES_OPENORDERS_EXPORT':    'Sales.OpenOrders.Export',
+            'GROUP_SALES_OPENORDERS_VIEW':          'Sales.OpenOrders.View',
+            'GROUP_SALES_OPENORDERS_EXPORT':        'Sales.OpenOrders.Export',
 
             # ── Sales: Dashboard (Executive) ──
-            'GROUP_SALES_DASHBOARD_VIEW':       'Sales.Dashboard.View',
+            'GROUP_SALES_DASHBOARD_VIEW':           'Sales.Dashboard.View',
 
             # ── Sales: Shipments (future — uncomment when ready) ──
-            # 'GROUP_SALES_SHIPMENTS_VIEW':     'Sales.Shipments.View',
-            # 'GROUP_SALES_SHIPMENTS_EXPORT':   'Sales.Shipments.Export',
+            # 'GROUP_SALES_SHIPMENTS_VIEW':         'Sales.Shipments.View',
+            # 'GROUP_SALES_SHIPMENTS_EXPORT':       'Sales.Shipments.Export',
 
             # ── Sales: Territory Performance (future) ──
-            # 'GROUP_SALES_TERRPERF_VIEW':      'Sales.TerrPerf.View',
-            # 'GROUP_SALES_TERRPERF_EXPORT':    'Sales.TerrPerf.Export',
+            # 'GROUP_SALES_TERRPERF_VIEW':          'Sales.TerrPerf.View',
+            # 'GROUP_SALES_TERRPERF_EXPORT':        'Sales.TerrPerf.Export',
 
             # ── Warehouse (future) ──
-            # 'GROUP_WAREHOUSE':                'Warehouse',
+            # 'GROUP_WAREHOUSE':                    'Warehouse',
 
             # ── Finance (future) ──
-            # 'GROUP_FINANCE':                  'Finance',
+            # 'GROUP_FINANCE':                      'Finance',
 
             # ── HR (future) ──
-            # 'GROUP_HR':                       'HR',
+            # 'GROUP_HR':                           'HR',
         }
         for env_key, role_name in group_vars.items():
             group_id = os.getenv(env_key, '').strip()
@@ -141,6 +148,9 @@ class Config:
     # Dashboard current month refresh interval in seconds (60 minutes)
     # Historical data is cached on demand and never auto-refreshed.
     DASHBOARD_REFRESH_INTERVAL = 3600
+
+    # Bookings Summary (MTD/QTD/YTD) refresh interval in seconds (30 minutes)
+    BOOKINGS_SUMMARY_REFRESH_INTERVAL = int(os.getenv('BOOKINGS_SUMMARY_REFRESH_INTERVAL', '1800'))
 
     @classmethod
     def get_connection_string(cls, database=None):

@@ -14,6 +14,7 @@ __pycache__/
 cache-data/
 flask_session/
 dashboard_data/
+summary_data/
 
 # 5. Editor settings (Optional, keeps repo clean)
 .vscode/

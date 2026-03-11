@@ -92,11 +92,13 @@
 .report-icon.green { background: rgba(5,150,105,0.1); color: var(--accent-green); }
 .report-icon.amber { background: rgba(217,119,6,0.1); color: var(--accent-amber); }
 .report-icon.purple { background: rgba(124,58,237,0.1); color: var(--accent-purple); }
+.report-icon.red { background: rgba(220,38,38,0.1); color: var(--accent-red); }
 
 [data-theme="dark"] .report-icon.blue { background: rgba(59,130,246,0.12); }
 [data-theme="dark"] .report-icon.green { background: rgba(16,185,129,0.12); }
 [data-theme="dark"] .report-icon.amber { background: rgba(245,158,11,0.12); }
 [data-theme="dark"] .report-icon.purple { background: rgba(139,92,246,0.12); }
+[data-theme="dark"] .report-icon.red { background: rgba(239,68,68,0.12); }
 
 .report-info h3 {
     font-size: 15px;
@@ -153,6 +155,15 @@
 
 [data-theme="dark"] .report-tag.view-only {
     background: rgba(92,101,132,0.2);
+}
+
+.report-tag.new {
+    background: rgba(220,38,38,0.08);
+    color: var(--accent-red);
+}
+
+[data-theme="dark"] .report-tag.new {
+    background: rgba(239,68,68,0.12);
 }
 
 .report-tag.soon {
@@ -228,6 +239,30 @@
             <p>Executive overview with charts, territory breakdown, top customers, and filters.</p>
             <div class="report-tags">
                 <span class="report-tag live">Live</span>
+            </div>
+        </div>
+    </a>
+    {% endif %}
+
+    {# ── Bookings Summary — requires Sales.BookingsSummary.View ── #}
+    {% if user_has_role(user, 'Sales.BookingsSummary.View') %}
+    <a href="/sales/bookings-summary" class="report-card fade-in stagger-2">
+        <div class="report-icon red">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>
+            </svg>
+        </div>
+        <div class="report-info">
+            <h3>Bookings Summary</h3>
+            <p>Month-to-date, quarter-to-date, and year-to-date bookings with year-over-year comparison.</p>
+            <div class="report-tags">
+                <span class="report-tag live">Live</span>
+                <span class="report-tag new">New</span>
+                {% if user_has_role(user, 'Sales.BookingsSummary.Export') %}
+                <span class="report-tag export">Export</span>
+                {% else %}
+                <span class="report-tag view-only">View Only</span>
+                {% endif %}
             </div>
         </div>
     </a>

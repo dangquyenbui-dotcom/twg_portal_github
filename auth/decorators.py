@@ -8,8 +8,11 @@ Role naming convention:
   Admin                        → Full access to everything (bypasses all checks)
   Sales.Bookings.View          → View Daily Bookings dashboard
   Sales.Bookings.Export        → Download Bookings Excel (requires View to be useful)
+  Sales.BookingsSummary.View   → View Bookings Summary (MTD/QTD/YTD)
+  Sales.BookingsSummary.Export → Download Bookings Summary Excel
   Sales.OpenOrders.View        → View Open Orders dashboard
   Sales.OpenOrders.Export      → Download Open Orders Excel (requires View)
+  Sales.Dashboard.View         → View Executive Dashboard
   (pattern continues for future reports)
 
 Hierarchy:
@@ -34,6 +37,7 @@ from flask import session, redirect, url_for, abort
 ROLE_HIERARCHY = {
     'Sales.Base': [
         'Sales.Bookings.View',
+        'Sales.BookingsSummary.View',
         'Sales.OpenOrders.View',
         'Sales.Dashboard.View',
         # Future: add new Sales.*.View roles here

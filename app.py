@@ -14,6 +14,7 @@ from routes.sales import sales_bp
 from routes.admin import admin_bp
 from services.data_worker import refresh_bookings_and_rate, refresh_open_orders_scheduled, refresh_all_on_startup
 from services.dashboard_data_service import refresh_dashboard_current_month
+from services.bookings_summary_service import refresh_bookings_summary_scheduled
 
 # --- Logging: INFO level only ---
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -115,13 +116,28 @@ def create_app():
         )
         logger.info(f"Scheduled 'dashboard_current_refresh' every {Config.DASHBOARD_REFRESH_INTERVAL}s")
 
+    # ── Bookings Summary MTD/QTD/YTD refresh (every 30 min) ──
+    if not scheduler.get_job('bookings_summary_refresh'):
+        scheduler.add_job(
+            id='bookings_summary_refresh',
+            func=refresh_bookings_summary_scheduled,
+            trigger='interval',
+            seconds=Config.BOOKINGS_SUMMARY_REFRESH_INTERVAL,
+            misfire_grace_time=120
+        )
+        logger.info(f"Scheduled 'bookings_summary_refresh' every {Config.BOOKINGS_SUMMARY_REFRESH_INTERVAL}s")
+
     with app.app_context():
-        logger.info("Running initial data refresh (bookings + open orders)...")
+        logger.info("Running initial startup refresh (all data + dashboard current year)...")
         refresh_all_on_startup()
-        # NOTE: Dashboard historical data is NOT fetched on startup — it's fetched
-        # on demand when the first user visits the dashboard page. This keeps
-        # startup fast and avoids unnecessary SQL load.
-        logger.info("Dashboard historical data will be fetched on first visit.")
+        # refresh_all_on_startup now handles:
+        #   1. Exchange rate
+        #   2. Daily bookings (snapshot + raw)
+        #   3. Open orders (snapshot + raw)
+        #   4. Bookings Summary MTD/QTD/YTD + prior year comparisons
+        #   5. Dashboard current year cache (populated as side effect of YTD)
+        # Past years on the dashboard still use frozen files — no change.
+        logger.info("All caches warm. Every page loads instantly from first request.")
 
     atexit.register(lambda: scheduler.shutdown() if scheduler.running else None)
 

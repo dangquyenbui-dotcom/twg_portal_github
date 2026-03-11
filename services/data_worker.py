@@ -9,6 +9,15 @@ Refreshes:
   - US open orders snapshot + raw (PRO05)  — every 60 min
   - CA open orders snapshot + raw (PRO06)  — every 60 min
   - CAD → USD exchange rate                — every 10 min
+  - Bookings Summary MTD/QTD/YTD           — every 30 min (+ on startup)
+
+On startup:
+  1. Exchange rate
+  2. Daily bookings (snapshot + raw, today only)
+  3. Open orders (snapshot + raw, all open lines)
+  4. Bookings Summary: auto-freeze completed months → read from disk → query only
+     current month from sotran → assemble MTD/QTD/YTD → populate dashboard cache
+  Total startup: ~5-8 seconds (frozen files load in <1ms each, only current month hits SQL)
 """
 
 import logging
@@ -287,16 +296,12 @@ def refresh_bookings_and_rate():
     """
     Called by scheduler every 10 minutes.
     Refreshes bookings snapshot + raw (US + CA) and the exchange rate.
-    Open orders are NOT included — they have their own hourly schedule
-    to keep SQL Server load low.
     """
     logger.info("Worker: ═══ Bookings refresh (every 10 min) ═══")
 
-    # Exchange rate (shared by bookings + open orders)
     rate = _fetch_cad_to_usd_rate()
     cache.set(CACHE_KEY_CAD_RATE, rate, timeout=OO_CACHE_TIMEOUT)
 
-    # Bookings (snapshot + raw)
     refresh_bookings_cache()
 
     logger.info("Worker: ═══ Bookings refresh complete ═══")
@@ -305,8 +310,7 @@ def refresh_bookings_and_rate():
 def refresh_open_orders_scheduled():
     """
     Called by scheduler every 60 minutes.
-    Refreshes open orders snapshot + raw (US + CA) on a slower cadence
-    to minimize SQL Server load — open orders data doesn't change frequently.
+    Refreshes open orders snapshot + raw (US + CA).
     """
     logger.info("Worker: ═══ Open orders refresh (every 60 min) ═══")
     refresh_open_orders_cache()
@@ -316,18 +320,36 @@ def refresh_open_orders_scheduled():
 def refresh_all_on_startup():
     """
     Called once on app startup to populate all caches immediately.
-    After this, bookings refreshes every 10 min and open orders every 60 min.
-    """
-    logger.info("Worker: ═══ Initial startup refresh (all data) ═══")
 
-    # Exchange rate
+    Startup sequence:
+      1. Exchange rate (needed by everything)
+      2. Daily bookings (snapshot + raw, today only)
+      3. Open orders (snapshot + raw, all open lines)
+      4. Bookings Summary MTD/QTD/YTD:
+         - Auto-freezes any completed months missing from disk (one-time SQL per month)
+         - Reads frozen files from disk (<1ms each)
+         - Queries only current month from sotran (small, fast)
+         - Assembles MTD/QTD/YTD with YoY from prior year frozen files
+         - Populates Executive Dashboard cache for current year (side effect)
+
+    First startup with no frozen files: ~15-20 sec (freezes all prior months from SQL)
+    Subsequent startups: ~3-5 sec (reads from disk, only current month from SQL)
+    """
+    logger.info("Worker: ═══ Initial startup refresh ═══")
+
+    # 1. Exchange rate
     rate = _fetch_cad_to_usd_rate()
     cache.set(CACHE_KEY_CAD_RATE, rate, timeout=OO_CACHE_TIMEOUT)
 
-    # Bookings (snapshot + raw)
+    # 2. Daily bookings
     refresh_bookings_cache()
 
-    # Open Orders (snapshot + raw)
+    # 3. Open orders
     refresh_open_orders_cache()
 
-    logger.info("Worker: ═══ Initial startup refresh complete ═══")
+    # 4. Bookings Summary (frozen files + current month) + Dashboard cache
+    from services.bookings_summary_service import refresh_bookings_summary
+    logger.info("Worker: Refreshing Bookings Summary (frozen months + live current month)...")
+    refresh_bookings_summary(cad_rate=rate)
+
+    logger.info("Worker: ═══ Startup complete — all caches warm ═══")
