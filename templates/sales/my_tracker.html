@@ -113,6 +113,7 @@
 .kpi-card.green::before { background: linear-gradient(90deg, var(--accent-green), #34D399); }
 .kpi-card.blue::before { background: linear-gradient(90deg, var(--accent-blue), #60A5FA); }
 .kpi-card.amber::before { background: linear-gradient(90deg, var(--accent-amber), #FBBF24); }
+.kpi-card.red::before { background: linear-gradient(90deg, var(--accent-red), #F87171); }
 
 .kpi-label {
     font-size: 11px;
@@ -133,6 +134,7 @@
 .kpi-value.money { color: var(--accent-green); }
 .kpi-value.blue-text { color: var(--accent-blue); }
 .kpi-value.amber-text { color: var(--accent-amber); }
+.kpi-value.red-text { color: var(--accent-red); }
 
 /* ── Chart grid ── */
 .chart-grid {
@@ -162,7 +164,7 @@
     width: 100%;
 }
 
-.chart-wrap.donut { height: 320px; }
+.chart-wrap.donut { height: 400px; }
 .chart-wrap.combo { height: 320px; }
 
 /* ── Export button ── */
@@ -340,22 +342,22 @@
 
 {# ════════════════ KPI CARDS ════════════════ #}
 <div class="kpi-row fade-in stagger-2">
-    <div class="kpi-card green">
+    <div class="kpi-card {% if data.total_sales < 0 %}red{% else %}green{% endif %}">
         <div class="kpi-label">Sales ({{ currency_label }})</div>
-        <div class="kpi-value money">${{ "{:,}".format(data.total_sales) }}</div>
+        <div class="kpi-value {% if data.total_sales < 0 %}red-text{% else %}money{% endif %}">${{ "{:,}".format(data.total_sales) }}</div>
     </div>
-    <div class="kpi-card blue">
+    <div class="kpi-card {% if data.total_margin < 0 %}red{% else %}blue{% endif %}">
         <div class="kpi-label">Margin ({{ currency_label }})</div>
-        <div class="kpi-value blue-text">${{ "{:,}".format(data.total_margin) }}</div>
+        <div class="kpi-value {% if data.total_margin < 0 %}red-text{% else %}blue-text{% endif %}">${{ "{:,}".format(data.total_margin) }}</div>
     </div>
-    <div class="kpi-card amber">
+    <div class="kpi-card {% if data.margin_pct < 0 %}red{% else %}amber{% endif %}">
         <div class="kpi-label">Margin %</div>
-        <div class="kpi-value amber-text">{{ data.margin_pct }}%</div>
+        <div class="kpi-value {% if data.margin_pct < 0 %}red-text{% else %}amber-text{% endif %}">{{ data.margin_pct }}%</div>
     </div>
 </div>
 
 {# ════════════════ CHARTS ════════════════ #}
-{% if data.total_sales > 0 %}
+{% if data.total_sales != 0 %}
 <div class="chart-grid fade-in stagger-3">
     {# ── Donut: Sales by Category ── #}
     <div class="chart-card">
@@ -363,6 +365,7 @@
         <div class="chart-wrap donut">
             <canvas id="donutChart"></canvas>
         </div>
+        <div id="donutCreditNote" style="display:none; text-align:center; font-size:11px; color:var(--text-muted); margin-top:8px; font-style:italic;"></div>
     </div>
 
     {# ── Combo: Sales & Margin % Trended ── #}
@@ -388,10 +391,13 @@
 {% endblock %}
 
 {% block scripts %}
-{% if data and data.total_sales > 0 %}
+{% if data and data.total_sales != 0 %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <script>
 (function() {
+    Chart.register(ChartDataLabels);
+
     /* ── Data from Flask ── */
     var productData = {{ data.by_product_line | tojson }};
     var dayData = {{ data.by_day | tojson }};
@@ -418,9 +424,11 @@
     /* ── Formatters ── */
     function fmt(n) { return '$' + Number(n || 0).toLocaleString('en-US'); }
     function fmtShort(n) {
-        if (n >= 1000000) return '$' + (n / 1000000).toFixed(1) + 'M';
-        if (n >= 1000) return '$' + (n / 1000).toFixed(1) + 'K';
-        return '$' + Math.round(n);
+        var sign = n < 0 ? '-' : '';
+        var abs = Math.abs(n);
+        if (abs >= 1000000) return sign + '$' + (abs / 1000000).toFixed(1) + 'M';
+        if (abs >= 1000) return sign + '$' + (abs / 1000).toFixed(1) + 'K';
+        return sign + '$' + Math.round(abs);
     }
 
     /* ── Charts ── */
@@ -434,9 +442,36 @@
 
         if (donutChart) donutChart.destroy();
 
-        var labels = productData.map(function(d) { return d.name; });
-        var amounts = productData.map(function(d) { return d.amount; });
+        /* Filter to positive-only for donut (Chart.js cannot render negative values) */
+        var positiveProducts = productData.filter(function(d) { return d.amount > 0; });
+        var creditProducts = productData.filter(function(d) { return d.amount < 0; });
+
+        var noteEl = document.getElementById('donutCreditNote');
+
+        /* Edge case: ALL categories are negative/zero */
+        if (positiveProducts.length === 0) {
+            ctx.style.display = 'none';
+            if (noteEl) {
+                noteEl.textContent = 'All product lines have net credits. No chart available.';
+                noteEl.style.display = 'block';
+            }
+            return;
+        }
+
+        var labels = positiveProducts.map(function(d) { return d.name; });
+        var amounts = positiveProducts.map(function(d) { return d.amount; });
         var total = amounts.reduce(function(a, b) { return a + b; }, 0);
+
+        /* Show note only for truly negative categories (not $0) */
+        if (noteEl) {
+            if (creditProducts.length > 0) {
+                var creditTotal = creditProducts.reduce(function(a, d) { return a + d.amount; }, 0);
+                noteEl.textContent = creditProducts.length + ' category(ies) with net credits (' + fmt(creditTotal) + ') excluded from chart.';
+                noteEl.style.display = 'block';
+            } else {
+                noteEl.style.display = 'none';
+            }
+        }
 
         donutChart = new Chart(ctx, {
             type: 'doughnut',
@@ -454,14 +489,33 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 cutout: '50%',
+                layout: { padding: { top: 36, bottom: 8, left: 36, right: 36 } },
                 plugins: {
+                    datalabels: {
+                        display: function(ctx) {
+                            var pct = total > 0 ? (ctx.dataset.data[ctx.dataIndex] / total * 100) : 0;
+                            return pct >= 3;
+                        },
+                        color: c.text,
+                        font: { size: 11, weight: '600', family: "'JetBrains Mono', monospace" },
+                        backgroundColor: c.bg + 'CC',
+                        borderRadius: 3,
+                        padding: { left: 4, right: 4, top: 2, bottom: 2 },
+                        anchor: 'end',
+                        align: 'end',
+                        offset: 8,
+                        formatter: function(value) {
+                            var pct = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                            return fmt(value) + ' (' + pct + '%)';
+                        }
+                    },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
                             boxWidth: 10,
                             boxHeight: 10,
-                            padding: 10,
+                            padding: 14,
                             font: { size: 11, family: "'DM Sans', sans-serif" },
                             usePointStyle: true,
                             pointStyle: 'circle',
@@ -497,7 +551,8 @@
 
         var labels = dayData.map(function(d) { return d.date_str; });
         var sales = dayData.map(function(d) { return d.sales; });
-        var margins = dayData.map(function(d) { return d.margin_pct; });
+        /* Null-out margin % on days with no sales so the line skips gaps (matches Power BI) */
+        var margins = dayData.map(function(d) { return d.sales === 0 ? null : d.margin_pct; });
 
         comboChart = new Chart(ctx, {
             type: 'bar',
@@ -511,7 +566,16 @@
                         borderRadius: 4,
                         maxBarThickness: 32,
                         order: 2,
-                        yAxisID: 'y'
+                        yAxisID: 'y',
+                        datalabels: {
+                            display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] !== 0; },
+                            anchor: 'end',
+                            align: 'end',
+                            offset: -2,
+                            color: c.bar,
+                            font: { size: 9, weight: '600', family: "'JetBrains Mono', monospace" },
+                            formatter: function(v) { return fmtShort(v); }
+                        }
                     },
                     {
                         label: 'Margin %',
@@ -525,8 +589,21 @@
                         pointBorderColor: c.bg,
                         pointBorderWidth: 2,
                         tension: 0.3,
+                        spanGaps: true,
                         order: 1,
-                        yAxisID: 'y1'
+                        yAxisID: 'y1',
+                        datalabels: {
+                            display: function(ctx) { return ctx.dataset.data[ctx.dataIndex] !== null; },
+                            anchor: 'end',
+                            align: 'end',
+                            offset: 2,
+                            color: c.line,
+                            font: { size: 9, weight: '600', family: "'JetBrains Mono', monospace" },
+                            backgroundColor: c.bg + 'CC',
+                            borderRadius: 3,
+                            padding: { left: 3, right: 3, top: 1, bottom: 1 },
+                            formatter: function(v) { return v.toFixed(1) + '%'; }
+                        }
                     }
                 ]
             },
@@ -563,7 +640,7 @@
                             }
                         }
                     },
-                    /* data labels plugin not included — use tooltip instead */
+                    /* data labels configured per-dataset above */
                 },
                 scales: {
                     x: {
@@ -573,7 +650,7 @@
                             color: c.text,
                             maxRotation: 45,
                             autoSkip: true,
-                            maxTicksLimit: 16
+                            maxTicksLimit: dayData.length
                         }
                     },
                     y: {
@@ -588,8 +665,15 @@
                     y1: {
                         position: 'right',
                         grid: { drawOnChartArea: false },
-                        min: 0,
-                        max: Math.max(60, Math.ceil(Math.max.apply(null, margins.length ? margins : [0]) / 10) * 10 + 10),
+                        min: (function() {
+                            var valid = margins.filter(function(v) { return v !== null; });
+                            var minVal = Math.min.apply(null, valid.length ? valid : [0]);
+                            return minVal >= 0 ? 0 : Math.floor(minVal / 10) * 10 - 10;
+                        })(),
+                        max: (function() {
+                            var valid = margins.filter(function(v) { return v !== null; });
+                            return Math.max(60, Math.ceil(Math.max.apply(null, valid.length ? valid : [0]) / 10) * 10 + 10);
+                        })(),
                         ticks: {
                             callback: function(v) { return v + '%'; },
                             font: { size: 11, family: "'JetBrains Mono', monospace" },

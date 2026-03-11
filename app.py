@@ -60,7 +60,7 @@ def _fetch_employee_id(access_token):
         resp = requests.get(
             'https://graph.microsoft.com/v1.0/me?$select=employeeId',
             headers={'Authorization': f'Bearer {access_token}'},
-            timeout=5,
+            timeout=10,
         )
         if resp.status_code == 200:
             eid = (resp.json().get('employeeId') or '').strip()

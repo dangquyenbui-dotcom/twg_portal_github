@@ -23,12 +23,19 @@ from collections import defaultdict
 from config import Config
 from extensions import cache
 from services.db_connection import get_connection
-from services.constants import BOOKINGS_EXCLUDED_CUSTOMERS, map_territory
+from services.constants import TRACKER_EXCLUDED_CUSTOMERS, map_territory, map_product_line
 
 logger = logging.getLogger(__name__)
 
 TRACKER_YEARS_BACK = 3  # How many years back the month selector goes
 SALESMEN_CACHE_TIMEOUT = 900  # 15 minutes
+
+
+def _financial_round(value):
+    """Round financial value away from zero (ceil for positive, floor for negative)."""
+    if value >= 0:
+        return math.ceil(value)
+    return math.floor(value)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -86,7 +93,7 @@ def get_salesmen_list(year, month, region='US'):
 # Main tracker data
 # ─────────────────────────────────────────────────────────────
 
-def get_tracker_data(salesman, year, month, region='US', cad_rate=None):
+def get_tracker_data(salesman, year, month, region='US'):
     """
     Fetch and aggregate tracker data for a specific salesman and month.
     Queries a single region (US or CA) based on the region parameter.
@@ -147,14 +154,12 @@ def _fetch_region(salesman, year, month, database, region):
 
         for invno, sono, item, qtyshp, extprice, cost, invdte, terr, custno, salesmn, cust_name, plinid in cursor.fetchall():
             custno_clean = (custno or '').strip().upper()
-            if custno_clean in BOOKINGS_EXCLUDED_CUSTOMERS:
-                continue
-            if (plinid or '').strip().upper() == 'TAX':
+            if custno_clean in TRACKER_EXCLUDED_CUSTOMERS:
                 continue
 
             amt = float(extprice or 0)
             unit_cost = float(cost or 0)
-            qty = int(qtyshp or 0)
+            qty = float(qtyshp or 0)
             margin = amt - (unit_cost * qty)
 
             rows.append({
@@ -165,7 +170,7 @@ def _fetch_region(salesman, year, month, database, region):
                 'amount': amt,
                 'margin': margin,
                 'invdte': invdte,
-                'product_line': (plinid or '').strip() or 'Other',
+                'product_line': map_product_line(plinid),
                 'custno': custno_clean,
                 'cust_name': (cust_name or '').strip() or custno_clean,
             })
@@ -221,8 +226,8 @@ def _aggregate_tracker(rows, year, month):
         pct = (totals['amount'] / total_sales * 100) if total_sales != 0 else 0.0
         by_product_line.append({
             'name': name,
-            'amount': math.ceil(totals['amount']),
-            'margin': math.ceil(totals['margin']),
+            'amount': _financial_round(totals['amount']),
+            'margin': _financial_round(totals['margin']),
             'pct': round(pct, 2),
         })
 
@@ -248,10 +253,10 @@ def _aggregate_tracker(rows, year, month):
         })
 
     return {
-        'total_sales': math.ceil(total_sales),
-        'total_margin': math.ceil(total_margin),
+        'total_sales': _financial_round(total_sales),
+        'total_margin': _financial_round(total_margin),
         'margin_pct': round(margin_pct, 1),
-        'total_units': total_units,
+        'total_units': round(total_units, 2),
         'total_invoices': len(invoices),
         'by_product_line': by_product_line,
         'by_day': by_day,
@@ -323,9 +328,7 @@ def fetch_raw_tracker_export(salesman, year, month, region='US'):
         for row in cursor.fetchall():
             record = dict(zip(columns, row))
             custno_clean = (record.get('CustomerNo') or '').strip().upper()
-            if custno_clean in BOOKINGS_EXCLUDED_CUSTOMERS:
-                continue
-            if (record.get('ProductLine') or '').strip().upper() == 'TAX':
+            if custno_clean in TRACKER_EXCLUDED_CUSTOMERS:
                 continue
 
             terr_code = (record.get('TerrCode') or '').strip()
