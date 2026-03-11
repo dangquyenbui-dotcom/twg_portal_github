@@ -21,12 +21,14 @@ from calendar import monthrange
 from collections import defaultdict
 
 from config import Config
+from extensions import cache
 from services.db_connection import get_connection
 from services.constants import BOOKINGS_EXCLUDED_CUSTOMERS, map_territory
 
 logger = logging.getLogger(__name__)
 
 TRACKER_YEARS_BACK = 3  # How many years back the month selector goes
+SALESMEN_CACHE_TIMEOUT = 900  # 15 minutes
 
 
 # ─────────────────────────────────────────────────────────────
@@ -37,8 +39,14 @@ def get_salesmen_list(year, month, region='US'):
     """
     Get distinct salesman codes that have shipments in the given month.
     Queries a single region (US → PRO05, CA → PRO06) based on the region parameter.
+    Results are cached for 15 minutes to avoid repeated scans.
     Returns a sorted list of salesman code strings.
     """
+    cache_key = f'tracker_salesmen_{region}_{year}_{month:02d}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     db = Config.DB_ORDERS_CA if region == 'CA' else Config.DB_ORDERS
     table = 'artran' if _is_current_month(year, month) else 'arytrn'
     start_date = f'{year}-{month:02d}-01'
@@ -52,7 +60,6 @@ def get_salesmen_list(year, month, region='US'):
     FROM {db}.dbo.{table} tr WITH (NOLOCK)
     WHERE tr.invdte BETWEEN ? AND ?
       AND tr.currhist <> 'X'
-      AND tr.artype <> 'C'
       AND tr.salesmn IS NOT NULL
       AND LTRIM(RTRIM(tr.salesmn)) <> ''
     """
@@ -69,7 +76,10 @@ def get_salesmen_list(year, month, region='US'):
     except Exception as e:
         logger.error(f"MyTracker: Error fetching salesmen from {db}: {e}")
 
-    return sorted(all_salesmen)
+    result = sorted(all_salesmen)
+    cache.set(cache_key, result, timeout=SALESMEN_CACHE_TIMEOUT)
+    logger.info(f"MyTracker: Cached {len(result)} salesmen for {region} {year}-{month:02d}")
+    return result
 
 
 # ─────────────────────────────────────────────────────────────
@@ -127,7 +137,6 @@ def _fetch_region(salesman, year, month, database, region):
     WHERE tr.salesmn = ?
       AND tr.invdte BETWEEN ? AND ?
       AND tr.currhist <> 'X'
-      AND tr.artype <> 'C'
     """
 
     rows = []
@@ -204,12 +213,12 @@ def _aggregate_tracker(rows, year, month):
             day_totals[day]['margin'] += mgn
 
     # Margin %
-    margin_pct = (total_margin / total_sales * 100) if total_sales > 0 else 0.0
+    margin_pct = (total_margin / total_sales * 100) if total_sales != 0 else 0.0
 
     # Product line list sorted by amount desc
     by_product_line = []
-    for name, totals in sorted(product_totals.items(), key=lambda x: x[1]['amount'], reverse=True):
-        pct = (totals['amount'] / total_sales * 100) if total_sales > 0 else 0.0
+    for name, totals in sorted(product_totals.items(), key=lambda x: abs(x[1]['amount']), reverse=True):
+        pct = (totals['amount'] / total_sales * 100) if total_sales != 0 else 0.0
         by_product_line.append({
             'name': name,
             'amount': math.ceil(totals['amount']),
@@ -228,7 +237,7 @@ def _aggregate_tracker(rows, year, month):
         dt = day_totals.get(d, {'sales': 0.0, 'margin': 0.0})
         day_sales = dt['sales']
         day_margin = dt['margin']
-        day_margin_pct = (day_margin / day_sales * 100) if day_sales > 0 else 0.0
+        day_margin_pct = (day_margin / day_sales * 100) if day_sales != 0 else 0.0
 
         by_day.append({
             'day': d,
@@ -304,7 +313,6 @@ def fetch_raw_tracker_export(salesman, year, month, region='US'):
     WHERE tr.salesmn = ?
       AND tr.invdte BETWEEN ? AND ?
       AND tr.currhist <> 'X'
-      AND tr.artype <> 'C'
     ORDER BY tr.invdte, tr.invno, tr.tranlineno
     """
     try:

@@ -4,6 +4,7 @@ TWG Portal - Main Application
 
 import logging
 import atexit
+import requests
 from flask import Flask, session, redirect, url_for, request, render_template, send_from_directory
 from config import Config
 from extensions import cache, scheduler
@@ -47,6 +48,30 @@ def _build_redirect_uri():
     redirect_uri = base + Config.REDIRECT_PATH
     logger.info(f"Login: Built redirect_uri: {redirect_uri}")
     return redirect_uri
+
+
+def _fetch_employee_id(access_token):
+    """
+    Call Microsoft Graph /me endpoint to read the user's employeeId.
+    This is the ERP salesman code set on the user's Job Information in Entra ID.
+    Returns the employeeId string, or '' if not set / on error.
+    """
+    try:
+        resp = requests.get(
+            'https://graph.microsoft.com/v1.0/me?$select=employeeId',
+            headers={'Authorization': f'Bearer {access_token}'},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            eid = (resp.json().get('employeeId') or '').strip()
+            if eid:
+                logger.info(f"Graph: employeeId = {eid}")
+            return eid
+        else:
+            logger.warning(f"Graph /me failed: {resp.status_code} {resp.text[:200]}")
+    except Exception as e:
+        logger.warning(f"Graph /me error: {e}")
+    return ''
 
 
 def _resolve_roles_from_groups(group_ids):
@@ -218,12 +243,11 @@ def create_app():
             group_ids = user_claims.get("groups", [])
             roles = _resolve_roles_from_groups(group_ids)
 
-            # ── Extract salesman code from custom Entra ID claim ──
+            # ── Fetch salesman code from Microsoft Graph (employeeId) ──
             salesman_code = ''
-            if Config.SALESMAN_CODE_CLAIM:
-                salesman_code = (user_claims.get(Config.SALESMAN_CODE_CLAIM) or '').strip()
-                if salesman_code:
-                    logger.info(f"User salesman_code: {salesman_code} (from claim: {Config.SALESMAN_CODE_CLAIM})")
+            access_token = result.get("access_token")
+            if access_token:
+                salesman_code = _fetch_employee_id(access_token)
 
             session["user"] = {
                 "name": user_claims.get("name"),
