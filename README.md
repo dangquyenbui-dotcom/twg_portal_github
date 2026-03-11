@@ -2,7 +2,7 @@
 
 A secure, enterprise-grade internal portal for **The Wheel Group**, built with Flask and integrated with Microsoft Entra ID (SSO) for authentication and Microsoft SQL Server for real-time ERP data.
 
-The portal serves as a centralized dashboard hub for multiple departments — starting with **Sales** — providing live KPIs, territory/salesman/customer ranking tabs with podium displays, an interactive executive dashboard with Chart.js visualizations and yearly data from dual SQL tables (sotran + soytrn), frozen offline data files for instant historical year loading, an admin page for data management, real-time CAD→USD currency conversion, formatted Excel data exports, dark/light theme switching with OLED support, and auto-refreshing displays optimized for desktop monitors, tablets, iPhones/iPads, and unattended TV/kiosk screens.
+The portal serves as a centralized dashboard hub for multiple departments — starting with **Sales** — providing live KPIs, territory/salesman/customer ranking tabs with podium displays, an interactive executive dashboard with Chart.js visualizations and yearly data from dual SQL tables (sotran + soytrn), a bookings summary report with MTD/QTD/YTD horizons and year-over-year comparison indicators, frozen offline data files for instant historical loading at both yearly and monthly granularity, an admin page for data management, real-time CAD→USD currency conversion, formatted Excel data exports, dark/light theme switching with OLED support, and auto-refreshing displays optimized for desktop monitors, tablets, iPhones/iPads, and unattended TV/kiosk screens.
 
 ---
 
@@ -22,7 +22,13 @@ The portal serves as a centralized dashboard hub for multiple departments — st
   - [Daily Bookings Dashboard](#daily-bookings-dashboard)
   - [Ranking Tabs (Territory / Salesman / Customer)](#ranking-tabs-territory--salesman--customer)
   - [Open Sales Orders Dashboard](#open-sales-orders-dashboard)
+  - [Bookings Summary (MTD / QTD / YTD)](#bookings-summary-mtd--qtd--ytd)
   - [Executive Dashboard](#executive-dashboard)
+- [Bookings Summary — Data Layer](#bookings-summary--data-layer)
+  - [Monthly Frozen File Strategy](#monthly-frozen-file-strategy)
+  - [Prior Year Data (YoY Comparison)](#prior-year-data-yoy-comparison)
+  - [Year-over-Year Comparison Logic](#year-over-year-comparison-logic)
+  - [Dashboard Cache Sharing](#dashboard-cache-sharing)
 - [Executive Dashboard — Data Layer](#executive-dashboard--data-layer)
   - [Dual-Table Strategy (sotran + soytrn)](#dual-table-strategy-sotran--soytrn)
   - [Frozen Data Files](#frozen-data-files)
@@ -46,31 +52,33 @@ The portal serves as a centralized dashboard hub for multiple departments — st
 
 ## Architecture Overview
 
-The application follows a **Decoupled Caching Architecture** with a **three-tier data resolution** strategy to ensure instant page loads without overloading the ERP SQL Server.
+The application follows a **Decoupled Caching Architecture** with a **multi-tier data resolution** strategy using both yearly and monthly frozen files to ensure instant page loads without overloading the ERP SQL Server.
 
 ```
-┌─────────────┐      ┌──────────────┐      ┌─────────────────────────────┐
-│   Browser    │◄────►│  Flask App   │◄────►│  Data Resolution (3 tiers)  │
-│  (User/TV)   │      │  (Routes)    │      │                             │
-└─────────────┘      └──────────────┘      │  1. Frozen files on disk    │
-                                            │     (dashboard_data/*.gz)   │
-                                            │  2. In-memory cache         │
-                                            │     (Flask-Caching)         │
-                                            │  3. SQL Server (fallback)   │
-                                            │     soytrn + sotran         │
-                                            └──────────┬──────────────────┘
+┌─────────────┐      ┌──────────────┐      ┌─────────────────────────────────────┐
+│   Browser    │◄────►│  Flask App   │◄────►│  Data Resolution (multi-tier)       │
+│  (User/TV)   │      │  (Routes)    │      │                                     │
+└─────────────┘      └──────────────┘      │  1. Frozen files on disk             │
+                                            │     dashboard_data/*.json.gz (yearly)│
+                                            │     summary_data/*.json.gz (monthly) │
+                                            │  2. In-memory cache                  │
+                                            │     (Flask-Caching / FileSystemCache)│
+                                            │  3. SQL Server (fallback)            │
+                                            │     soytrn + sotran                  │
+                                            └──────────┬──────────────────────────┘
                                                        │
-                                    ┌──────────────────┴──────────────────┐
-                                    │          APScheduler                 │
-                                    │   ┌──────────┐ ┌────────────┐       │
-                                    │   │ Bookings │ │ Open Orders│       │
-                                    │   │ 10 min   │ │  60 min    │       │
-                                    │   └────┬─────┘ └─────┬──────┘       │
-                                    │        │     ┌───────┴────────┐     │
-                                    │        │     │ Dashboard Curr │     │
-                                    │        │     │ Month (60 min) │     │
-                                    │        │     └───────┬────────┘     │
-                                    └────────┼─────────────┼──────────────┘
+                                    ┌──────────────────┴──────────────────────────┐
+                                    │              APScheduler                     │
+                                    │   ┌──────────────┐ ┌────────────────┐       │
+                                    │   │ Bookings     │ │ Open Orders    │       │
+                                    │   │ 10 min       │ │ 60 min         │       │
+                                    │   └──────────────┘ └────────────────┘       │
+                                    │   ┌──────────────┐ ┌────────────────┐       │
+                                    │   │ Bookings     │ │ Dashboard Curr │       │
+                                    │   │ Summary      │ │ Month (60 min) │       │
+                                    │   │ 30 min       │ └────────────────┘       │
+                                    │   └──────────────┘                          │
+                                    └─────────────────────────────────────────────┘
                                              │             │
                                    ┌─────────┴──┐  ┌──────┴────────┐
                                    │ SQL Server  │  │ Exchange Rate │
@@ -84,14 +92,17 @@ The application follows a **Decoupled Caching Architecture** with a **three-tier
 
 **How it works:**
 
-1. **Background Workers (APScheduler)** — Three independent scheduled jobs:
+1. **Background Workers (APScheduler)** — Four independent scheduled jobs:
    - **Bookings refresh** — Every **10 minutes**. Queries today's bookings from sotran for both US (PRO05) and Canada (PRO06), fetches the live CAD→USD exchange rate, and caches all results. Also runs once immediately on app startup.
    - **Open orders refresh** — Every **60 minutes**. Queries all currently open sales order lines from sotran.
-   - **Dashboard current month refresh** — Every **60 minutes**. Queries current month from sotran for the executive dashboard. Historical data is NOT auto-refreshed — it comes from frozen files on disk or on-demand SQL.
-2. **Frozen Data Files** — For the executive dashboard, completed years of data are "downloaded" by an admin and saved as gzip-compressed JSON files on disk (`dashboard_data/*.json.gz`). These load in <1ms — zero SQL, zero network. Portable: copy the folder to any server.
+   - **Bookings Summary refresh** — Every **30 minutes**. Reads monthly frozen files from disk for completed months, queries only the current month from sotran (2 SQL queries total: US + CA), assembles MTD/QTD/YTD horizons with year-over-year comparison from dashboard yearly files, and populates the Executive Dashboard cache as a side effect.
+   - **Dashboard current month refresh** — Every **60 minutes**. Queries current month from sotran for the executive dashboard. (Also fed by the Bookings Summary refresh, so the dashboard is often already warm.)
+2. **Frozen Data Files** — Two levels of offline storage:
+   - **Yearly files** (`dashboard_data/*.json.gz`) — For the executive dashboard. Completed years of data are downloaded by an admin via the admin page. Loads in <1ms — zero SQL, zero network.
+   - **Monthly files** (`summary_data/*.json.gz`) — For the bookings summary. Completed months in the current year are auto-frozen when a new month starts. No admin action needed. Also loads in <1ms.
 3. **Cache Layer (Flask-Caching)** — Stores the latest data snapshots using `FileSystemCache`. Survives brief app restarts. Each cache entry includes a `last_updated` timestamp.
-4. **Web App (Flask)** — Route handlers **never** query SQL directly for bookings/open orders — they read from cache. The executive dashboard reads from frozen files first, then cache, then SQL as a last resort.
-5. **Auto-Refresh (Client-Side)** — The bookings page auto-refreshes every 10 minutes via `<meta http-equiv="refresh" content="600">` with a visible countdown timer for TV/kiosk displays. Open orders and the executive dashboard do not auto-refresh.
+4. **Web App (Flask)** — Route handlers **never** query SQL directly for bookings/open orders — they read from cache. The executive dashboard reads from frozen files first, then cache, then SQL as a last resort. The bookings summary reads from monthly frozen files + live current month.
+5. **Auto-Refresh (Client-Side)** — The daily bookings page auto-refreshes every 10 minutes via `<meta http-equiv="refresh" content="600">` with a visible countdown timer for TV/kiosk displays. Other reports do not auto-refresh.
 
 ---
 
@@ -104,8 +115,8 @@ The application follows a **Decoupled Caching Architecture** with a **three-tier
 | **RBAC**         | Entra ID Security Groups, custom `@require_role` decorator, per-report View/Export permissions, role hierarchy |
 | **Database**     | Microsoft SQL Server (US: PRO05, Canada: PRO06), pyodbc, dual tables: sotran (current month) + soytrn (historical, identical schema) |
 | **Caching**      | Flask-Caching (FileSystemCache), persisted to `cache-data/` directory |
-| **Frozen Data**  | gzip-compressed JSON files in `dashboard_data/` folder — portable offline storage for historical years |
-| **Scheduler**    | Flask-APScheduler (background data refresh), 3 independent jobs |
+| **Frozen Data**  | Yearly: gzip-compressed JSON in `dashboard_data/` (admin-managed, portable). Monthly: gzip-compressed JSON in `summary_data/` (auto-managed, portable) |
+| **Scheduler**    | Flask-APScheduler (background data refresh), 4 independent jobs |
 | **Exchange Rate**| frankfurter.app (primary), open.er-api.com (fallback), 0.72 hardcoded fallback |
 | **Frontend**     | Jinja2 templates, vanilla CSS/JS, CSS custom properties for theming |
 | **Charts**       | Chart.js 4.4 (loaded from cdnjs.cloudflare.com CDN) — executive dashboard only |
@@ -127,11 +138,11 @@ twg_portal/
 ├── app.py                    # Application factory, SSO routes (/login, /auth/redirect, /logout),
 │                             #   HTTPS redirect URI builder (_build_redirect_uri),
 │                             #   role resolver (_resolve_roles_from_groups),
-│                             #   scheduler init (3 jobs), startup data refresh,
+│                             #   scheduler init (4 jobs), startup data refresh,
 │                             #   PWA apple-touch-icon routes
 │
 ├── config.py                 # All configuration: auth, DB, cache, scheduler intervals,
-│                             #   GROUP_ROLE_MAP builder from env vars,
+│                             #   GROUP_ROLE_MAP builder from env vars (8 security groups),
 │                             #   connection string builder, config validation with clear errors,
 │                             #   .env loader with _env fallback
 │
@@ -139,7 +150,7 @@ twg_portal/
 │
 ├── requirements.txt          # Python dependencies (pinned versions)
 ├── .env                      # Environment variables (secrets — never committed)
-├── .gitignore                # Git exclusions (includes dashboard_data/, cache-data/, venv/, __pycache__)
+├── .gitignore                # Git exclusions (includes dashboard_data/, summary_data/, cache-data/)
 ├── .gitattributes            # LF normalization
 ├── README.md                 # This file
 │
@@ -163,13 +174,17 @@ twg_portal/
 │   │                         #   - Sales home (/sales) — report menu cards
 │   │                         #   - Bookings (/sales/bookings) — daily bookings dashboard
 │   │                         #   - Bookings export (3 routes: all, US, CA)
+│   │                         #   - Bookings Summary (/sales/bookings-summary) — MTD/QTD/YTD
+│   │                         #   - Bookings Summary export (3 routes per horizon: all, US, CA)
 │   │                         #   - Open orders (/sales/open-orders) — open orders dashboard
 │   │                         #   - Open orders export (3 routes: all, US, CA)
 │   │                         #   - Executive dashboard (/sales/dashboard?year=) — Chart.js
 │   │                         #   - Dashboard refresh (/sales/dashboard/refresh) — AJAX cache invalidation
+│   │                         #   - Dashboard export (3 routes: all, US, CA) — from frozen files
 │   │                         #   - _build_region_data() helper for CAD→USD conversion
-│   │                         #   - BOOKINGS_EXPORT_COLUMNS (26 columns with ERP field names)
-│   │                         #   - OPEN_ORDERS_EXPORT_COLUMNS (26 columns with ERP field names)
+│   │                         #   - Column definitions: BOOKINGS_EXPORT_COLUMNS (26 columns),
+│   │                         #     OPEN_ORDERS_EXPORT_COLUMNS (26 columns),
+│   │                         #     BOOKINGS_SUMMARY_EXPORT_COLUMNS (same 26 as bookings)
 │   │
 │   └── admin.py              # Admin blueprint (/admin/*):
 │                              #   - Dashboard data page (/admin/dashboard-data) — year cards with status
@@ -181,191 +196,106 @@ twg_portal/
 ├── services/
 │   ├── __init__.py
 │   │
-│   ├── constants.py          # Shared constants used by all query modules:
-│   │                         #   - TERRITORY_MAP_US (17 territory codes → display names)
-│   │                         #   - TERRITORY_MAP_CA (3 territory codes → display names)
-│   │                         #   - BOOKINGS_EXCLUDED_CUSTOMERS (frozenset of 7 customer codes)
-│   │                         #   - map_territory(code, region) — maps code to display name
-│   │                         #   - resolve_territory_code(cu_terr, sm_terr) — 900=Central Billing logic
+│   ├── constants.py          # Shared constants: TERRITORY_MAP_US (17 mappings),
+│   │                         #   TERRITORY_MAP_CA (3 mappings), BOOKINGS_EXCLUDED_CUSTOMERS (7),
+│   │                         #   map_territory(), resolve_territory_code()
 │   │
-│   ├── db_connection.py      # pyodbc connection factory: get_connection(database) with 30s timeout,
-│   │                         #   uses Config.get_connection_string()
+│   ├── db_connection.py      # pyodbc connection factory with 30s timeout
 │   │
-│   ├── bookings_service.py   # Daily bookings data layer:
-│   │                         #   - _build_bookings_query() — snapshot SELECT from sotran with JOINs
-│   │                         #   - _aggregate_bookings() — Python aggregation into 3 rankings
-│   │                         #     (territory, salesman, customer) with math.ceil() rounding
-│   │                         #   - fetch_bookings_snapshot_us() / _ca() — snapshot for dashboard
-│   │                         #   - _build_bookings_raw_query() — full 26-column SELECT for Excel
-│   │                         #   - _process_bookings_raw_rows() — row dicts with territory mapping
-│   │                         #   - fetch_bookings_raw_us() / _ca() — raw data for Excel export
+│   ├── bookings_service.py   # Daily bookings data layer: snapshot + raw export queries,
+│   │                         #   Python aggregation into 3 rankings (territory, salesman, customer)
 │   │
-│   ├── open_orders_service.py# Open orders data layer:
-│   │                         #   - _build_open_orders_query() — SELECT with INNER JOIN somast
-│   │                         #     (checks both line-level and order-level status)
-│   │                         #   - _aggregate_open_orders() — territory + salesman rankings,
-│   │                         #     tracks released amount (somast.release = 'Y') separately
-│   │                         #   - fetch_open_orders_snapshot_us() / _ca()
-│   │                         #   - _build_open_orders_raw_query() — 26-column SELECT for Excel
-│   │                         #   - _process_open_orders_raw_rows() — row dicts with territory mapping
-│   │                         #   - fetch_open_orders_raw_us() / _ca()
+│   ├── open_orders_service.py# Open orders data layer: snapshot + raw export queries,
+│   │                         #   territory + salesman rankings with released amount tracking
+│   │
+│   ├── bookings_summary_service.py
+│   │                         # Bookings Summary data layer (MTD / QTD / YTD):
+│   │                         #   - Monthly frozen file I/O: save/load/delete gzip JSON (summary_data/)
+│   │                         #   - Auto-freeze: detects and freezes completed months on startup/refresh
+│   │                         #   - Prior year YoY: reads from dashboard yearly files (dashboard_data/)
+│   │                         #   - _aggregate_rows() — simple format for rankings
+│   │                         #   - _aggregate_rows_dashboard_format() — dashboard format with
+│   │                         #     monthly_totals, by_territory, by_salesman, by_product_line, by_customer
+│   │                         #   - _extract_prior_year_summary() — extracts month range from yearly file
+│   │                         #   - _merge_regions() — combines US + CA with CAD→USD conversion
+│   │                         #   - _compute_yoy() — year-over-year % change with direction indicators
+│   │                         #   - refresh_bookings_summary() — main refresh: auto-freeze → read files
+│   │                         #     → live current month → assemble horizons → populate dashboard cache
+│   │                         #   - _populate_dashboard_cache() — shares data with executive dashboard
+│   │                         #   - fetch_raw_export_data() — raw 26-column data for Excel export
+│   │                         #   - get_bookings_summary_from_cache() — public API with cache-miss fallback
 │   │
 │   ├── dashboard_data_service.py
-│   │                         # Executive dashboard data layer (most complex service):
-│   │                         #   - Frozen file I/O: save/load/delete gzip JSON
-│   │                         #   - get_frozen_status() — status of all year/region files
-│   │                         #   - _build_dashboard_query() — queries soytrn or sotran
-│   │                         #   - _aggregate_rows() — single-pass aggregation into monthly,
-│   │                         #     territory, salesman, product line, customer breakdowns
-│   │                         #   - _merge_summaries() — combines historical + current month data
-│   │                         #   - 3-tier resolution: _get_historical_data() (disk→cache→SQL),
-│   │                         #     _get_current_month_data() (cache→SQL)
+│   │                         # Executive dashboard data layer:
+│   │                         #   - Yearly frozen file I/O (dashboard_data/*.json.gz)
+│   │                         #   - get_frozen_status() — admin page status
+│   │                         #   - 3-tier resolution: disk → cache → SQL
+│   │                         #   - download_year_data() — admin download with raw rows + summary
 │   │                         #   - get_dashboard_data() — public API, merges US+CA with CAD→USD
-│   │                         #   - download_year_data() — admin download, SQL→aggregate→save
 │   │                         #   - refresh_dashboard_current_month() — scheduler job
-│   │                         #   - invalidate_historical_cache() — cache busting for refresh
-│   │                         #   - get_available_years() — current year back 5 years
 │   │
 │   ├── dashboard_service.py  # Legacy dashboard aggregation service (retained for reference —
-│   │                         #   replaced by dashboard_data_service.py). Processes raw cached
-│   │                         #   bookings data into dashboard metrics with filtering support.
-│   │                         #   NOT used by any active routes.
+│   │                         #   replaced by dashboard_data_service.py). NOT used by active routes.
 │   │
 │   ├── data_worker.py        # Background cache refresh logic:
-│   │                         #   - All cache keys centralized (14 keys total)
-│   │                         #   - _fetch_cad_to_usd_rate() — dual-API with failover + validation
-│   │                         #   - refresh_bookings_cache() — US+CA snapshot + raw in one pass
-│   │                         #   - refresh_open_orders_cache() — US+CA snapshot + raw in one pass
-│   │                         #   - get_bookings_from_cache() — read with sync fallback fetch
-│   │                         #   - get_bookings_raw_from_cache() — read with sync fallback fetch
-│   │                         #   - get_open_orders_from_cache() — read with sync fallback fetch
-│   │                         #   - get_open_orders_raw_from_cache() — read with sync fallback fetch
-│   │                         #   - refresh_bookings_and_rate() — scheduler: 10 min
-│   │                         #   - refresh_open_orders_scheduled() — scheduler: 60 min
-│   │                         #   - refresh_all_on_startup() — one-time init
+│   │                         #   - Exchange rate fetching with dual-API failover
+│   │                         #   - refresh_bookings_cache() — daily bookings US+CA
+│   │                         #   - refresh_open_orders_cache() — open orders US+CA
+│   │                         #   - refresh_all_on_startup() — complete startup sequence:
+│   │                         #     exchange rate → bookings → open orders → bookings summary
+│   │                         #     (bookings summary also populates dashboard cache)
+│   │                         #   - All cache keys centralized (14+ keys total)
 │   │
-│   └── excel_helper.py       # Shared Excel workbook builder:
-│                              #   - build_export_workbook() — openpyxl workbook with:
-│                              #     title row, exported-by metadata, dark header row,
-│                              #     alternating row fills, green money font, frozen header,
-│                              #     auto-filter, column widths, number formats
-│                              #   - send_workbook() — BytesIO buffer → Flask send_file response
+│   └── excel_helper.py       # Shared Excel workbook builder: formatted headers, alternating rows,
+│                              #   green money font, frozen header, auto-filter, column widths
 │
 ├── static/
 │   ├── logo/
-│   │   ├── TWG.png           # Company logo used in nav bar and login page
+│   │   ├── TWG.png                # Company logo (nav bar + login page)
 │   │   ├── apple-touch-icon.png   # iOS home screen icon (180×180)
 │   │   ├── icon-192x192.png       # Android/PWA icon
 │   │   └── icon-512x512.png       # PWA splash icon
 │   │
 │   ├── css/
-│   │   └── dashboard.css     # Executive dashboard styles (reference copy — also inlined in template)
+│   │   └── dashboard.css     # Executive dashboard styles (reference copy)
 │   │
 │   ├── js/
 │   │   └── dashboard.js      # Executive dashboard Chart.js rendering:
-│   │                         #   - renderMonthlyChart() — 12-month bar chart (hero)
-│   │                         #   - renderTerritoryChart() — horizontal bar (top 15)
-│   │                         #   - renderProductLineChart() — donut with legend
-│   │                         #   - renderSalesmanChart() — horizontal bar (top 15)
-│   │                         #   - updateCustomerTable() — dynamic top 50 table
-│   │                         #   - handleRefresh() — AJAX cache invalidation + reload
-│   │                         #   - Theme-aware color palettes (light/dark sets)
-│   │                         #   - MutationObserver on data-theme for live theme switching
-│   │                         #   - Year selector navigation (change → page reload)
+│   │                         #   renderMonthlyChart(), renderTerritoryChart(),
+│   │                         #   renderProductLineChart(), renderSalesmanChart(),
+│   │                         #   updateCustomerTable(), handleRefresh(),
+│   │                         #   theme-aware palettes, MutationObserver
 │   │
-│   └── manifest.json         # PWA manifest (display: browser, theme_color: #111827,
-│                              #   icons: 192×192 + 512×512)
+│   └── manifest.json         # PWA manifest
 │
 ├── templates/
-│   ├── base.html             # Shared layout for all authenticated pages:
-│   │                         #   - Sticky top nav with logo, breadcrumbs, theme toggle,
-│   │                         #     admin gear icon (Admin role only), avatar, sign out
-│   │                         #   - Complete CSS variable system (60+ variables) for light/dark themes
-│   │                         #   - Synchronous inline theme script (prevents flash of wrong theme)
-│   │                         #   - Google Fonts preconnect (DM Sans + JetBrains Mono)
-│   │                         #   - Fade-in animation utilities with stagger delays
-│   │                         #   - Mobile responsive breakpoints (768px, 480px)
-│   │                         #   - Template blocks: title, breadcrumb, extra_styles, content, scripts
-│   │
-│   ├── login.html            # Standalone login page (does NOT extend base.html):
-│   │                         #   - Own complete theme support with floating toggle button
-│   │                         #   - Animated gradient background (subtle drift animation)
-│   │                         #   - Shimmer accent line on card
-│   │                         #   - Microsoft SSO button with hover effects
-│   │                         #   - Security badge ("Microsoft Entra ID · Enterprise SSO")
-│   │                         #   - Error display for auth failures
-│   │                         #   - Mobile responsive (420px breakpoint)
-│   │
-│   ├── index.html            # Department hub (home page):
-│   │                         #   - Personalized greeting ("Welcome back, {first_name}")
-│   │                         #   - Card grid: Sales (live), Warehouse/Accounting/HR (coming soon)
-│   │                         #   - Sales card only visible with any Sales.*.View role
-│   │                         #   - Coming soon cards shown to everyone as disabled
-│   │                         #   - Color-coded icons per department (blue/amber/green/purple)
-│   │                         #   - Hover effects with top accent line per department
+│   ├── base.html             # Shared layout: sticky nav, theme toggle, admin gear, 60+ CSS variables
+│   ├── login.html            # Standalone login page with animated gradient background
+│   ├── index.html            # Department hub (Sales live, Warehouse/Accounting/HR coming soon)
 │   │
 │   ├── sales/
-│   │   ├── index.html        # Sales report menu:
-│   │                         #   - Cards for Dashboard, Bookings, Open Orders
-│   │                         #   - Each card conditionally shown based on View role
-│   │                         #   - Live/Export/View Only badges per user role
-│   │                         #   - Coming Soon cards (Shipments, Territory Performance)
-│   │                         #   - Back to Home link
-│   │
-│   │   ├── bookings.html     # Daily Bookings dashboard:
-│   │                         #   - Auto-refresh meta tag (600s)
-│   │                         #   - Countdown timer to next refresh (JS)
-│   │                         #   - Last updated timestamp with green pulse dot
-│   │                         #   - US section: 4 KPI cards, 3 ranking tabs (Territory/Salesman/Customer)
-│   │                         #     each with podium (top 3 gold/silver/bronze) + remaining table
-│   │                         #   - Canada section: same layout + exchange rate badge + USD equivalents
-│   │                         #   - Tab switching: instant CSS class toggle in JS (no page reload)
-│   │                         #   - All rankings server-rendered, scoped by data-region attribute
-│   │                         #   - Export buttons (all/US/CA) gated by can_export
-│   │                         #   - SVG flags for US and Canada
-│   │                         #   - Phone: icon-only export buttons, 2×2 stat grid, compact podium
-│   │
-│   │   ├── open_orders.html  # Open Sales Orders dashboard:
-│   │                         #   - US section: 4 KPI cards with Released sub-line
-│   │                         #     (released amount, percentage, blue checkmark icon)
-│   │                         #   - Side-by-side territory + salesman ranking grids
-│   │                         #   - Canada section: same + exchange rate badge + USD columns
-│   │                         #   - No auto-refresh (hourly data doesn't change fast)
-│   │                         #   - Export buttons (all/US/CA) gated by can_export
-│   │                         #   - Phone: stacked rankings, compact cards
-│   │
-│   │   └── dashboard.html    # Executive Dashboard:
-│   │                         #   - Year selector dropdown (navigates on change, 5 years back)
-│   │                         #   - 5 KPI cards: Total Sales, Units, Orders, Avg Order, Line Items
-│   │                         #   - Region split bar (US vs CA proportion with dollar amounts)
-│   │                         #   - Chart.js loaded from CDN (cdnjs.cloudflare.com)
-│   │                         #   - window.__DASH_DATA__ JSON injection for chart rendering
-│   │                         #   - Sales by Month hero chart (12 months, full width)
-│   │                         #   - Sales by Territory horizontal bar (top 15)
-│   │                         #   - Sales by Product Line donut chart with legend
-│   │                         #   - Sales by Salesman horizontal bar (top 15, full width)
-│   │                         #   - Top 50 Customers scrollable table
-│   │                         #   - Refresh Data button (AJAX → invalidate cache → reload)
-│   │                         #   - Phone: 2×2 KPI grid, stacked charts, compact table
+│   │   ├── index.html        # Sales report menu (Dashboard, Bookings Summary, Daily Bookings,
+│   │   │                     #   Open Orders, + coming soon cards)
+│   │   ├── bookings.html     # Daily Bookings: auto-refresh, countdown, podium, ranking tabs
+│   │   ├── bookings_summary.html  # Bookings Summary: MTD/QTD/YTD tabs, YoY indicators,
+│   │   │                     #   podium rankings, region split bar, export per horizon
+│   │   ├── open_orders.html  # Open Orders: released tracking, side-by-side rankings
+│   │   └── dashboard.html    # Executive Dashboard: Chart.js, year selector, KPIs, top 50 customers
 │   │
 │   └── admin/
-│       └── dashboard_data.html
-│                              # Admin: Dashboard Data Management:
-│                              #   - Year cards (current year → 5 years back)
-│                              #   - Each card has US and CA region rows
-│                              #   - Current year: green dot "Live from SQL" (no actions)
-│                              #   - Historical: Downloaded status (size + date) or "Not downloaded"
-│                              #   - Per-region: Download/Re-download/Delete buttons
-│                              #   - Per-year: "Download US + CA" button (fetches both)
-│                              #   - AJAX operations with toast notifications
-│                              #   - Info box explaining how frozen files work
-│                              #   - Back to Home link
-│                              #   - Phone: stacked layout, full-width action buttons
+│       └── dashboard_data.html  # Admin: download/delete yearly frozen files, status cards
 │
-├── dashboard_data/           # Frozen gzip JSON files for historical years (gitignored, portable)
-│   ├── us_2025.json.gz       # Example: US 2025 pre-aggregated summary (~1-2KB)
-│   ├── ca_2025.json.gz       # Example: CA 2025 pre-aggregated summary
-│   └── ...                   # One file per region per year
+├── dashboard_data/           # Yearly frozen gzip JSON files (gitignored, portable, admin-managed)
+│   ├── us_2025.json.gz       # Full year pre-aggregated summary + raw rows
+│   ├── ca_2025.json.gz
+│   └── ...
+│
+├── summary_data/             # Monthly frozen gzip JSON files (gitignored, portable, auto-managed)
+│   ├── us_2026_01.json.gz    # Jan 2026 US — summary + dashboard format (~2-5KB)
+│   ├── us_2026_02.json.gz    # Feb 2026 US
+│   ├── ca_2026_01.json.gz    # Jan 2026 CA
+│   ├── ca_2026_02.json.gz    # Feb 2026 CA
+│   └── ...                   # Auto-created when a new month starts
 │
 └── cache-data/               # Auto-generated FileSystemCache directory (gitignored)
 ```
@@ -463,6 +393,8 @@ Export roles do NOT grant view access on their own — they only enable download
 |---|---|---|---|
 | `TWG-Portal-Admin` | `GROUP_ADMIN` | `Admin` | Full access to everything: all views, all exports, admin pages. Bypasses all role checks. |
 | `TWG-Portal-Sales-Dashboard-View` | `GROUP_SALES_DASHBOARD_VIEW` | `Sales.Dashboard.View` | View the executive dashboard |
+| `TWG-Portal-Sales-BookingsSummary-View` | `GROUP_SALES_BOOKINGSSUMMARY_VIEW` | `Sales.BookingsSummary.View` | View MTD/QTD/YTD bookings summary |
+| `TWG-Portal-Sales-BookingsSummary-Export` | `GROUP_SALES_BOOKINGSSUMMARY_EXPORT` | `Sales.BookingsSummary.Export` | Download bookings summary Excel files |
 | `TWG-Portal-Sales-Bookings-View` | `GROUP_SALES_BOOKINGS_VIEW` | `Sales.Bookings.View` | View Daily Bookings dashboard |
 | `TWG-Portal-Sales-Bookings-Export` | `GROUP_SALES_BOOKINGS_EXPORT` | `Sales.Bookings.Export` | Download Bookings Excel files |
 | `TWG-Portal-Sales-OpenOrders-View` | `GROUP_SALES_OPENORDERS_VIEW` | `Sales.OpenOrders.View` | View Open Orders dashboard |
@@ -474,6 +406,7 @@ Export roles do NOT grant view access on their own — they only enable download
 ROLE_HIERARCHY = {
     'Sales.Base': [
         'Sales.Bookings.View',
+        'Sales.BookingsSummary.View',
         'Sales.OpenOrders.View',
         'Sales.Dashboard.View',
     ],
@@ -501,6 +434,9 @@ ROLE_HIERARCHY = {
 | `/sales` | `@require_role('Sales.Base')` | Implied by any `Sales.*.View` |
 | `/sales/dashboard` | `@require_role('Sales.Dashboard.View')` | Year-based executive dashboard |
 | `/sales/dashboard/refresh` | `@require_role('Sales.Dashboard.View')` | AJAX: invalidate cache, reload |
+| `/sales/dashboard/export*` | `@require_role('Sales.Dashboard.View')` | 3 Excel download routes (from frozen files) |
+| `/sales/bookings-summary` | `@require_role('Sales.BookingsSummary.View')` | MTD/QTD/YTD with YoY comparison |
+| `/sales/bookings-summary/export/*` | `@require_role('Sales.BookingsSummary.Export')` | 3 Excel routes per horizon |
 | `/sales/bookings` | `@require_role('Sales.Bookings.View')` | Daily bookings with ranking tabs |
 | `/sales/bookings/export/*` | `@require_role('Sales.Bookings.Export')` | 3 Excel download routes |
 | `/sales/open-orders` | `@require_role('Sales.OpenOrders.View')` | Open orders dashboard |
@@ -522,15 +458,7 @@ ROLE_HIERARCHY = {
 
 ## Admin Navigation
 
-The admin page is accessible via a **gear icon** in the top navigation bar, positioned between the theme toggle and the user avatar. This icon is **only visible to users with the `Admin` role** — it is completely removed from the DOM for non-admin users via a Jinja2 conditional:
-
-```html
-{% if user and user_has_role(user, 'Admin') %}
-<a href="/admin/dashboard-data" class="btn-admin" title="Admin — Dashboard Data Management">
-    <!-- gear SVG icon -->
-</a>
-{% endif %}
-```
+The admin page is accessible via a **gear icon** in the top navigation bar, positioned between the theme toggle and the user avatar. This icon is **only visible to users with the `Admin` role** — it is completely removed from the DOM for non-admin users via a Jinja2 conditional.
 
 **Nav bar layout (left to right):** Logo + Portal text → Breadcrumbs → Theme toggle → **Admin gear** (Admin only) → Avatar + Name → Sign Out
 
@@ -553,8 +481,8 @@ Both databases share the same SQL Server instance and have identical table struc
 
 | Table | Contains | When Data Moves | Used By |
 |-------|----------|-----------------|---------|
-| `sotran` | Current month line items (live transactional data) | Data stays here for the current month | Daily Bookings, Open Orders, Dashboard (current month) |
-| `soytrn` | Historical line items (completed months, identical schema to sotran) | ERP moves data from sotran → soytrn when a month closes | Dashboard (past months/years) |
+| `sotran` | Current month line items (live transactional data) | Data stays here for the current month | Daily Bookings, Open Orders, Bookings Summary (current month), Dashboard (current month) |
+| `soytrn` | Historical line items (completed months, identical schema to sotran) | ERP moves data from sotran → soytrn when a month closes | Bookings Summary (auto-freeze completed months), Dashboard (past months/years) |
 
 Both tables have identical field structures. Key columns used across the portal:
 
@@ -598,6 +526,7 @@ Locking:  All queries use WITH (NOLOCK) to avoid blocking ERP transactions
 |--------|------------------|-----------------|
 | Daily Bookings (US+CA) | ~5K rows | Instant (<100ms) |
 | Open Orders (US+CA) | ~5-10K rows | Instant (<100ms) |
+| Bookings Summary current month | ~5K rows | Instant (<100ms) |
 | Dashboard (full year US) | ~400K+ rows | ~15-20 seconds |
 | Dashboard (full year CA) | ~90K rows | ~5-10 seconds |
 
@@ -634,40 +563,26 @@ Territory codes are mapped to display names in `services/constants.py`:
 
 ### Excluded Data
 
-**Excluded Customers** (applied to all reports):
-
-`W1VAN`, `W1TOR`, `W1MON`, `MISC`, `TWGMARKET`, `EMP-US`, `TEST123`
-
-These are internal/test accounts filtered out in Python after the SQL query returns rows.
+**Excluded Customers** (applied to all reports): `W1VAN`, `W1TOR`, `W1MON`, `MISC`, `TWGMARKET`, `EMP-US`, `TEST123`
 
 **Excluded Product Lines:** `TAX` — filtered in Python.
 
-**Bookings Filters (SQL WHERE):**
-- `currhist <> 'X'` (not excluded)
-- `sostat NOT IN ('V', 'X')` (not voided or cancelled)
-- `sotype NOT IN ('B', 'R')` (not blanket orders or returns)
-- `ordate = CAST(GETDATE() AS DATE)` (today only)
+**Bookings Filters (SQL WHERE):** `currhist <> 'X'`, `sostat NOT IN ('V', 'X')`, `sotype NOT IN ('B', 'R')`, `ordate = CAST(GETDATE() AS DATE)` (today only)
 
-**Open Orders Filters (SQL WHERE):**
-- `tr.qtyord > 0` (has remaining open quantity)
-- `tr.sostat NOT IN ('C', 'V', 'X')` (not closed/voided/cancelled at line level)
-- `sm.sostat <> 'C'` (order not fully closed at order level)
-- `tr.sotype NOT IN ('B', 'R')` (not blanket/return)
-- NO date filter (all open orders regardless of age)
-- NO currhist filter (not relevant for open orders)
+**Open Orders Filters (SQL WHERE):** `tr.qtyord > 0`, `tr.sostat NOT IN ('C', 'V', 'X')`, `sm.sostat <> 'C'`, `tr.sotype NOT IN ('B', 'R')` — NO date filter, NO currhist filter
 
-**Dashboard Filters (SQL WHERE):**
-- Same as bookings but without the date filter (uses year range or full table)
+**Dashboard / Bookings Summary Filters (SQL WHERE):** Same as bookings but without the date filter (uses year/month range)
 
-### Scheduler Strategy (Three Independent Jobs)
+### Scheduler Strategy (Four Independent Jobs)
 
 | Job ID | Function | Interval | What It Refreshes | Cache TTL | Run on Startup |
 |---|---|---|---|---|---|
 | `bookings_refresh` | `refresh_bookings_and_rate()` | 10 min | Bookings snapshots + raw (US + CA), CAD→USD exchange rate | 900s (15 min) | Yes |
 | `open_orders_refresh` | `refresh_open_orders_scheduled()` | 60 min | Open orders snapshots + raw (US + CA) | 3900s (65 min) | Yes |
+| `bookings_summary_refresh` | `refresh_bookings_summary_scheduled()` | 30 min | MTD/QTD/YTD from frozen files + live current month, YoY from dashboard files, + dashboard cache for current year | 2100s (35 min) | Yes |
 | `dashboard_current_refresh` | `refresh_dashboard_current_month()` | 60 min | Dashboard current month only (sotran, US + CA) | 3900s (65 min) | No* |
 
-*Dashboard historical data is NOT fetched on startup — it is loaded on demand when the first user visits the dashboard page, or from frozen files. This keeps startup fast.
+*Dashboard current month is also populated by the Bookings Summary refresh (as a side effect of the YTD assembly), so it's usually already warm when the dedicated 60-min job runs.
 
 ### Caching Strategy
 
@@ -689,12 +604,24 @@ These are internal/test accounts filtered out in Python after the SQL query retu
 | `open_orders_last_updated` | `datetime` | Last open orders refresh timestamp |
 | `cad_to_usd_rate` | `float` | Latest CAD → USD exchange rate |
 
+**Bookings Summary cache keys (defined in `bookings_summary_service.py`):**
+
+| Key | Type | TTL | Description |
+|---|---|---|---|
+| `bookings_summary_mtd` | `dict` | 35 min | MTD merged data with YoY |
+| `bookings_summary_qtd` | `dict` | 35 min | QTD merged data with YoY |
+| `bookings_summary_ytd` | `dict` | 35 min | YTD merged data with YoY |
+| `bookings_summary_mtd_prior` | `dict` | 35 min | MTD prior year data |
+| `bookings_summary_qtd_prior` | `dict` | 35 min | QTD prior year data |
+| `bookings_summary_ytd_prior` | `dict` | 35 min | YTD prior year data |
+| `bookings_summary_last_updated` | `datetime` | 35 min | Last summary refresh timestamp |
+
 **Dashboard cache keys (defined in `dashboard_data_service.py`):**
 
 | Key Pattern | Type | TTL | Description |
 |---|---|---|---|
-| `dash_hist_{region}_{year}` | `dict` | 24 hr | Historical year summary (e.g., `dash_hist_us_2025`) |
-| `dash_current_{region}` | `dict` | 65 min | Current month summary (e.g., `dash_current_us`) |
+| `dash_hist_{region}_{year}` | `dict` | 24 hr | Historical year summary (also populated by Bookings Summary for current year) |
+| `dash_current_{region}` | `dict` | 65 min | Current month summary (also populated by Bookings Summary) |
 | `dashboard_last_updated` | `datetime` | 65 min | Last current-month refresh timestamp |
 
 **Cache miss behavior:** If a route reads from cache and finds nothing, it triggers a synchronous fetch as a fallback. This ensures the first request after a cold start still returns data (with a brief delay).
@@ -729,7 +656,7 @@ Full dark/light theme switching across all pages including the standalone login 
 | `--accent-amber` | `#D97706` | `#F59E0B` |
 | `--accent-red` | `#DC2626` | `#EF4444` |
 
-Dark mode uses **true OLED black** (`#000000`) for the page background, saving battery on OLED screens and providing maximum contrast.
+Dark mode uses **true OLED black** (`#000000`) for the page background.
 
 ---
 
@@ -737,83 +664,126 @@ Dark mode uses **true OLED black** (`#000000`) for the page background, saving b
 
 ### Department Hub (`/`)
 
-Card-based grid showing available departments. Sales is live with a green "Live" badge; Warehouse, Accounting, HR show "Coming Soon" badges and are disabled (opacity 0.5, no pointer events). The Sales card is only visible to users with any `Sales.*.View` role (checked via `user_has_role(user, 'Sales.Base')`).
+Card-based grid showing available departments. Sales is live with a green "Live" badge; Warehouse, Accounting, HR show "Coming Soon" badges and are disabled. The Sales card is only visible to users with any `Sales.*.View` role.
 
 ### Sales Report Menu (`/sales`)
 
-Cards for Dashboard, Bookings, and Open Orders. Each card is conditionally rendered based on the user's View role. Each shows badges indicating available features:
-
-- **"Live"** — always shown (green badge)
-- **"Export"** — shown if user has the Export role (blue badge)
-- **"View Only"** — shown if user lacks the Export role (gray badge)
-
-Coming Soon cards (Shipments, Territory Performance) shown to everyone as disabled.
+Cards for Dashboard, Bookings Summary, Daily Bookings, and Open Orders. Each card is conditionally rendered based on the user's View role. Each shows badges indicating available features: **"Live"** (green), **"New"** (red, for Bookings Summary), **"Export"** (blue, if user has Export role), **"View Only"** (gray, if no Export role). Coming Soon cards (Shipments, Territory Performance) shown to everyone as disabled.
 
 ### Daily Bookings Dashboard
 
 **Route:** `/sales/bookings` — **Role:** `Sales.Bookings.View`
 **Data source:** `sotran` where `ordate = today` — auto-refreshes every 10 min
-**Cache read:** Route reads from `bookings_snapshot_us`, `bookings_snapshot_ca`, `bookings_last_updated`, `cad_to_usd_rate`
+**Purpose:** TV/kiosk display — today's orders only, glance-friendly, auto-refreshing
 
-**Per region (US + Canada):**
+**Per region (US + Canada):** 4 KPI cards (Total Amount, Total Units, Sales Orders, Territories Active), 3 ranking tabs (Territory / Salesman / Customer) with instant CSS toggle, podium display (top 3 with gold/silver/bronze), remaining table below, export buttons gated by role.
 
-| Component | Description |
-|---|---|
-| **4 KPI cards** | Total Amount, Total Units, Sales Orders, Territories Active |
-| **3 ranking tabs** | Territory / Salesman / Customer (instant CSS toggle, no reload) |
-| **Podium** | Top 3 with gold/silver/bronze cards, rank medals, hover lift effect |
-| **Remaining table** | 4th place and below with sortable columns |
-| **Export buttons** | All / US / CA (gated by `can_export`, hidden from DOM if no permission) |
+**Canada-specific:** All monetary amounts show both CAD and USD equivalent. Exchange rate badge displayed in the region header.
 
-**Canada-specific:** All monetary amounts show both CAD and USD equivalent. Exchange rate badge displayed in the region header. USD columns in ranking tables.
-
-**Auto-refresh:** `<meta http-equiv="refresh" content="600">` reloads the page every 10 minutes. A JavaScript countdown timer shows time until next refresh (`10:00` → `0:00`).
+**Auto-refresh:** `<meta http-equiv="refresh" content="600">` reloads every 10 minutes. JavaScript countdown timer shows time until next refresh.
 
 ### Ranking Tabs (Territory / Salesman / Customer)
 
-Three tabs per region on the bookings page. All three rankings are server-rendered in the HTML (no AJAX loading). Tab switching toggles CSS `active` class on both the tab button and the corresponding panel — instant with zero network requests. Tabs are scoped by `data-region` attribute to avoid cross-region conflicts.
+Three tabs per region on the bookings page (and bookings summary). All three rankings are server-rendered in the HTML (no AJAX loading). Tab switching toggles CSS `active` class — instant with zero network requests. Tabs are scoped by `data-region` attribute to avoid cross-region conflicts.
 
 ### Open Sales Orders Dashboard
 
 **Route:** `/sales/open-orders` — **Role:** `Sales.OpenOrders.View`
 **Data source:** All open `sotran` lines (no date filter) — refreshes hourly
-**Cache read:** Route reads from `open_orders_snapshot_us`, `open_orders_snapshot_ca`, `open_orders_last_updated`, `cad_to_usd_rate`
 
-**Per region (US + Canada):**
-
-| Component | Description |
-|---|---|
-| **4 KPI cards** | Total Open Amount, Open Units, Open Orders, Open Lines |
-| **Released sub-line** | Below the Open Amount card: released dollar amount, percentage, blue checkmark icon |
-| **Side-by-side rankings** | Territory (left) + Salesman (right) in a 2-column grid |
-| **Released column** | Each ranking row shows both Open $ and Released $ |
-| **Export buttons** | All / US / CA (gated by `can_export`) |
+**Per region:** 4 KPI cards with Released sub-line (released dollar amount, percentage, blue checkmark icon), side-by-side territory + salesman ranking grids, Released column in each ranking.
 
 **Open amount formula:** `qtyord × price × (1 - disc/100)` where `qtyord` is the remaining open quantity after shipments.
 
-**Released tracking:** `somast.release = 'Y'` identifies released orders. Released amounts are tracked separately in both the summary KPI and per-territory/salesman rankings.
+### Bookings Summary (MTD / QTD / YTD)
+
+**Route:** `/sales/bookings-summary` — **Role:** `Sales.BookingsSummary.View`
+**Data source:** Monthly frozen files (completed months) + `sotran` (current month) + dashboard yearly files (prior year YoY)
+**Refreshes:** Every 30 minutes. Only queries current month from SQL (2 queries: US + CA).
+
+**Page layout:**
+- **Horizon tabs:** MTD (Month-to-Date), QTD (Quarter-to-Date), YTD (Year-to-Date) — instant CSS toggle, all data server-rendered
+- **Date range label:** Shows current period dates + prior period label (e.g., "vs March 2025 (full month)")
+- **4 KPI cards:** Total Amount (USD), Total Units, Sales Orders, Territories Active
+- **YoY indicators:** Each KPI shows ▲ green (up) / ▼ red (down) / — gray (flat) with percentage change and prior year value
+- **Region split bar:** US vs CA dollar amounts with CAD original
+- **3 ranking tabs:** Territory / Salesman / Customer with podium (top 3) + remaining table
+- **Export buttons:** Per horizon (MTD/QTD/YTD), gated by `Sales.BookingsSummary.Export` role
+
+**Year-over-Year comparison:** Prior year data is read from the dashboard's yearly frozen files (`dashboard_data/us_2025.json.gz`). For MTD/QTD where the current period is partial (e.g., 10 days into March), the prior period label clearly indicates it's comparing against the full month/quarter: "vs March 2025 (full month)".
+
+**Combined US + CA:** All Canadian amounts are converted to USD using the shared exchange rate before merging with US data. The region split shows the breakdown.
 
 ### Executive Dashboard
 
 **Route:** `/sales/dashboard?year=2026` — **Role:** `Sales.Dashboard.View`
 **Data source:** soytrn (historical months) + sotran (current month) — merged in Python
-**Cache read:** Uses 3-tier resolution (frozen file → cache → SQL)
+**Cache read:** Uses 3-tier resolution (frozen file → cache → SQL). Current year cache is also populated by the Bookings Summary refresh.
 
-**Page layout (top to bottom):**
+**Page layout:** Year selector dropdown, 5 KPI cards (Total Sales USD, Total Units, Sales Orders, Avg Order Value, Line Items), region split bar, Sales by Month hero chart (Chart.js bar), Sales by Territory horizontal bar (top 15), Sales by Product Line donut, Sales by Salesman horizontal bar (top 15), Top 50 Customers scrollable table, Refresh Data button.
 
-| # | Component | Chart Type | Width |
-|---|---|---|---|
-| 1 | **Year selector dropdown** | Select menu | — |
-| 2 | **5 KPI cards** | Total Sales (USD), Total Units, Sales Orders, Avg Order Value, Line Items | 5-column grid |
-| 3 | **Region split bar** | Stacked proportion bar with US vs CA dollar amounts | Full width |
-| 4 | **Sales by Month** | Bar chart (12 months, empty months shown in gray) | Full width (hero) |
-| 5 | **Sales by Territory** | Horizontal bar chart (top 15) | Half width |
-| 6 | **Sales by Product Line** | Donut chart with right-aligned legend | Half width |
-| 7 | **Sales by Salesman** | Horizontal bar chart (top 15) | Full width |
-| 8 | **Top 50 Customers** | Scrollable table (rank, name, amount, units, orders) | Full width |
-| 9 | **Refresh Data button** | Invalidates cache for selected year, re-fetches from SQL | Top right |
+---
 
-**Data flow:** `get_dashboard_data(year, cad_rate)` fetches US historical + US current month + CA historical + CA current month, merges US data (soytrn + sotran), merges CA data (soytrn + sotran), converts all CA amounts to USD, then merges US + CA into a single unified dataset.
+## Bookings Summary — Data Layer
+
+### Monthly Frozen File Strategy
+
+Completed months in the **current year** are automatically frozen as tiny gzip-compressed JSON files in `summary_data/`. This eliminates the need to re-query SQL Server for data that rarely changes after a month closes.
+
+**Auto-freeze behavior:** On every startup and every 30-minute refresh, the app checks for missing frozen files. If today is March 10, 2026, and `us_2026_02.json.gz` doesn't exist yet, it automatically queries `soytrn` for February 2026 US data, aggregates it, and saves the file. This only happens once per month per region — subsequent startups read from disk in <1ms.
+
+**File format:** Each `.json.gz` file contains:
+```json
+{
+  "meta": { "region": "US", "year": 2026, "month": 2, "frozen_at": "2026-03-01T08:00:00", "version": 1 },
+  "summary": { /* simple format: summary + territory/salesman/customer rankings */ },
+  "dashboard": { /* dashboard format: monthly_totals, by_territory, by_salesman, by_product_line, by_customer */ }
+}
+```
+
+The dual format allows the same frozen file to serve both the Bookings Summary page (simple rankings) and the Executive Dashboard (chart-ready data with monthly breakdowns and product line splits).
+
+**Startup performance:**
+
+| Scenario | What happens | Time |
+|---|---|---|
+| First startup (no frozen files) | Auto-freezes completed months from SQL | ~15-20s (one-time) |
+| Normal restart (files exist) | Reads from disk + queries current month only | ~3-5s |
+| New month started | Auto-freezes previous month, rest from disk | ~5-8s |
+
+**Portability:** Copy the `summary_data/` folder to a new server and all current-year completed months load instantly.
+
+### Prior Year Data (YoY Comparison)
+
+Prior year data for the year-over-year comparison is **not** stored in `summary_data/`. Instead, it is read from the **dashboard's existing yearly frozen files** in `dashboard_data/` (e.g., `us_2025.json.gz`).
+
+These files are already downloaded by the admin via the Dashboard Data Management page and contain `monthly_totals` breakdowns. The bookings summary service extracts the exact months needed for each horizon:
+- **MTD YoY:** Extracts just the matching month from the prior year file
+- **QTD YoY:** Extracts the matching quarter's months
+- **YTD YoY:** Extracts Jan through the matching month
+
+If the prior year frozen file doesn't exist (admin hasn't downloaded it yet), the YoY indicators simply don't show — no SQL fallback, no errors.
+
+### Year-over-Year Comparison Logic
+
+The YoY comparison computes percentage change for three KPIs: Total Amount, Total Units, and Sales Orders.
+
+**Direction indicators:**
+- **▲ green (up):** Current period > prior period by more than 0.5%
+- **▼ red (down):** Current period < prior period by more than 0.5%
+- **— gray (flat):** Change is within ±0.5%
+
+**Partial period labeling:** Since prior year data comes from dashboard files with monthly granularity (not daily), a partial current month (e.g., March 1-10) is compared against the full prior month (all of March 2025). The label clearly communicates this: "vs March 2025 (full month)" for MTD, "vs Q1 2025 (full months)" for QTD, "vs Jan–Mar 2025 (full months)" for YTD.
+
+### Dashboard Cache Sharing
+
+When the Bookings Summary refresh assembles YTD data, it reads frozen monthly files and fetches the current month from SQL. These intermediate per-region results are exactly what the Executive Dashboard needs. Rather than letting the dashboard duplicate those SQL queries, the Bookings Summary refresh writes the data directly into the dashboard's cache keys:
+
+- Completed months → merged into `dash_hist_{region}_{year}` (24hr TTL)
+- Current month → written to `dash_current_{region}` (65min TTL)
+- Timestamp → written to `dashboard_last_updated`
+
+This means the Executive Dashboard for the current year loads instantly from cache — zero SQL of its own. Past years still use the dashboard's yearly frozen files as before.
 
 ---
 
@@ -824,13 +794,13 @@ Three tabs per region on the bookings page. All three rankings are server-render
 The ERP stores current month line items in `sotran` and moves them to `soytrn` when the month closes. Both tables have identical schemas. The dashboard queries both:
 
 - **soytrn** — Historical months (Jan through previous month for current year, full year for past years)
-- **sotran** — Current month only (no date filter needed — the table IS the current month for all active data)
+- **sotran** — Current month only
 
-For past years (e.g., viewing 2024 when it's currently 2026), only `soytrn` is queried.
+For past years (e.g., viewing 2024 when it's currently 2026), only `soytrn` is queried (or the frozen file is read).
 
 ### Frozen Data Files
 
-For completed years, the data never changes. Instead of hitting SQL Server every time, an admin "downloads" the year once via the admin page. The app saves the pre-aggregated summary as a gzip-compressed JSON file:
+For completed years, the data never changes. An admin "downloads" the year once via the admin page. The app saves the pre-aggregated summary as a gzip-compressed JSON file:
 
 ```
 dashboard_data/
@@ -841,89 +811,26 @@ dashboard_data/
 └── ...
 ```
 
-**File format:**
+**File format (version 3):** Contains `meta`, `data` (pre-aggregated summary for dashboard rendering), and `raw_rows` (26-column line items for Excel export).
 
-```json
-{
-  "meta": {
-    "region": "US",
-    "year": 2025,
-    "frozen_at": "2026-01-15T14:30:00",
-    "version": 2
-  },
-  "data": {
-    "summary": { "total_amount": 45000000, "total_units": 850000, "total_orders": 12000, "total_lines": 95000 },
-    "monthly_totals": [ { "yr": 2025, "mo": 1, "amount": 3500000, "units": 70000, "orders": 1000 }, ... ],
-    "by_territory": [ { "name": "LA", "amount": 12000000, "units": 200000, "orders": 3000, "rank": 1 }, ... ],
-    "by_salesman": [ { "name": "JD", "amount": 8000000, "units": 150000, "orders": 2000, "rank": 1 }, ... ],
-    "by_product_line": [ { "name": "WHEELS", "amount": 20000000, "units": 400000, "rank": 1 }, ... ],
-    "by_customer": [ { "custno": "CUST001", "name": "Big Customer Inc", "amount": 5000000, "units": 100000, "orders": 500, "rank": 1 }, ... ]
-  }
-}
-```
-
-**Portability:** Copy the entire `dashboard_data/` folder to a new server and all historical years load instantly without any SQL queries. The folder is gitignored — manage it separately from code deployments.
+**Portability:** Copy the entire `dashboard_data/` folder when migrating servers.
 
 ### Data Resolution Priority
 
-When the dashboard needs data for a year + region:
-
 **For historical data (past months/years):**
-
-```
-1. Check frozen file on disk (dashboard_data/{region}_{year}.json.gz)
-   → Found? Return immediately (<1ms). Done.
-
-2. Check in-memory cache (dash_hist_{region}_{year})
-   → Found? Return immediately. Done.
-
-3. Fetch from SQL Server (soytrn SELECT with NOLOCK)
-   → Aggregate in Python (single pass, ~15-20 seconds for full US year)
-   → Cache the summary (24hr TTL)
-   → Return. Raw rows garbage collected.
-```
+1. Check frozen file on disk → Found? Return immediately (<1ms)
+2. Check in-memory cache → Found? Return immediately
+3. Fetch from SQL Server → Aggregate → Cache (24hr TTL) → Return
 
 **For current month data:**
-
-```
-1. Check in-memory cache (dash_current_{region})
-   → Found? Return. Done.
-
-2. Fetch from SQL Server (sotran SELECT)
-   → Aggregate, cache (65min TTL), return.
-```
-
-The scheduler refreshes the current month cache every 60 minutes. Historical data is only refreshed on demand (admin download or cache expiry).
+1. Check in-memory cache (populated by Bookings Summary refresh) → Found? Return
+2. Fetch from SQL Server → Aggregate → Cache (65min TTL) → Return
 
 ### Admin Page — Dashboard Data Management
 
 **Route:** `/admin/dashboard-data` — **Role:** `Admin` only
-**Navigation:** Gear icon in the top nav bar (visible only to Admin users)
 
-Shows a card for each year (current year back 5 years) with US and CA rows:
-
-| Column | Content |
-|---|---|
-| **Year** | Year number with "Current Year — Live" (green badge) or "Historical" (blue badge) |
-| **Region** | US or CA |
-| **Status** | Green dot "Downloaded (1,847 bytes) · 2026-03-09 14:30" or gray dot "Not downloaded — will fetch from SQL on demand (~15-20s)" |
-| **Actions** | Download / Re-download / Delete buttons (disabled for current year) |
-
-**"Download US + CA" button** per year fetches both regions sequentially (~30-40 seconds total), aggregates in Python, saves to disk, and updates the cache.
-
-**Current year row:** Shows green dot with "Live from SQL (sotran + soytrn) — cached every 60 min". No download/delete actions available since the data changes daily.
-
-**AJAX endpoints:**
-
-| Method | Endpoint | Payload | Response |
-|---|---|---|---|
-| POST | `/admin/dashboard-data/download` | `{"year": 2025, "region": "US"}` | `{"status": "ok", "result": {...}, "message": "..."}` |
-| POST | `/admin/dashboard-data/download-both` | `{"year": 2025}` | `{"status": "ok", "results": [...], "message": "..."}` |
-| POST | `/admin/dashboard-data/delete` | `{"year": 2025, "region": "US"}` | `{"status": "ok", "message": "..."}` |
-
-Download-both returns HTTP 207 (Multi-Status) if one region succeeds and the other fails.
-
-**Toast notifications:** Success (green) and error (red) toast messages appear at the top of the page after each operation, auto-dismiss after 8 seconds. Page reloads 1-1.5 seconds after successful operations to show updated status.
+Shows a card for each year (current year back 7 years) with US and CA rows. Each row shows download status (file size, row count, frozen date) or "Not downloaded" with download/re-download/delete buttons. Current year row shows "Live from SQL" with no actions. "Download US + CA" button per year fetches both regions sequentially.
 
 ---
 
@@ -937,81 +844,45 @@ Amount = quantity × price × (1 - disc / 100)
 
 | Report | Quantity Field | Formula |
 |---|---|---|
-| **Bookings** | `origqtyord` (original quantity ordered) | `origqtyord × price × (1 - disc/100)` |
+| **Bookings / Bookings Summary / Dashboard** | `origqtyord` (original quantity ordered) | `origqtyord × price × (1 - disc/100)` |
 | **Open Orders** | `qtyord` (remaining open quantity) | `qtyord × price × (1 - disc/100)` |
-| **Dashboard** | `origqtyord` | `origqtyord × price × (1 - disc/100)` |
 
-**Rounding:** All aggregated totals are rounded up using `math.ceil()` to whole dollar amounts. This applies to territory totals, salesman totals, customer totals, and grand totals.
-
-**Discount field:** `disc` is stored as a percentage (0-100). A `disc` value of `15` means a 15% discount.
+All aggregated totals are rounded up using `math.ceil()` to whole dollar amounts.
 
 ---
 
 ## Currency Conversion
 
-All Canadian dollar amounts are converted to USD for unified reporting. The exchange rate is fetched by the bookings refresh job every 10 minutes and shared by all reports.
+All Canadian dollar amounts are converted to USD for unified reporting. The exchange rate is fetched every 10 minutes and shared by all reports.
 
-| Priority | API | URL | Extraction |
-|---|---|---|---|
-| Primary | Frankfurter | `https://api.frankfurter.app/latest?from=CAD&to=USD` | `data["rates"]["USD"]` |
-| Secondary | Open Exchange Rates | `https://open.er-api.com/v6/latest/CAD` | `data["rates"]["USD"]` |
-| Hardcoded fallback | — | — | `0.72` if all APIs fail |
+| Priority | API | Extraction |
+|---|---|---|
+| Primary | `api.frankfurter.app` | `data["rates"]["USD"]` |
+| Secondary | `open.er-api.com` | `data["rates"]["USD"]` |
+| Hardcoded fallback | — | `0.72` if all APIs fail |
 
-**Rate validation:** The fetched rate must be between 0.50 and 1.00 to be accepted. Rates outside this range are rejected as invalid.
-
-**Where conversions appear:**
-
-- **Bookings:** Canada KPI card shows CAD amount + "≈ USD $X" below. Ranking tables include a "≈ USD" column.
-- **Open Orders:** Same pattern as bookings. Released amounts also show USD equivalents.
-- **Dashboard:** All Canadian amounts are converted to USD before merging with US data. The region split bar shows both US (native USD) and CA (CAD + USD equivalent).
+**Rate validation:** Must be between 0.50 and 1.00 to be accepted.
 
 ---
 
 ## Excel Exports
 
-All exports read from cache — **zero SQL queries at download time**. Exports are available for Bookings and Open Orders, each with 3 routes (combined US+CA, US only, CA only).
+All exports read from cache or frozen files — **zero SQL queries at download time**.
 
-### Export Column Definitions
+### Available Exports
 
-**Bookings Export (26 columns):**
+| Report | Routes | Role | Horizons |
+|---|---|---|---|
+| Daily Bookings | `/sales/bookings/export`, `/us`, `/ca` | `Sales.Bookings.Export` | Today |
+| Bookings Summary | `/sales/bookings-summary/export/<horizon>`, `/us`, `/ca` | `Sales.BookingsSummary.Export` | MTD, QTD, YTD |
+| Open Orders | `/sales/open-orders/export`, `/us`, `/ca` | `Sales.OpenOrders.Export` | All open |
+| Dashboard Historical | `/sales/dashboard/export`, `/us`, `/ca` | `Sales.Dashboard.View` | Past years (from frozen files) |
 
-Each column is defined as `(Header Label (ERP field), Dict Key, Column Width, Number Format)`:
+### Export Formatting
 
-`Sales Order (sono)`, `Line# (tranlineno)`, `Order Date (ordate)`, `Customer No (custno)`, `Customer Name (company)`, `Item (item)`, `Description (descrip)`, `Product Line (plinid)`, `Qty Ordered (origqtyord)`, `Qty Shipped (qtyshp)`, `Unit Price (price)`, `Discount % (disc)`, `Ext Amount (calculated)`, `Ext Price (extprice)`, `Line Status (sostat)`, `Order Type (sotype)`, `Territory (mapped)`, `Terr Code (resolved)`, `Tran Terr (tr.terr)`, `SO Mast Terr (sm.terr)`, `Cust Terr (cu.terr)`, `Salesman (salesmn)`, `Location (loctid)`, `Request Date (rqdate)`, `Ship Date (shipdate)`, `Ship Via (shipvia)`
+Title row (merged, 13pt bold), metadata row (exported by user + timestamp), dark header row (#1F2937 white text), alternating row fills (#F9FAFB), green money font (#0A7A4F, `$#,##0.00`), frozen header, auto-filter, pre-set column widths.
 
-**Open Orders Export (26 columns):**
-
-Same structure but with open-orders-specific fields: `Orig Qty Ordered (origqtyord)`, `Open Qty (qtyord)`, `Open Amount (calculated)`, `Release (release)`.
-
-### Excel Formatting
-
-| Feature | Implementation |
-|---|---|
-| **Title row** | Merged cells, 13pt bold, report name + date |
-| **Metadata row** | "Exported by {user} on {date}" in italic gray |
-| **Header row** | Dark background (#1F2937), white bold text, centered, wrap text |
-| **Alternating rows** | Every other row has light gray (#F9FAFB) fill |
-| **Money columns** | Green font (#0A7A4F), `$#,##0.00` format |
-| **Date columns** | `MM/DD/YYYY` format |
-| **Discount column** | `0.000` format (3 decimal places) |
-| **Quantity columns** | `#,##0` format with thousands separator |
-| **Frozen header** | Header row frozen so it stays visible while scrolling |
-| **Auto-filter** | Filter dropdowns on all header columns |
-| **Column widths** | Pre-set per column (10-32 characters) |
-| **Region column** | Optional, prepended when exporting combined US+CA |
-
-### Export Routes
-
-| Route | Role | Content |
-|---|---|---|
-| `/sales/bookings/export` | `Sales.Bookings.Export` | US + CA combined (Region column included) |
-| `/sales/bookings/export/us` | `Sales.Bookings.Export` | US only |
-| `/sales/bookings/export/ca` | `Sales.Bookings.Export` | Canada only |
-| `/sales/open-orders/export` | `Sales.OpenOrders.Export` | US + CA combined (Region column included) |
-| `/sales/open-orders/export/us` | `Sales.OpenOrders.Export` | US only |
-| `/sales/open-orders/export/ca` | `Sales.OpenOrders.Export` | Canada only |
-
-**Filename pattern:** `{Report}_Raw_{Region}_{YYYYMMDD}.xlsx` (e.g., `Bookings_Raw_US_CA_20260309.xlsx`)
+**Filename pattern:** `{Report}_Raw_{Region}_{YYYYMMDD}.xlsx`
 
 ---
 
@@ -1019,35 +890,12 @@ Same structure but with open-orders-specific fields: `Orig Qty Ordered (origqtyo
 
 The portal is optimized for four display contexts:
 
-### Desktop (1024px+)
-- Full layout, 4/5-column KPI grids, side-by-side rankings
-- Podium display with gold/silver/bronze cards
-- Breadcrumbs visible in nav
-- Max-width 1400px page container with 32px padding
-- All export button text visible
-
-### Tablet (768–1024px)
-- Scaled fonts (20px KPI values, down from 24px)
-- Tighter padding on cards
-- Rankings remain side-by-side
-- Nav breadcrumbs still visible
-- User name still visible in nav
-
-### Phone — Standard (481–768px)
-- Brand text and breadcrumbs hidden in nav
-- User name hidden (avatar only)
-- Smaller gaps between nav elements
-
-### Phone — Compact (under 480px)
-- **KPI cards:** 2×2 grid with **26px values** for readability
-- **Ranking tabs:** `11px font, 5px 10px padding` — all 3 tabs fit on one line
-- **Back links:** Button-style touch targets (14px text, 10px padding, card background with border)
-- **Charts:** Stack vertically (single column)
-- **Export buttons:** Icon-only (text hidden via `display: none` on `.btn-download-text`)
-- **Rankings:** Stack vertically on open orders (territory above salesman)
-- **Podium:** Compact (12px padding, 28px medals, 13px amounts)
-- **Tables:** 12px font, 6px padding
-- **Nav:** Logo + theme toggle + admin gear + avatar + sign-out only
+| Breakpoint | Layout |
+|---|---|
+| **Desktop (1024px+)** | Full layout, 4/5-column KPI grids, side-by-side rankings, podium |
+| **Tablet (768–1024px)** | Scaled fonts, tighter padding, rankings side-by-side |
+| **Phone (481–768px)** | Brand text and breadcrumbs hidden, avatar only |
+| **Phone Compact (<480px)** | 2×2 KPI grid (26px values), 11px ranking tabs, icon-only export buttons, stacked charts/rankings, compact podium |
 
 ---
 
@@ -1057,9 +905,9 @@ The portal is optimized for four display contexts:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SECRET_KEY` | Yes | `dev-key-change-in-production` | Flask session signing key. Must be strong random value in production. |
+| `SECRET_KEY` | Yes | `dev-key-change-in-production` | Flask session signing key |
 | `CLIENT_ID` | Yes | — | Azure App Registration Application (client) ID |
-| `CLIENT_SECRET` | Yes | — | Azure App Registration client secret value |
+| `CLIENT_SECRET` | Yes | — | Azure App Registration client secret |
 | `TENANT_ID` | Yes | — | Azure AD tenant ID |
 | `AUTHORITY` | No | `https://login.microsoftonline.com/{TENANT_ID}` | OAuth authority URL |
 | `REDIRECT_PATH` | No | `/auth/redirect` | OAuth callback path |
@@ -1068,16 +916,16 @@ The portal is optimized for four display contexts:
 
 ### Security Groups
 
-| Variable | Internal Role | Description |
-|---|---|---|
-| `GROUP_ADMIN` | `Admin` | Full bypass — all views, all exports, admin pages |
-| `GROUP_SALES_DASHBOARD_VIEW` | `Sales.Dashboard.View` | View executive dashboard |
-| `GROUP_SALES_BOOKINGS_VIEW` | `Sales.Bookings.View` | View daily bookings |
-| `GROUP_SALES_BOOKINGS_EXPORT` | `Sales.Bookings.Export` | Download bookings Excel |
-| `GROUP_SALES_OPENORDERS_VIEW` | `Sales.OpenOrders.View` | View open orders |
-| `GROUP_SALES_OPENORDERS_EXPORT` | `Sales.OpenOrders.Export` | Download open orders Excel |
-
-Each variable's value should be the Entra ID Security Group's **Object ID** (a GUID like `a1b2c3d4-e5f6-...`).
+| Variable | Internal Role |
+|---|---|
+| `GROUP_ADMIN` | `Admin` |
+| `GROUP_SALES_DASHBOARD_VIEW` | `Sales.Dashboard.View` |
+| `GROUP_SALES_BOOKINGSSUMMARY_VIEW` | `Sales.BookingsSummary.View` |
+| `GROUP_SALES_BOOKINGSSUMMARY_EXPORT` | `Sales.BookingsSummary.Export` |
+| `GROUP_SALES_BOOKINGS_VIEW` | `Sales.Bookings.View` |
+| `GROUP_SALES_BOOKINGS_EXPORT` | `Sales.Bookings.Export` |
+| `GROUP_SALES_OPENORDERS_VIEW` | `Sales.OpenOrders.View` |
+| `GROUP_SALES_OPENORDERS_EXPORT` | `Sales.OpenOrders.Export` |
 
 ### Database
 
@@ -1087,8 +935,7 @@ Each variable's value should be the Entra ID Security Group's **Object ID** (a G
 | `DB_SERVER` | Yes | — | SQL Server hostname |
 | `DB_UID` | Yes | — | SQL Server username |
 | `DB_PWD` | Yes | — | SQL Server password |
-| `DB_TRUST_CERT` | No | `yes` | Trust server certificate (for self-signed certs) |
-| `DB_AUTH` | No | `PRO12` | Authentication database (not currently used) |
+| `DB_TRUST_CERT` | No | `yes` | Trust server certificate |
 | `DB_ORDERS` | No | `PRO05` | US orders database |
 | `DB_ORDERS_CA` | No | `PRO06` | Canada orders database |
 
@@ -1096,17 +943,10 @@ Each variable's value should be the Entra ID Security Group's **Object ID** (a G
 
 | Variable | Default | Description |
 |---|---|---|
-| `DATA_REFRESH_INTERVAL` | `600` (10 min) | Bookings + exchange rate refresh interval (seconds) |
-| `OPEN_ORDERS_REFRESH_INTERVAL` | `3600` (60 min) | Open orders refresh interval (seconds) |
-| `DASHBOARD_REFRESH_INTERVAL` | `3600` (60 min) | Dashboard current month refresh interval (seconds) |
-
-### Cache
-
-| Setting | Value | Description |
-|---|---|---|
-| `CACHE_TYPE` | `FileSystemCache` | Persists to disk, survives restarts |
-| `CACHE_DIR` | `cache-data` | Directory for cache files |
-| `CACHE_DEFAULT_TIMEOUT` | `900` (15 min) | Safety net timeout |
+| `DATA_REFRESH_INTERVAL` | `600` (10 min) | Bookings + exchange rate refresh |
+| `OPEN_ORDERS_REFRESH_INTERVAL` | `3600` (60 min) | Open orders refresh |
+| `DASHBOARD_REFRESH_INTERVAL` | `3600` (60 min) | Dashboard current month refresh |
+| `BOOKINGS_SUMMARY_REFRESH_INTERVAL` | `1800` (30 min) | Bookings Summary MTD/QTD/YTD refresh |
 
 ---
 
@@ -1115,7 +955,7 @@ Each variable's value should be the Entra ID Security Group's **Object ID** (a G
 ### Prerequisites
 
 - Python 3.12+
-- ODBC Driver 18 for SQL Server (install from Microsoft)
+- ODBC Driver 18 for SQL Server
 - Azure App Registration with groups claim configured
 - Entra ID Security Groups created and populated
 - Network access to SQL Server (twg-sql-01.thewheelgroup.com)
@@ -1134,60 +974,40 @@ pip install -r requirements.txt
 
 ### Environment Setup
 
-Create a `.env` file in the project root:
-
-```bash
-# Authentication
-SECRET_KEY=your-strong-random-secret-key-here
-CLIENT_ID=your-azure-app-client-id
-CLIENT_SECRET=your-azure-app-client-secret
-TENANT_ID=your-azure-tenant-id
-# REDIRECT_URI_OVERRIDE=https://portal.thewheelgroup.info/auth/redirect
-
-# Database
-DB_SERVER=twg-sql-01.thewheelgroup.com
-DB_UID=your-sql-username
-DB_PWD=your-sql-password
-DB_ORDERS=PRO05
-DB_ORDERS_CA=PRO06
-
-# Security Groups (Entra ID Object IDs)
-GROUP_ADMIN=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-GROUP_SALES_DASHBOARD_VIEW=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-GROUP_SALES_BOOKINGS_VIEW=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-GROUP_SALES_BOOKINGS_EXPORT=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-GROUP_SALES_OPENORDERS_VIEW=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-GROUP_SALES_OPENORDERS_EXPORT=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-
-# Optional: Refresh intervals (seconds)
-# DATA_REFRESH_INTERVAL=600
-# OPEN_ORDERS_REFRESH_INTERVAL=3600
-# DASHBOARD_REFRESH_INTERVAL=3600
-```
+Create a `.env` file in the project root (see [Environment Variables](#environment-variables) for all values).
 
 ---
 
 ## Running the Application
 
 ```bash
-# Development (Flask built-in server)
+# Development
 python app.py
 
-# Production (Waitress WSGI server)
+# Production
 waitress-serve --host=0.0.0.0 --port=5000 app:create_app
 ```
 
 **Startup sequence:**
 
 1. Flask app created via `create_app()` factory
-2. Config validation runs (checks CLIENT_ID, CLIENT_SECRET, AUTHORITY)
-3. GROUP_ROLE_MAP built from environment variables
+2. Config validation (CLIENT_ID, CLIENT_SECRET, AUTHORITY)
+3. GROUP_ROLE_MAP built from 8 environment variables
 4. Flask-Caching initialized (FileSystemCache)
-5. APScheduler started with 3 jobs registered
-6. Initial data refresh runs synchronously (bookings + open orders + exchange rate)
-7. Dashboard note logged: "Historical data will be fetched on first visit"
+5. APScheduler started with 4 jobs registered
+6. **Initial data refresh (synchronous):**
+   - Exchange rate fetched
+   - Daily bookings (US + CA snapshot + raw)
+   - Open orders (US + CA snapshot + raw)
+   - Bookings Summary: auto-freeze completed months → read monthly files → query current month → assemble MTD/QTD/YTD → populate dashboard cache
+7. All caches warm — every page loads instantly from first request
 8. Blueprints registered (main, sales, admin)
 9. Server starts listening on port 5000
+
+**Startup timing:**
+- First startup (no frozen files): ~15-20 seconds (auto-freezes all completed months)
+- Normal restart (files exist): ~3-5 seconds (reads from disk)
+- New month (one month to freeze): ~5-8 seconds
 
 ---
 
@@ -1195,15 +1015,15 @@ waitress-serve --host=0.0.0.0 --port=5000 app:create_app
 
 | Topic | Details |
 |---|---|
-| **SECRET_KEY** | Set to a strong random value (use `python -c "import secrets; print(secrets.token_hex(32))"`) |
-| **Redirect URIs** | Register all environment redirect URIs in Azure App Registration |
-| **Reverse proxy** | Use IIS/nginx with SSL termination. Set `REDIRECT_URI_OVERRIDE` if dynamic URI building doesn't match. |
-| **Outbound HTTPS** | Required: `api.frankfurter.app`, `open.er-api.com`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`, `fonts.gstatic.com` |
-| **SQL load** | ~28 queries/hour for bookings + open orders (10min × 4 queries + 60min × 4 queries). Dashboard queries are on-demand only. |
-| **Frozen data** | Copy `dashboard_data/` folder when migrating servers for instant historical data loading. This folder is gitignored — manage separately from code deployments. |
-| **Cache directory** | `cache-data/` is auto-created. Gitignored. Can be safely deleted to force a full refresh. |
-| **Windows** | If `.env` filename is problematic, rename to `_env` — the loader falls back to it automatically. |
-| **Memory** | Dashboard aggregation for a full US year (~400K rows) temporarily uses ~100-200MB of RAM during processing. After aggregation, only the tiny summary (~5KB) is kept. |
+| **SECRET_KEY** | Use `python -c "import secrets; print(secrets.token_hex(32))"` |
+| **Redirect URIs** | Register all environment URIs in Azure App Registration |
+| **Reverse proxy** | Use IIS/nginx with SSL termination. Set `REDIRECT_URI_OVERRIDE` if needed. |
+| **Outbound HTTPS** | `api.frankfurter.app`, `open.er-api.com`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`, `fonts.gstatic.com` |
+| **SQL load** | Daily bookings: ~28 queries/hour. Open orders: ~8 queries/hour. Bookings summary: 4 queries/hour (current month only). Dashboard: on-demand for past years. |
+| **Frozen data** | Copy both `dashboard_data/` and `summary_data/` when migrating servers. Both are gitignored. |
+| **Cache directory** | `cache-data/` is auto-created. Delete to force full refresh. |
+| **Windows** | If `.env` filename is problematic, rename to `_env`. |
+| **Memory** | Dashboard full-year aggregation temporarily uses ~100-200MB. After aggregation, only ~5KB summary kept. |
 
 ---
 
@@ -1211,18 +1031,12 @@ waitress-serve --host=0.0.0.0 --port=5000 app:create_app
 
 Behind a reverse proxy with SSL termination, Flask sees `http://` from `request.url_root` even though users access via `https://`. Azure Entra ID requires `https://` for all redirect URIs except `localhost`.
 
-**The `_build_redirect_uri()` function handles this automatically:**
+**`_build_redirect_uri()` handles this automatically:**
 
 1. If `REDIRECT_URI_OVERRIDE` is set → use it verbatim (highest priority)
 2. Otherwise, build from `request.url_root`
-3. If the host is not `localhost` or `127.0.0.1` and the URL starts with `http://` → force `https://`
+3. If the host is not `localhost`/`127.0.0.1` and URL starts with `http://` → force `https://`
 4. Append `REDIRECT_PATH` (`/auth/redirect`)
-
-**When to use REDIRECT_URI_OVERRIDE:**
-
-- Running behind a load balancer where the public hostname differs from the internal hostname
-- Custom domain (e.g., `portal.thewheelgroup.info`) that doesn't match what Flask sees
-- Any environment where the automatic HTTPS forcing doesn't produce the correct URI
 
 ---
 
@@ -1230,27 +1044,34 @@ Behind a reverse proxy with SSL termination, Flask sees `http://` from `request.
 
 | Route | Method | Role | Description |
 |---|---|---|---|
-| `/login_page` | GET | — | Login page (renders `login.html`) |
-| `/login` | GET | — | Initiates OAuth flow → redirects to Microsoft |
-| `/auth/redirect` | GET | — | OAuth callback → exchanges code for token |
-| `/logout` | GET | — | Clears session → redirects to Microsoft logout |
-| `/` | GET | any authenticated | Department hub (renders `index.html`) |
+| `/login_page` | GET | — | Login page |
+| `/login` | GET | — | Initiates OAuth flow |
+| `/auth/redirect` | GET | — | OAuth callback |
+| `/logout` | GET | — | Clear session + Microsoft logout |
+| `/` | GET | any authenticated | Department hub |
 | `/sales` | GET | `Sales.Base` | Sales report menu |
-| `/sales/dashboard` | GET | `Sales.Dashboard.View` | Executive dashboard (accepts `?year=` param) |
-| `/sales/dashboard/refresh` | POST | `Sales.Dashboard.View` | AJAX: invalidate cache + return redirect URL |
-| `/sales/bookings` | GET | `Sales.Bookings.View` | Daily bookings with ranking tabs |
-| `/sales/bookings/export` | GET | `Sales.Bookings.Export` | Excel: US + CA combined |
+| `/sales/dashboard` | GET | `Sales.Dashboard.View` | Executive dashboard |
+| `/sales/dashboard/refresh` | POST | `Sales.Dashboard.View` | AJAX: invalidate + reload |
+| `/sales/dashboard/export` | GET | `Sales.Dashboard.View` | Excel: US + CA (frozen file) |
+| `/sales/dashboard/export/us` | GET | `Sales.Dashboard.View` | Excel: US only |
+| `/sales/dashboard/export/ca` | GET | `Sales.Dashboard.View` | Excel: CA only |
+| `/sales/bookings-summary` | GET | `Sales.BookingsSummary.View` | MTD/QTD/YTD with YoY |
+| `/sales/bookings-summary/export/<horizon>` | GET | `Sales.BookingsSummary.Export` | Excel: US + CA |
+| `/sales/bookings-summary/export/<horizon>/us` | GET | `Sales.BookingsSummary.Export` | Excel: US only |
+| `/sales/bookings-summary/export/<horizon>/ca` | GET | `Sales.BookingsSummary.Export` | Excel: CA only |
+| `/sales/bookings` | GET | `Sales.Bookings.View` | Daily bookings |
+| `/sales/bookings/export` | GET | `Sales.Bookings.Export` | Excel: US + CA |
 | `/sales/bookings/export/us` | GET | `Sales.Bookings.Export` | Excel: US only |
 | `/sales/bookings/export/ca` | GET | `Sales.Bookings.Export` | Excel: CA only |
-| `/sales/open-orders` | GET | `Sales.OpenOrders.View` | Open orders dashboard |
-| `/sales/open-orders/export` | GET | `Sales.OpenOrders.Export` | Excel: US + CA combined |
+| `/sales/open-orders` | GET | `Sales.OpenOrders.View` | Open orders |
+| `/sales/open-orders/export` | GET | `Sales.OpenOrders.Export` | Excel: US + CA |
 | `/sales/open-orders/export/us` | GET | `Sales.OpenOrders.Export` | Excel: US only |
 | `/sales/open-orders/export/ca` | GET | `Sales.OpenOrders.Export` | Excel: CA only |
-| `/admin/dashboard-data` | GET | `Admin` | Data management page |
-| `/admin/dashboard-data/download` | POST | `Admin` | AJAX: download single region `{year, region}` |
-| `/admin/dashboard-data/download-both` | POST | `Admin` | AJAX: download US + CA `{year}` |
-| `/admin/dashboard-data/delete` | POST | `Admin` | AJAX: delete frozen file `{year, region}` |
-| `/apple-touch-icon*` | GET | — | PWA: serves `apple-touch-icon.png` for Safari |
+| `/admin/dashboard-data` | GET | `Admin` | Data management |
+| `/admin/dashboard-data/download` | POST | `Admin` | AJAX: download region |
+| `/admin/dashboard-data/download-both` | POST | `Admin` | AJAX: download US + CA |
+| `/admin/dashboard-data/delete` | POST | `Admin` | AJAX: delete frozen file |
+| `/apple-touch-icon*` | GET | — | PWA icon for Safari |
 
 ---
 
@@ -1258,24 +1079,22 @@ Behind a reverse proxy with SSL termination, Flask sees `http://` from `request.
 
 | Issue | Cause | Fix |
 |---|---|---|
-| **AADSTS50011** — Redirect URI mismatch | `http://` sent but `https://` registered in Azure | Set `REDIRECT_URI_OVERRIDE` in `.env` to the exact registered URI |
-| **AADSTS50148** — PKCE mismatch | Wrong MSAL method used for token exchange | Ensure code uses `acquire_token_by_auth_code_flow()` (not `acquire_token_by_authorization_code()`) |
-| **403 Forbidden** | User not in the required Entra Security Group | Add user to the appropriate group in Azure AD, then have them log out and back in |
-| **No report cards visible on /sales** | GROUP_* env vars not set or incorrect Object IDs | Check `.env` — each GROUP_* must contain the Security Group's Object ID (GUID) |
-| **No department cards visible on /** | User has no Sales.*.View roles | Add user to at least one View security group |
-| **Admin gear icon not showing** | User not in Admin group | Add user to the `TWG-Portal-Admin` security group |
-| **Empty bookings dashboard** | SQL unreachable or no orders today | Check SQL Server connectivity in console logs. If no orders today, the "No bookings found" empty state is expected. |
-| **Empty executive dashboard** | No frozen file + SQL unreachable + cache expired | Use admin page to download the year, or check SQL connectivity |
-| **Dashboard slow first load** | No frozen file for that year — fetching ~400K rows from SQL | Use admin page to download historical years. First SQL fetch takes ~15-20 seconds, subsequent loads are instant from cache/disk. |
-| **Dashboard shows no data for past year** | Frozen file missing + cache expired + SQL Server unreachable | Download via admin page when SQL is accessible |
-| **Exchange rate shows 0.7200** | Both APIs blocked or unreachable | Allow outbound HTTPS to `api.frankfurter.app` and `open.er-api.com` |
-| **Charts not loading** | CDN blocked | Allow outbound HTTPS to `cdnjs.cloudflare.com` |
-| **Fonts not loading** | Google Fonts blocked | Allow outbound HTTPS to `fonts.googleapis.com` and `fonts.gstatic.com` |
-| **Theme flash on page load** | Missing synchronous theme script in `<head>` | Ensure the inline `<script>` that reads `localStorage('twg-theme')` is present before any CSS in every page's `<head>` |
-| **Export buttons not visible** | User has View role but not Export role | This is by design. Add user to the Export security group if they should be able to download. |
-| **Stale data after app restart** | FileSystemCache still has old data in `cache-data/` | Delete the `cache-data/` directory to force a full refresh on next startup |
-| **Config validation fails on startup** | Missing CLIENT_ID, CLIENT_SECRET, or AUTHORITY | Check `.env` file exists in the project root and contains all required values |
-| **"Cannot start: missing authentication configuration"** | `.env` not found or not loaded | Verify `.env` file path. On Windows, try renaming to `_env`. Check console for "Could not load .env" warning. |
+| **AADSTS50011** — Redirect URI mismatch | `http://` sent but `https://` registered | Set `REDIRECT_URI_OVERRIDE` in `.env` |
+| **AADSTS50148** — PKCE mismatch | Wrong MSAL method | Ensure `acquire_token_by_auth_code_flow()` is used |
+| **403 Forbidden** | User not in required Security Group | Add to group in Azure AD, re-login |
+| **No report cards on /sales** | GROUP_* env vars not set | Check `.env` Object IDs |
+| **Admin gear icon missing** | User not in Admin group | Add to `TWG-Portal-Admin` group |
+| **Empty bookings dashboard** | No orders today or SQL unreachable | Check logs and SQL connectivity |
+| **Bookings Summary shows 0 orders** | Stale cache from bug fix | Delete `cache-data/` and restart |
+| **Bookings Summary YoY not showing** | Prior year not downloaded | Download prior year via admin page |
+| **Bookings Summary YoY shows large drop on MTD** | Comparing partial month vs full prior month | This is expected — label says "vs March 2025 (full month)" |
+| **Dashboard slow first load** | No frozen file for that year | Download via admin page |
+| **Dashboard current year slow** | Bookings Summary hasn't run yet | Wait for 30-min refresh or restart |
+| **Auto-freeze taking long on first startup** | Freezing all completed months for first time | One-time cost (~15-20s), subsequent starts are 3-5s |
+| **Exchange rate shows 0.7200** | Both APIs unreachable | Allow outbound HTTPS to exchange rate APIs |
+| **Charts not loading** | CDN blocked | Allow `cdnjs.cloudflare.com` |
+| **Theme flash on page load** | Missing synchronous theme script | Ensure inline `<script>` is in `<head>` |
+| **Stale data after restart** | FileSystemCache has old data | Delete `cache-data/` directory |
 
 ---
 
@@ -1283,12 +1102,13 @@ Behind a reverse proxy with SSL termination, Flask sees `http://` from `request.
 
 | Module | Report | Status | Description |
 |---|---|---|---|
-| **Sales** | Executive Dashboard | ✅ Live | Year selector, Chart.js (monthly/territory/product line/salesman), top 50 customers, frozen data files, admin data management page, 3-tier data resolution |
-| **Sales** | Daily Bookings | ✅ Live | Territory/Salesman/Customer ranking tabs with podium, auto-refresh for TV/kiosk, CAD→USD conversion, Excel export (role-gated) |
-| **Sales** | Open Sales Orders | ✅ Live | Territory + salesman side-by-side rankings, released amount tracking, hourly refresh, CAD→USD, Excel export (role-gated) |
+| **Sales** | Executive Dashboard | ✅ Live | Year selector, Chart.js, frozen yearly files, admin data management, 3-tier resolution, cache sharing |
+| **Sales** | Bookings Summary | ✅ Live | MTD/QTD/YTD with YoY comparison, monthly frozen files, auto-freeze, dashboard cache sharing, prior year from yearly files |
+| **Sales** | Daily Bookings | ✅ Live | Territory/Salesman/Customer ranking tabs with podium, auto-refresh for TV/kiosk, CAD→USD, Excel export |
+| **Sales** | Open Sales Orders | ✅ Live | Territory + salesman rankings, released amount tracking, hourly refresh, CAD→USD, Excel export |
 | **Sales** | Shipments | 🔜 Planned | Daily shipments by warehouse |
 | **Sales** | Territory Performance | 🔜 Planned | Monthly trends with period comparison |
-| **Admin** | Dashboard Data | ✅ Live | Download/delete frozen historical data files, status view with file sizes and dates, portable across servers, gear icon in nav bar |
+| **Admin** | Dashboard Data | ✅ Live | Download/delete yearly frozen files, status view, portable across servers |
 | **Warehouse** | — | 🔜 Planned | Inventory levels, fulfillment tracking |
 | **Accounting** | — | 🔜 Planned | Invoices, payments, financial reporting |
 | **HR** | — | 🔜 Planned | Employee directory, attendance |
@@ -1297,27 +1117,27 @@ Behind a reverse proxy with SSL termination, Flask sees `http://` from `request.
 
 ## Dependencies
 
-All Python dependencies with pinned versions (from `requirements.txt`):
+**Python (from `requirements.txt`):**
 
 | Package | Version | Purpose |
 |---|---|---|
 | Flask | 3.0.0 | Web framework |
 | Waitress | 2.1.2 | Production WSGI server |
-| pyodbc | (latest) | SQL Server connectivity via ODBC |
-| msal | 1.26.0 | Microsoft Authentication Library for Entra ID SSO |
-| requests | 2.31.0 | HTTP client (used by MSAL internally) |
+| pyodbc | (latest) | SQL Server connectivity |
+| msal | 1.26.0 | Microsoft Authentication Library |
+| requests | 2.31.0 | HTTP client (used by MSAL) |
 | python-dotenv | 1.0.0 | `.env` file loading |
-| Flask-Caching | 2.1.0 | FileSystemCache for data snapshots |
+| Flask-Caching | 2.1.0 | FileSystemCache |
 | Flask-APScheduler | 1.13.1 | Background job scheduling |
-| openpyxl | 3.1.2 | Excel file generation with formatting |
+| openpyxl | 3.1.2 | Excel file generation |
 
-**Client-side CDN dependencies:**
+**Client-side CDN:**
 
 | Library | Version | CDN | Used On |
 |---|---|---|---|
-| Chart.js | 4.4.1 | cdnjs.cloudflare.com | Executive dashboard only |
+| Chart.js | 4.4.1 | cdnjs.cloudflare.com | Executive dashboard |
 | DM Sans | — | fonts.googleapis.com | All pages (UI font) |
-| JetBrains Mono | — | fonts.googleapis.com | All pages (numbers/code font) |
+| JetBrains Mono | — | fonts.googleapis.com | All pages (numbers/code) |
 
 ---
 
