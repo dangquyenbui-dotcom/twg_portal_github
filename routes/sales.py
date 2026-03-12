@@ -670,8 +670,13 @@ def my_tracker():
 
     # Fetch data if we have a salesman
     data = None
+    ly_by_day = []
     if selected_salesman and not not_configured:
         data = get_tracker_data(selected_salesman, selected_year, selected_month, region=selected_region)
+        # Last year same month for cumulative comparison
+        ly_year = selected_year - 1
+        ly_data = get_tracker_data(selected_salesman, ly_year, selected_month, region=selected_region)
+        ly_by_day = ly_data.get('by_day', []) if ly_data else []
 
     can_export = user_has_role(user, 'Sales.Shipments.Export')
 
@@ -695,6 +700,7 @@ def my_tracker():
         available_months=available_months,
         month_label=month_label,
         data=data,
+        ly_by_day=ly_by_day,
         not_configured=not_configured,
         can_export=can_export,
         currency_label=currency_label,

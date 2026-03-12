@@ -166,6 +166,16 @@
 
 .chart-wrap.donut { height: 400px; }
 .chart-wrap.combo { height: 320px; }
+.chart-wrap.cumulative { height: 320px; }
+.chart-wrap.customers { height: 360px; }
+
+/* Second chart row — equal columns */
+.chart-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 28px;
+}
 
 /* ── Export button ── */
 .export-row {
@@ -258,13 +268,15 @@
     .tracker-header { flex-direction: column; align-items: flex-start; }
     .kpi-row { grid-template-columns: 1fr; }
     .chart-grid { grid-template-columns: 1fr; }
+    .chart-grid-2 { grid-template-columns: 1fr; }
     .kpi-value { font-size: 26px; }
 }
 
 @media (max-width: 480px) {
     .filter-row { flex-direction: column; align-items: stretch; }
     .filter-select { min-width: 100%; }
-    .chart-wrap.donut, .chart-wrap.combo { height: 260px; }
+    .chart-wrap.donut, .chart-wrap.combo,
+    .chart-wrap.cumulative, .chart-wrap.customers { height: 260px; }
 }
 {% endblock %}
 
@@ -376,6 +388,22 @@
         </div>
     </div>
 </div>
+
+{# ── Row 2: Cumulative MTD vs LY + Top 10 Customers ── #}
+<div class="chart-grid-2 fade-in stagger-4">
+    <div class="chart-card">
+        <div class="chart-title">Cumulative MTD vs Same Month Last Year</div>
+        <div class="chart-wrap cumulative">
+            <canvas id="cumulativeChart"></canvas>
+        </div>
+    </div>
+    <div class="chart-card">
+        <div class="chart-title">Top 10 Customers — MTD</div>
+        <div class="chart-wrap customers">
+            <canvas id="customersChart"></canvas>
+        </div>
+    </div>
+</div>
 {% else %}
 <div class="no-data fade-in stagger-3">
     <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -401,6 +429,9 @@
     /* ── Data from Flask ── */
     var productData = {{ data.by_product_line | tojson }};
     var dayData = {{ data.by_day | tojson }};
+    var lyDayData = {{ ly_by_day | tojson }};
+    var topCustomers = {{ data.top_customers | tojson }};
+    var lyYear = {{ selected_year - 1 }};
 
     /* ── Theme colors ── */
     function getColors() {
@@ -489,10 +520,15 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 cutout: '50%',
-                layout: { padding: { top: 36, bottom: 8, left: 36, right: 36 } },
+                layout: {
+                    padding: window.innerWidth < 768
+                        ? { top: 4, bottom: 4, left: 4, right: 4 }
+                        : { top: 36, bottom: 8, left: 36, right: 36 }
+                },
                 plugins: {
                     datalabels: {
                         display: function(ctx) {
+                            if (window.innerWidth < 768) return false;
                             var pct = total > 0 ? (ctx.dataset.data[ctx.dataIndex] / total * 100) : 0;
                             return pct >= 3;
                         },
@@ -685,9 +721,205 @@
         });
     }
 
+    /* ── Cumulative MTD vs Last Year ── */
+    var cumulativeChart = null;
+
+    function renderCumulative() {
+        var c = getColors();
+        var ctx = document.getElementById('cumulativeChart');
+        if (!ctx) return;
+
+        if (cumulativeChart) cumulativeChart.destroy();
+
+        /* Build cumulative arrays from daily sales */
+        var cumTY = [];
+        var runTY = 0;
+        for (var i = 0; i < dayData.length; i++) {
+            runTY += dayData[i].sales;
+            cumTY.push(Math.round(runTY));
+        }
+
+        var cumLY = [];
+        var runLY = 0;
+        for (var j = 0; j < lyDayData.length; j++) {
+            runLY += lyDayData[j].sales;
+            cumLY.push(Math.round(runLY));
+        }
+
+        /* X-axis labels = day numbers (use the longer of the two) */
+        var maxDays = Math.max(dayData.length, lyDayData.length);
+        var labels = [];
+        for (var d = 1; d <= maxDays; d++) labels.push(d);
+
+        cumulativeChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: '{{ selected_year }}',
+                        data: cumTY,
+                        borderColor: c.green,
+                        backgroundColor: c.green + '18',
+                        borderWidth: 2.5,
+                        pointRadius: 2,
+                        pointBackgroundColor: c.green,
+                        tension: 0.2,
+                        fill: true,
+                        datalabels: { display: false }
+                    },
+                    {
+                        label: '' + lyYear,
+                        data: cumLY,
+                        borderColor: c.text,
+                        borderDash: [6, 3],
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.2,
+                        fill: false,
+                        datalabels: { display: false }
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 10, boxHeight: 10, padding: 14,
+                            font: { size: 11, family: "'DM Sans', sans-serif" },
+                            usePointStyle: true, pointStyle: 'circle', color: c.text
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: c.bg, titleColor: c.text, bodyColor: c.text,
+                        borderColor: c.grid, borderWidth: 1, padding: 10,
+                        bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                        callbacks: {
+                            title: function(items) { return 'Day ' + items[0].label; },
+                            label: function(ctx) { return ' ' + ctx.dataset.label + ': ' + fmt(ctx.raw); }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        title: { display: true, text: 'Day of Month', color: c.text, font: { size: 11 } },
+                        ticks: {
+                            font: { size: 10, family: "'DM Sans', sans-serif" },
+                            color: c.text, maxTicksLimit: maxDays
+                        }
+                    },
+                    y: {
+                        grid: { color: c.grid },
+                        ticks: {
+                            callback: function(v) { return fmtShort(v); },
+                            font: { size: 11, family: "'JetBrains Mono', monospace" },
+                            color: c.text
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /* ── Top 10 Customers horizontal bar ── */
+    var customersChart = null;
+
+    function renderCustomers() {
+        var c = getColors();
+        var ctx = document.getElementById('customersChart');
+        if (!ctx) return;
+
+        if (customersChart) customersChart.destroy();
+
+        if (!topCustomers || topCustomers.length === 0) {
+            ctx.style.display = 'none';
+            return;
+        }
+
+        /* Reverse so largest bar is at the top */
+        var sorted = topCustomers.slice().reverse();
+        var labels = sorted.map(function(d) {
+            var name = d.name.length > 22 ? d.name.substring(0, 20) + '...' : d.name;
+            return name;
+        });
+        var amounts = sorted.map(function(d) { return d.amount; });
+        var marginPcts = sorted.map(function(d) { return d.margin_pct; });
+
+        customersChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Sales',
+                    data: amounts,
+                    backgroundColor: amounts.map(function(v) { return v >= 0 ? c.green + 'CC' : c.red + 'CC'; }),
+                    borderRadius: 4,
+                    maxBarThickness: 28,
+                    datalabels: {
+                        display: true,
+                        anchor: 'end',
+                        align: 'end',
+                        offset: 2,
+                        color: c.text,
+                        font: { size: 10, weight: '600', family: "'JetBrains Mono', monospace" },
+                        formatter: function(v, ctx) {
+                            var mpct = marginPcts[ctx.dataIndex];
+                            return fmtShort(v) + '  (' + mpct + '%)';
+                        }
+                    }
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                layout: { padding: { right: 16 } },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: c.bg, titleColor: c.text, bodyColor: c.text,
+                        borderColor: c.grid, borderWidth: 1, padding: 10,
+                        bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                        callbacks: {
+                            label: function(ctx) {
+                                var mpct = marginPcts[ctx.dataIndex];
+                                return ' Sales: ' + fmt(ctx.raw) + '  |  Margin: ' + mpct + '%';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: c.grid },
+                        ticks: {
+                            callback: function(v) { return fmtShort(v); },
+                            font: { size: 10, family: "'JetBrains Mono', monospace" },
+                            color: c.text
+                        }
+                    },
+                    y: {
+                        grid: { display: false },
+                        ticks: {
+                            font: { size: 11, family: "'DM Sans', sans-serif" },
+                            color: c.text
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     function renderAll() {
         renderDonut();
         renderCombo();
+        renderCumulative();
+        renderCustomers();
     }
 
     /* ── Theme observer ── */

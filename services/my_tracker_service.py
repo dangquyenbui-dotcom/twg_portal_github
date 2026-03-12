@@ -196,6 +196,7 @@ def _aggregate_tracker(rows, year, month):
 
     product_totals = defaultdict(lambda: {'amount': 0.0, 'margin': 0.0})
     day_totals = defaultdict(lambda: {'sales': 0.0, 'margin': 0.0})
+    cust_totals = defaultdict(lambda: {'name': '', 'amount': 0.0, 'margin': 0.0})
 
     for row in rows:
         amt = row['amount']
@@ -216,6 +217,13 @@ def _aggregate_tracker(rows, year, month):
             day = row['invdte'].day if hasattr(row['invdte'], 'day') else int(str(row['invdte']).split('-')[2][:2])
             day_totals[day]['sales'] += amt
             day_totals[day]['margin'] += mgn
+
+        # Customer breakdown
+        cno = row['custno']
+        if cno:
+            cust_totals[cno]['name'] = row['cust_name']
+            cust_totals[cno]['amount'] += amt
+            cust_totals[cno]['margin'] += mgn
 
     # Margin %
     margin_pct = (total_margin / total_sales * 100) if total_sales != 0 else 0.0
@@ -252,6 +260,18 @@ def _aggregate_tracker(rows, year, month):
             'margin_pct': round(day_margin_pct, 1),
         })
 
+    # Top 10 customers by sales amount
+    top_customers = []
+    for cno, ct in sorted(cust_totals.items(), key=lambda x: abs(x[1]['amount']), reverse=True)[:10]:
+        mgn_pct = (ct['margin'] / ct['amount'] * 100) if ct['amount'] != 0 else 0.0
+        top_customers.append({
+            'custno': cno,
+            'name': ct['name'] or cno,
+            'amount': _financial_round(ct['amount']),
+            'margin': _financial_round(ct['margin']),
+            'margin_pct': round(mgn_pct, 1),
+        })
+
     return {
         'total_sales': _financial_round(total_sales),
         'total_margin': _financial_round(total_margin),
@@ -260,6 +280,7 @@ def _aggregate_tracker(rows, year, month):
         'total_invoices': len(invoices),
         'by_product_line': by_product_line,
         'by_day': by_day,
+        'top_customers': top_customers,
     }
 
 
