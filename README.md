@@ -2,7 +2,7 @@
 
 A secure, enterprise-grade internal portal for **The Wheel Group**, built with Flask and integrated with Microsoft Entra ID (SSO) for authentication and Microsoft SQL Server for real-time ERP data.
 
-The portal serves as a centralized dashboard hub for multiple departments — starting with **Sales** — providing live KPIs, territory/salesman/customer ranking tabs with podium displays, an interactive executive dashboard with Chart.js visualizations and yearly data from dual SQL tables (sotran + soytrn for bookings, artran + arytrn for shipments), bookings and shipments summary reports with MTD/QTD/YTD horizons and year-over-year comparison indicators, frozen offline data files for instant historical loading at both yearly and monthly granularity, an admin page with tabbed data management and background download tasks, real-time CAD→USD currency conversion, formatted Excel data exports, dark/light theme switching with OLED support, and auto-refreshing displays optimized for desktop monitors, tablets, iPhones/iPads, and unattended TV/kiosk screens.
+The portal serves as a centralized dashboard hub for multiple departments — starting with **Sales** — providing live KPIs, territory/salesman/customer ranking tabs with podium displays, an interactive executive dashboard with Chart.js visualizations and yearly data from dual SQL tables (sotran + soytrn for bookings, artran + arytrn for shipments), bookings and shipments summary reports with MTD/QTD/YTD horizons and year-over-year comparison indicators, a per-salesman My Sales Tracker with product line donut charts, daily margin trend combos, cumulative MTD vs last year comparison, and top 10 customer bar charts, frozen offline data files for instant historical loading at both yearly and monthly granularity, an admin page with tabbed data management and background download tasks, real-time CAD→USD currency conversion, formatted Excel data exports, dark/light theme switching with OLED support, and auto-refreshing displays optimized for desktop monitors, tablets, iPhones/iPads, and unattended TV/kiosk screens.
 
 ---
 
@@ -24,6 +24,7 @@ The portal serves as a centralized dashboard hub for multiple departments — st
   - [Open Sales Orders Dashboard](#open-sales-orders-dashboard)
   - [Bookings Summary (MTD / QTD / YTD)](#bookings-summary-mtd--qtd--ytd)
   - [Shipments (Consolidated)](#shipments-consolidated)
+  - [My Sales Tracker](#my-sales-tracker)
   - [Executive Dashboard](#executive-dashboard)
 - [Bookings Summary — Data Layer](#bookings-summary--data-layer)
   - [Monthly Frozen File Strategy](#monthly-frozen-file-strategy)
@@ -31,6 +32,7 @@ The portal serves as a centralized dashboard hub for multiple departments — st
   - [Year-over-Year Comparison Logic](#year-over-year-comparison-logic)
   - [Dashboard Cache Sharing](#dashboard-cache-sharing)
 - [Shipments Summary — Data Layer](#shipments-summary--data-layer)
+- [My Sales Tracker — Data Layer](#my-sales-tracker--data-layer)
 - [Executive Dashboard — Data Layer](#executive-dashboard--data-layer)
   - [Dual-Table Strategy (Bookings: sotran + soytrn)](#dual-table-strategy-bookings-sotran--soytrn)
   - [Frozen Data Files](#frozen-data-files)
@@ -67,9 +69,12 @@ The application follows a **Decoupled Caching Architecture** with a **multi-tier
                                             │     shipments_summary_data/*.json.gz (monthly)  │
                                             │  2. In-memory cache                            │
                                             │     (Flask-Caching / FileSystemCache)          │
+                                            │  2b. On-demand per-salesman cache (60 min)     │
+                                            │      My Sales Tracker (tracker_data_* keys)    │
                                             │  3. SQL Server (fallback)                      │
                                             │     Bookings: soytrn + sotran                  │
                                             │     Shipments: arytrn + artran                 │
+                                            │     Tracker:  arytrn + artran (per-salesman)   │
                                             └──────────┬─────────────────────────────────────┘
                                                        │
                                     ┌──────────────────┴──────────────────────────┐
@@ -105,7 +110,7 @@ The application follows a **Decoupled Caching Architecture** with a **multi-tier
 
 **How it works:**
 
-1. **Background Workers (APScheduler)** — Six independent scheduled jobs:
+1. **Background Workers (APScheduler)** — Six independent scheduled jobs (plus on-demand tracker caching):
    - **Bookings + Shipments refresh** — Every **10 minutes**. Queries today's bookings from sotran and today's shipments from artran for both US (PRO05) and Canada (PRO06), fetches the live CAD→USD exchange rate, and caches all results. Also runs once immediately on app startup.
    - **Open orders refresh** — Every **60 minutes**. Queries all currently open sales order lines from sotran.
    - **Bookings Summary refresh** — Every **30 minutes**. Reads monthly frozen files from disk for completed months, queries only the current month from sotran (2 SQL queries total: US + CA), assembles MTD/QTD/YTD horizons with year-over-year comparison from dashboard yearly files, and populates the Executive Dashboard cache as a side effect.
@@ -116,9 +121,10 @@ The application follows a **Decoupled Caching Architecture** with a **multi-tier
    - **Bookings monthly files** (`bookings_summary_data/*.json.gz`) — For the bookings summary. Completed months in the current year are auto-frozen when a new month starts. No admin action needed. Also loads in <1ms.
    - **Shipments yearly files** (`shipments_dashboard_data/*.json.gz`) — For the shipments summary YoY comparison. Downloaded by an admin via the admin page (Shipments tab).
    - **Shipments monthly files** (`shipments_summary_data/*.json.gz`) — For the shipments summary. Completed months auto-frozen on new month start.
-3. **Cache Layer (Flask-Caching)** — Stores the latest data snapshots using `FileSystemCache`. Survives brief app restarts. Each cache entry includes a `last_updated` timestamp.
-4. **Web App (Flask)** — Route handlers **never** query SQL directly for daily data — they read from cache. The executive dashboard reads from frozen files first, then cache, then SQL as a last resort. Summaries read from monthly frozen files + live current month.
-5. **Auto-Refresh (Client-Side)** — The daily bookings page auto-refreshes every 10 minutes via `<meta http-equiv="refresh" content="600">` with a visible countdown timer for TV/kiosk displays. Other reports do not auto-refresh.
+3. **Cache Layer (Flask-Caching)** — Stores the latest data snapshots using `FileSystemCache`. Survives brief app restarts. Each cache entry includes a `last_updated` or `fetched_at` timestamp.
+4. **On-Demand Tracker Caching** — My Sales Tracker data is fetched per-salesman on first visit and cached for 60 minutes (`tracker_data_{region}_{salesman}_{year}_{month}`). No scheduler job — SQL queries run only when a user visits their tracker page.
+5. **Web App (Flask)** — Route handlers **never** query SQL directly for daily data — they read from cache. The executive dashboard reads from frozen files first, then cache, then SQL as a last resort. Summaries read from monthly frozen files + live current month. The My Sales Tracker queries SQL on-demand (first visit) then serves from cache.
+6. **Auto-Refresh (Client-Side)** — The daily bookings page auto-refreshes every 10 minutes via `<meta http-equiv="refresh" content="600">` with a visible countdown timer for TV/kiosk displays. Other reports do not auto-refresh.
 
 ---
 
@@ -128,14 +134,15 @@ The application follows a **Decoupled Caching Architecture** with a **multi-tier
 |------------------|---------------------------------------------------|
 | **Backend**      | Python 3.12+, Flask 3.0                           |
 | **Auth (SSO)**   | Microsoft Entra ID (Azure AD), MSAL for Python    |
-| **RBAC**         | Entra ID Security Groups, custom `@require_role` decorator, per-report View/Export permissions, role hierarchy |
-| **Database**     | Microsoft SQL Server (US: PRO05, Canada: PRO06), pyodbc. Bookings: sotran (current month) + soytrn (historical). Shipments: artran (current month) + arytrn (historical) |
+| **RBAC**         | Entra ID Security Groups, custom `@require_role` decorator, per-report View/Export permissions, role hierarchy, EmployeeId-based salesman data isolation |
+| **Database**     | Microsoft SQL Server (US: PRO05, Canada: PRO06), pyodbc. Bookings: sotran (current month) + soytrn (historical). Shipments: artran (current month) + arytrn (historical). Tracker: artran/arytrn per-salesman with margin analysis |
 | **Caching**      | Flask-Caching (FileSystemCache), persisted to `cache-data/` directory |
 | **Frozen Data**  | Bookings yearly: `bookings_dashboard_data/`, monthly: `bookings_summary_data/`. Shipments yearly: `shipments_dashboard_data/`, monthly: `shipments_summary_data/`. All gzip-compressed JSON, portable across servers. |
 | **Scheduler**    | Flask-APScheduler (background data refresh), 6 independent jobs |
 | **Exchange Rate**| frankfurter.app (primary), open.er-api.com (fallback), 0.72 hardcoded fallback |
 | **Frontend**     | Jinja2 templates, vanilla CSS/JS, CSS custom properties for theming |
-| **Charts**       | Chart.js 4.4 (loaded from cdnjs.cloudflare.com CDN) — executive dashboard only |
+| **Charts**       | Chart.js 4.4 + chartjs-plugin-datalabels (loaded from cdnjs.cloudflare.com CDN) — executive dashboard + My Sales Tracker |
+| **Country Flags**| flagcdn.com CDN — flag images for region selector (cross-platform, avoids Windows emoji rendering issues) |
 | **Theme**        | Dark/Light mode via `data-theme` HTML attribute + `localStorage` persistence, OLED-black dark mode |
 | **Fonts**        | DM Sans (UI), JetBrains Mono (numbers/code), loaded from Google Fonts |
 | **Icons**        | Inline SVG (Heroicons style) — no external icon library dependency |
@@ -158,7 +165,8 @@ twg_portal/
 │                             #   PWA apple-touch-icon routes
 │
 ├── config.py                 # All configuration: auth, DB, cache, scheduler intervals,
-│                             #   GROUP_ROLE_MAP builder from env vars (12 security groups),
+│                             #   GROUP_ROLE_MAP builder from env vars (14 security groups),
+│                             #   salesman code note (EmployeeId from MS Graph),
 │                             #   connection string builder, config validation with clear errors,
 │                             #   .env loader with _env fallback
 │
@@ -197,6 +205,8 @@ twg_portal/
 │   │                         #   - Shipments (/sales/shipments) — consolidated: daily pulse + MTD/QTD/YTD
 │   │                         #   - Shipments export (3 routes: daily all/US/CA, 3 per horizon)
 │   │                         #   - Shipments-summary redirect → /sales/shipments
+│   │                         #   - My Sales Tracker (/sales/my-tracker) — per-salesman monthly
+│   │                         #   - My Sales Tracker export (/sales/my-tracker/export)
 │   │                         #   - Executive dashboard (/sales/dashboard?year=) — Chart.js
 │   │                         #   - Dashboard refresh (/sales/dashboard/refresh) — AJAX cache invalidation
 │   │                         #   - Dashboard export (3 routes: all, US, CA) — from frozen files
@@ -216,7 +226,9 @@ twg_portal/
 │   │
 │   ├── constants.py          # Shared constants: TERRITORY_MAP_US (17 mappings),
 │   │                         #   TERRITORY_MAP_CA (3 mappings), BOOKINGS_EXCLUDED_CUSTOMERS (7),
-│   │                         #   map_territory(), resolve_territory_code()
+│   │                         #   TRACKER_EXCLUDED_CUSTOMERS (1 — test accounts only),
+│   │                         #   PRODUCT_LINE_MAP (50+ plinid → 8 categories),
+│   │                         #   map_territory(), resolve_territory_code(), map_product_line()
 │   │
 │   ├── db_connection.py      # pyodbc connection factory with 30s timeout
 │   │
@@ -282,6 +294,17 @@ twg_portal/
 │   │                         #   - download_year_data() — admin download with raw rows + summary
 │   │                         #   - get_frozen_status() — admin page status
 │   │
+│   ├── my_tracker_service.py # My Sales Tracker data layer (per-salesman monthly):
+│   │                         #   - get_salesmen_list() — distinct salesman codes for month (cached 15 min)
+│   │                         #   - get_tracker_data() — fetch + aggregate per-salesman data (cached 60 min)
+│   │                         #   - _fetch_region() — raw rows from artran/arytrn with margin calc
+│   │                         #   - _aggregate_tracker() — KPIs, product line breakdown (with map_product_line),
+│   │                         #     daily trend, top 10 customers
+│   │                         #   - fetch_raw_tracker_export() — 26-column raw data for Excel export
+│   │                         #   - get_available_months() — month selector (3 years back)
+│   │                         #   - _financial_round() — rounds away from zero (handles credit memos)
+│   │                         #   - On-demand SQL: queries only when user visits, no scheduler job
+│   │
 │   ├── dashboard_service.py  # Legacy dashboard aggregation service (retained for reference —
 │   │                         #   replaced by bookings_dashboard_data_service.py). NOT used by active routes.
 │   │
@@ -322,13 +345,18 @@ twg_portal/
 │   │
 │   ├── sales/
 │   │   ├── index.html        # Sales report menu (Dashboard, Bookings Summary, Daily Bookings,
-│   │   │                     #   Shipments, Open Orders + coming soon cards)
+│   │   │                     #   Shipments, My Sales Tracker, Open Orders + coming soon cards)
 │   │   ├── bookings.html     # Daily Bookings: auto-refresh, countdown, podium, ranking tabs
 │   │   ├── bookings_summary.html  # Bookings Summary: MTD/QTD/YTD tabs, YoY indicators,
 │   │   │                     #   podium rankings, region split bar, export per horizon
 │   │   ├── shipments.html    # Consolidated Shipments: today's pulse (compact stat cards)
 │   │   │                     #   + MTD/QTD/YTD tabs with YoY indicators, podiums, rankings
 │   │   ├── open_orders.html  # Open Orders: released tracking, side-by-side rankings
+│   │   ├── my_tracker.html   # My Sales Tracker: per-salesman monthly with Chart.js
+│   │   │                     #   4 charts (donut, combo, cumulative MTD vs LY, top 10 bar),
+│   │   │                     #   KPI cards with negative value handling, product line table,
+│   │   │                     #   month/region/salesman selectors, flagcdn.com country flags,
+│   │   │                     #   responsive mobile layout (480px/768px breakpoints)
 │   │   └── dashboard.html    # Executive Dashboard: Chart.js, year selector, KPIs, top 50 customers
 │   │
 │   └── admin/
@@ -460,6 +488,8 @@ Export roles do NOT grant view access on their own — they only enable download
 | `TWG-Portal-Sales-Shipments-Export` | `GROUP_SALES_SHIPMENTS_EXPORT` | `Sales.Shipments.Export` | Download Shipments Excel files (daily + MTD/QTD/YTD) |
 | `TWG-Portal-Sales-ShipmentsSummary-View` | `GROUP_SALES_SHIPMENTSSUMMARY_VIEW` | `Sales.ShipmentsSummary.View` | Legacy — not actively checked (consolidated into Sales.Shipments.View) |
 | `TWG-Portal-Sales-ShipmentsSummary-Export` | `GROUP_SALES_SHIPMENTSSUMMARY_EXPORT` | `Sales.ShipmentsSummary.Export` | Legacy — not actively checked (consolidated into Sales.Shipments.Export) |
+| `TWG-Portal-Sales-MST-View` | `GROUP_SALES_MST_VIEW` | `Sales.MST.View` | View My Sales Tracker (per-salesman monthly) |
+| `TWG-Portal-Sales-MST-Export` | `GROUP_SALES_MST_EXPORT` | `Sales.MST.Export` | Download My Sales Tracker Excel files |
 | `TWG-Portal-Sales-OpenOrders-View` | `GROUP_SALES_OPENORDERS_VIEW` | `Sales.OpenOrders.View` | View Open Orders dashboard |
 | `TWG-Portal-Sales-OpenOrders-Export` | `GROUP_SALES_OPENORDERS_EXPORT` | `Sales.OpenOrders.Export` | Download Open Orders Excel files |
 
@@ -471,6 +501,7 @@ ROLE_HIERARCHY = {
         'Sales.Bookings.View',
         'Sales.BookingsSummary.View',
         'Sales.Shipments.View',
+        'Sales.MST.View',
         'Sales.OpenOrders.View',
         'Sales.Dashboard.View',
     ],
@@ -507,6 +538,8 @@ ROLE_HIERARCHY = {
 | `/sales/shipments/export*` | `@require_role('Sales.Shipments.Export')` | 3 Excel routes for today's data |
 | `/sales/shipments/export/<horizon>*` | `@require_role('Sales.Shipments.Export')` | 3 Excel routes per horizon (MTD/QTD/YTD) |
 | `/sales/shipments-summary` | (redirect) | 302 → `/sales/shipments` |
+| `/sales/my-tracker` | `@require_role('Sales.MST.View')` | Per-salesman monthly tracker (EmployeeId-locked) |
+| `/sales/my-tracker/export` | `@require_role('Sales.MST.Export')` | Excel download (salesman + month + region) |
 | `/sales/open-orders` | `@require_role('Sales.OpenOrders.View')` | Open orders dashboard |
 | `/sales/open-orders/export/*` | `@require_role('Sales.OpenOrders.Export')` | 3 Excel download routes |
 | `/admin/dashboard-data` | `@require_role('Admin')` | Tabbed data management (Bookings + Shipments) |
@@ -553,7 +586,7 @@ The ERP uses two parallel table pairs — one for bookings (sales orders) and on
 | Table Pair | Current Month | Historical | Used By |
 |------------|---------------|------------|---------|
 | **Bookings:** `sotran` / `soytrn` | `sotran` holds live order lines | `soytrn` holds completed months | Daily Bookings, Open Orders, Bookings Summary, Executive Dashboard |
-| **Shipments:** `artran` / `arytrn` | `artran` holds live invoice lines | `arytrn` holds completed months | Daily Shipments, Shipments Summary |
+| **Shipments:** `artran` / `arytrn` | `artran` holds live invoice lines | `arytrn` holds completed months | Daily Shipments, Shipments Summary, My Sales Tracker |
 
 Both table pairs follow the same pattern: the ERP moves data from the current table to the history table when a month closes.
 
@@ -587,9 +620,25 @@ Both table pairs follow the same pattern: the ERP moves data from the current ta
 | `qtyshp` | Quantity shipped |
 | `invdte` | Invoice date |
 | `salession` | Salesman code |
-| `artype` | AR type (C=credit memo — excluded) |
+| `artype` | AR type (C=credit memo — excluded by daily shipments/summary, included by My Sales Tracker) |
 | `currhist` | Currency/history flag (X=excluded) |
 | `terr` | Territory code (from artran directly — no somast join) |
+
+### Key Columns — My Sales Tracker (artran / arytrn)
+
+The tracker reuses the shipments tables but with different filtering and additional margin analysis:
+
+| Column | Description |
+|--------|-------------|
+| `extprice` | Invoice line amount (used as sales amount) |
+| `cost` | Unit cost per line item |
+| `qtyshp` | Quantity shipped |
+| `invdte` | Invoice date (determines which month) |
+| `salesmn` | Salesman code (primary filter — each user sees only their code) |
+| `plinid` | Product line code (via `icitem` join, mapped to display category) |
+| `custno` | Customer number (for top 10 ranking) |
+
+**Margin:** `extprice - (cost × qtyshp)` per line item — computed in Python, not SQL.
 
 ### SQL Server Connection
 
@@ -650,9 +699,11 @@ Territory codes are mapped to display names in `services/constants.py`:
 
 ### Excluded Data
 
-**Excluded Customers** (applied to all reports): `W1VAN`, `W1TOR`, `W1MON`, `MISC`, `TWGMARKET`, `EMP-US`, `TEST123`
+**Excluded Customers — Bookings / Open Orders / Shipments Summary:** `W1VAN`, `W1TOR`, `W1MON`, `MISC`, `TWGMARKET`, `EMP-US`, `TEST123` (`BOOKINGS_EXCLUDED_CUSTOMERS` in constants.py)
 
-**Excluded Product Lines:** `TAX` — filtered in Python.
+**Excluded Customers — My Sales Tracker:** `TEST123` only (`TRACKER_EXCLUDED_CUSTOMERS` in constants.py). Warehouse customers (W1VAN, W1TOR, etc.) are valid shipments for per-salesman tracking.
+
+**Product Line Mapping:** Raw `plinid` codes are mapped to 8 display categories via `PRODUCT_LINE_MAP` in constants.py. TAX, FRT, DEFECT, XMC roll into MISCELLANEOUS. The tracker does NOT exclude TAX lines — they are legitimate sales charges included in the ERP data.
 
 **Bookings Filters (SQL WHERE):** `currhist <> 'X'`, `sostat NOT IN ('V', 'X')`, `sotype NOT IN ('B', 'R')`, `ordate = CAST(GETDATE() AS DATE)` (today only)
 
@@ -661,6 +712,8 @@ Territory codes are mapped to display names in `services/constants.py`:
 **Bookings Summary / Dashboard Filters (SQL WHERE):** Same as bookings but without the date filter (uses year/month range)
 
 **Shipments Filters (SQL WHERE):** `artype <> 'C'` (excludes credit memos), `currhist <> 'X'`, standard excluded customers
+
+**My Sales Tracker Filters (SQL WHERE):** `salesmn = ?`, `invdte BETWEEN ? AND ?`, `currhist <> 'X'`. No `artype` filter — credit memos (artype='C') are included for accurate net sales and margin analysis.
 
 ### Scheduler Strategy (Six Independent Jobs)
 
@@ -723,6 +776,15 @@ Territory codes are mapped to display names in `services/constants.py`:
 | `shipments_summary_ytd_prior` | `dict` | 35 min | YTD prior year data |
 | `shipments_summary_last_updated` | `datetime` | 35 min | Last summary refresh timestamp |
 
+**My Sales Tracker cache keys (defined in `my_tracker_service.py`):**
+
+| Key Pattern | Type | TTL | Description |
+|---|---|---|---|
+| `tracker_salesmen_{region}_{year}_{month}` | `list[str]` | 15 min | Distinct salesman codes with shipments in the month |
+| `tracker_data_{region}_{salesman}_{year}_{month}` | `dict` | 60 min | Per-salesman aggregated data: KPIs, product lines, daily trend, top customers. Includes `fetched_at` timestamp. |
+
+The tracker uses **on-demand caching** — no APScheduler job. SQL is queried only when a user visits their tracker page (or an admin browses to a salesman). Subsequent visits within the TTL serve from cache. Stale entries missing `fetched_at` (from pre-caching code) are treated as cache misses and re-fetched.
+
 **Dashboard cache keys (defined in `bookings_dashboard_data_service.py`):**
 
 | Key Pattern | Type | TTL | Description |
@@ -775,7 +837,7 @@ Card-based grid showing available departments. Sales is live with a green "Live"
 
 ### Sales Report Menu (`/sales`)
 
-Cards for Dashboard, Bookings Summary, Daily Bookings, Shipments, and Open Orders. Each card is conditionally rendered based on the user's View role. Each shows badges indicating available features: **"Live"** (green), **"Export"** (blue, if user has Export role), **"View Only"** (gray, if no Export role). Coming Soon cards (Territory Performance) shown to everyone as disabled.
+Cards for Dashboard, Bookings Summary, Daily Bookings, Shipments, My Sales Tracker, and Open Orders. Each card is conditionally rendered based on the user's View role. Each shows badges indicating available features: **"Live"** (green), **"Export"** (blue, if user has Export role), **"View Only"** (gray, if no Export role). My Sales Tracker has its own section with a dedicated card. Coming Soon cards (Territory Performance) shown to everyone as disabled.
 
 ### Daily Bookings Dashboard
 
@@ -841,6 +903,44 @@ The shipments page is a **single consolidated view** combining today's data with
 - Region split mini bar (US $ | CA $)
 - 3 ranking tabs: Territory / Salesman / Customer with podium + table
 - Export buttons per horizon, gated by `Sales.Shipments.Export` role
+
+### My Sales Tracker
+
+**Route:** `/sales/my-tracker` — **Role:** `Sales.MST.View`
+**Data source:** `artran` (current month) / `arytrn` (historical months) — on-demand SQL with 60-minute cache per salesman
+**Export:** `/sales/my-tracker/export` — **Role:** `Sales.MST.Export`
+
+**Purpose:** Per-salesman monthly performance tracker with margin analysis. Each salesman sees only their own data based on their EmployeeId (set in Entra ID → User → Job Information → Employee ID). Admins can browse all salesmen via a dropdown selector. Supports US and CA regions independently with native currency display (USD or CAD).
+
+**Selectors (top bar):**
+- **Month selector** — Goes back 3 years from current month
+- **Region selector** — US / CA with country flag image from flagcdn.com CDN
+- **Salesman selector** (Admin only) — Dropdown of all salesmen with shipments in the selected month
+
+**KPI cards (4):**
+- Total Sales (with margin amount and margin %)
+- Total Margin (standalone)
+- Invoices (count of distinct invoice numbers)
+- Units (total quantity shipped)
+- Negative values display in red with red card border (handles credit memo months)
+
+**Charts (4, all Chart.js with chartjs-plugin-datalabels):**
+1. **Product line donut** — Sales breakdown by category (WHEEL, TIRE, ACCE, BA4X4, TPMS, TS, MISCELLANEOUS). Filters to positive-only amounts (donut chart cannot render negatives). Shows note if credit categories were excluded.
+2. **Daily combo chart** — Bar = daily sales amount, Line = margin %. Dynamic y-axis min (extends below zero when negative margins exist). All days of month shown on x-axis.
+3. **Cumulative MTD vs Last Year** — Area chart comparing running total of current month vs same month last year. Shaded fill areas for visual comparison.
+4. **Top 10 customers** — Horizontal bar chart by sales amount with data labels.
+
+**Product line table:** Below the donut chart — lists each product line category with amount, margin, and percentage of total. Sorted by absolute amount descending.
+
+**Top customers table:** Top 10 customers by sales amount with customer number, name, amount, margin, and margin %.
+
+**Data isolation:** Non-admin users are locked to their `salesman_code` (from `user.salesman_code` in session, populated from Microsoft Graph `employeeId` at login). They cannot see or export other salesmen's data. Admin users bypass this restriction.
+
+**Caching:** Data is cached per salesman+month+region for 60 minutes (`TRACKER_DATA_CACHE_TTL = 3600`). Each cache entry includes a `fetched_at` timestamp displayed as "Last updated" in the header. Stale cache entries (missing `fetched_at`) are treated as cache misses.
+
+**Product line mapping:** Raw `icitem.plinid` codes are mapped to 8 display categories via `PRODUCT_LINE_MAP` in `constants.py` (50+ codes → WHEEL, TIRE, ACCE, BA4X4, TPMS, TS, MISCELLANEOUS). Unknown codes default to MISCELLANEOUS.
+
+**Margin formula:** `extprice - (cost × qtyshp)` per invoice line item. Financial rounding uses `_financial_round()` which rounds away from zero (positive values round up, negative values round down) to correctly handle credit memo amounts.
 
 ### Executive Dashboard
 
@@ -937,6 +1037,47 @@ The same auto-freeze behavior, monthly file format, YoY comparison logic, and ca
 
 ---
 
+## My Sales Tracker — Data Layer
+
+Unlike the bookings/shipments reports which use scheduled background refreshes, the My Sales Tracker uses **on-demand SQL queries with per-salesman caching**. This design fits the tracker's usage pattern: each salesman views only their own data, so pre-loading all salesmen's data would waste SQL resources.
+
+### Query Strategy
+
+1. User visits `/sales/my-tracker` with a salesman code, year, month, and region
+2. Check cache key `tracker_data_{region}_{salesman}_{year}_{month}` — if hit and contains `fetched_at`, return immediately
+3. If cache miss: query `artran` (current month) or `arytrn` (historical) for all line items matching the salesman + date range
+4. Join `arcust` (customer name) and `icitem` (product line code)
+5. Aggregate in Python: KPIs, product line breakdown, daily trend, top 10 customers
+6. Cache result for 60 minutes with `fetched_at` timestamp
+
+### Last Year Comparison
+
+For the cumulative MTD vs Last Year chart, a second `get_tracker_data()` call fetches the same month from the prior year. Both current and prior year data are independently cached.
+
+### Product Line Categorization
+
+Raw `plinid` codes from `icitem` are mapped to 8 display categories via `PRODUCT_LINE_MAP`:
+
+| Category | Example Raw Codes | Description |
+|---|---|---|
+| WHEEL | AT, CALI, ION, MAYHEM, RIDLER, OE, STEEL, ... | All wheel brands |
+| TIRE | TIRE, AMP, DURUN, LAND, TIRC | Tire products |
+| ACCE | LUGNUT, METAL, RHI, AIRSPD, POWER, WCAP | Accessories |
+| BA4X4 | BODAMR, BODLFT | Body armor / off-road |
+| TPMS | TPMS, MAX, ITM | Tire pressure monitoring |
+| TS | TS | Tuff Stuff Overland |
+| MISCELLANEOUS | TAX, FRT, DEFECT, XMC, (unknown) | Catch-all for unrecognized codes |
+
+### Financial Rounding
+
+All monetary values use `_financial_round()` instead of `math.ceil()`. This rounds **away from zero**: positive values round up (e.g., `$945.3 → $946`), negative values round down (e.g., `-$945.3 → -$946`). This correctly handles credit memo amounts that produce negative totals.
+
+### Excluded Customers
+
+The tracker uses `TRACKER_EXCLUDED_CUSTOMERS` (only `TEST123`) instead of `BOOKINGS_EXCLUDED_CUSTOMERS` (7 entries including warehouse codes). Warehouse customers like W1VAN and W1TOR are legitimate shipment destinations for salesmen tracking.
+
+---
+
 ## Executive Dashboard — Data Layer
 
 ### Dual-Table Strategy (Bookings: sotran + soytrn)
@@ -1011,6 +1152,16 @@ All aggregated totals are rounded up using `math.ceil()` to whole dollar amounts
 
 Shipments use the pre-calculated `extprice` column from the `artran`/`arytrn` tables — no discount formula needed. The amount is the invoiced extended price for each line item.
 
+### Tracker Margin
+
+My Sales Tracker computes margin per line item:
+
+```
+Margin = extprice - (cost × qtyshp)
+```
+
+Aggregated tracker totals use `_financial_round()` (rounds away from zero) instead of `math.ceil()` to correctly handle negative amounts from credit memos. All amounts are displayed in the region's native currency (USD for US, CAD for CA) — no cross-currency conversion.
+
 ---
 
 ## Currency Conversion
@@ -1040,6 +1191,7 @@ All exports read from cache or frozen files — **zero SQL queries at download t
 | Shipments (Today) | `/sales/shipments/export`, `/us`, `/ca` | `Sales.Shipments.Export` | Today |
 | Shipments Summary | `/sales/shipments/export/<horizon>`, `/us`, `/ca` | `Sales.Shipments.Export` | MTD, QTD, YTD |
 | Open Orders | `/sales/open-orders/export`, `/us`, `/ca` | `Sales.OpenOrders.Export` | All open |
+| My Sales Tracker | `/sales/my-tracker/export?salesman=&year=&month=&region=` | `Sales.MST.Export` | Per-salesman monthly (on-demand SQL) |
 | Dashboard Historical | `/sales/dashboard/export`, `/us`, `/ca` | `Sales.Dashboard.View` | Past years (from frozen files) |
 
 ### Export Formatting
@@ -1056,10 +1208,12 @@ The portal is optimized for four display contexts:
 
 | Breakpoint | Layout |
 |---|---|
-| **Desktop (1024px+)** | Full layout, 4/5-column KPI grids, side-by-side rankings, podium |
-| **Tablet (768–1024px)** | Scaled fonts, tighter padding, rankings side-by-side |
-| **Phone (481–768px)** | Brand text and breadcrumbs hidden, avatar only |
-| **Phone Compact (<480px)** | 2×2 KPI grid (26px values), 11px ranking tabs, icon-only export buttons, stacked charts/rankings, compact podium |
+| **Desktop (1024px+)** | Full layout, 4/5-column KPI grids, side-by-side rankings, podium, full-size charts |
+| **Tablet (768–1024px)** | Scaled fonts, tighter padding, rankings side-by-side, touch-friendly controls |
+| **Phone (481–768px)** | Brand text and breadcrumbs hidden, avatar only, touch-friendly back button |
+| **Phone Compact (<480px)** | 2×2 KPI grid (26px values), 11px ranking tabs, icon-only export buttons, stacked charts/rankings, compact podium, stacked tracker charts |
+
+**Mobile UX consistency:** All report pages include a "Back to Sales" link with `align-self: flex-start` to prevent stretching inside flex-column containers. The My Sales Tracker includes additional mobile optimizations at 480px: touch-friendly back button, compact KPI cards, resized Chart.js canvases, and stacked layout for all four charts.
 
 ---
 
@@ -1092,6 +1246,8 @@ The portal is optimized for four display contexts:
 | `GROUP_SALES_SHIPMENTS_EXPORT` | `Sales.Shipments.Export` |
 | `GROUP_SALES_SHIPMENTSSUMMARY_VIEW` | `Sales.ShipmentsSummary.View` |
 | `GROUP_SALES_SHIPMENTSSUMMARY_EXPORT` | `Sales.ShipmentsSummary.Export` |
+| `GROUP_SALES_MST_VIEW` | `Sales.MST.View` |
+| `GROUP_SALES_MST_EXPORT` | `Sales.MST.Export` |
 | `GROUP_SALES_OPENORDERS_VIEW` | `Sales.OpenOrders.View` |
 | `GROUP_SALES_OPENORDERS_EXPORT` | `Sales.OpenOrders.Export` |
 
@@ -1116,6 +1272,8 @@ The portal is optimized for four display contexts:
 | `DASHBOARD_REFRESH_INTERVAL` | `3600` (60 min) | Dashboard current month refresh |
 | `BOOKINGS_SUMMARY_REFRESH_INTERVAL` | `1800` (30 min) | Bookings Summary MTD/QTD/YTD refresh |
 | `SHIPMENTS_SUMMARY_REFRESH_INTERVAL` | `1800` (30 min) | Shipments Summary MTD/QTD/YTD refresh |
+| `TRACKER_DATA_CACHE_TTL` | `3600` (60 min) | My Sales Tracker per-salesman data cache (on-demand, not scheduler) |
+| `SALESMEN_CACHE_TIMEOUT` | `900` (15 min) | Salesman list cache for tracker month selector |
 
 ---
 
@@ -1161,7 +1319,7 @@ waitress-serve --host=0.0.0.0 --port=5000 app:create_app
 
 1. Flask app created via `create_app()` factory
 2. Config validation (CLIENT_ID, CLIENT_SECRET, AUTHORITY)
-3. GROUP_ROLE_MAP built from 12 environment variables
+3. GROUP_ROLE_MAP built from 14 environment variables
 4. Flask-Caching initialized (FileSystemCache)
 5. APScheduler started with 6 jobs registered
 6. **Initial data refresh (synchronous):**
@@ -1189,8 +1347,8 @@ waitress-serve --host=0.0.0.0 --port=5000 app:create_app
 | **SECRET_KEY** | Use `python -c "import secrets; print(secrets.token_hex(32))"` |
 | **Redirect URIs** | Register all environment URIs in Azure App Registration |
 | **Reverse proxy** | Use IIS/nginx with SSL termination. Set `REDIRECT_URI_OVERRIDE` if needed. |
-| **Outbound HTTPS** | `api.frankfurter.app`, `open.er-api.com`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`, `fonts.gstatic.com` |
-| **SQL load** | Bookings + Shipments: ~28 queries/hour. Open orders: ~8 queries/hour. Bookings summary: 4 queries/hour. Shipments summary: 4 queries/hour. Dashboard: on-demand for past years. |
+| **Outbound HTTPS** | `api.frankfurter.app`, `open.er-api.com`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`, `fonts.gstatic.com`, `flagcdn.com`, `graph.microsoft.com` (EmployeeId lookup) |
+| **SQL load** | Bookings + Shipments: ~28 queries/hour. Open orders: ~8 queries/hour. Bookings summary: 4 queries/hour. Shipments summary: 4 queries/hour. Dashboard: on-demand for past years. Tracker: on-demand per-salesman (cached 60 min). |
 | **Frozen data** | Copy all 4 data directories when migrating: `bookings_dashboard_data/`, `bookings_summary_data/`, `shipments_dashboard_data/`, `shipments_summary_data/`. All are gitignored. |
 | **Cache directory** | `cache-data/` is auto-created. Delete to force full refresh. |
 | **Windows** | If `.env` filename is problematic, rename to `_env`. |
@@ -1242,6 +1400,8 @@ Behind a reverse proxy with SSL termination, Flask sees `http://` from `request.
 | `/sales/shipments/export/<horizon>/us` | GET | `Sales.Shipments.Export` | Excel: summary US only |
 | `/sales/shipments/export/<horizon>/ca` | GET | `Sales.Shipments.Export` | Excel: summary CA only |
 | `/sales/shipments-summary` | GET | (redirect) | 302 → `/sales/shipments` |
+| `/sales/my-tracker` | GET | `Sales.MST.View` | Per-salesman monthly tracker with charts |
+| `/sales/my-tracker/export` | GET | `Sales.MST.Export` | Excel: per-salesman raw line items |
 | `/sales/open-orders` | GET | `Sales.OpenOrders.View` | Open orders |
 | `/sales/open-orders/export` | GET | `Sales.OpenOrders.Export` | Excel: US + CA |
 | `/sales/open-orders/export/us` | GET | `Sales.OpenOrders.Export` | Excel: US only |
@@ -1276,6 +1436,11 @@ Behind a reverse proxy with SSL termination, Flask sees `http://` from `request.
 | **Admin page slow to load** | Many large frozen files | `_read_meta_only()` reads only 2KB per file for fast status |
 | **Exchange rate shows 0.7200** | Both APIs unreachable | Allow outbound HTTPS to exchange rate APIs |
 | **Charts not loading** | CDN blocked | Allow `cdnjs.cloudflare.com` |
+| **Tracker shows "not configured"** | User has no EmployeeId in Entra ID | Set Employee ID in Entra ID → Users → Job Information → Employee ID to match ERP salesman code |
+| **Tracker "last updated" missing** | Stale cache entry from before caching code was added | Cache entry missing `fetched_at` key — will auto-fix on next cache expiry (60 min) or delete `cache-data/` |
+| **Tracker country flag not showing** | Windows/Edge doesn't render flag emoji | Already fixed — uses `<img>` from flagcdn.com CDN instead of emoji characters |
+| **Tracker shows all negative values** | Salesman has only credit memos in that month | Expected — KPI cards display in red. Donut chart shows credit note for excluded categories |
+| **Tracker slow on first visit** | On-demand SQL query (no pre-caching) | Expected — first visit queries SQL (~1-3s). Subsequent visits within 60 min serve from cache |
 | **Theme flash on page load** | Missing synchronous theme script | Ensure inline `<script>` is in `<head>` |
 | **Stale data after restart** | FileSystemCache has old data | Delete `cache-data/` directory |
 
@@ -1290,6 +1455,7 @@ Behind a reverse proxy with SSL termination, Flask sees `http://` from `request.
 | **Sales** | Daily Bookings | ✅ Live | Territory/Salesman/Customer ranking tabs with podium, auto-refresh for TV/kiosk, CAD→USD, Excel export |
 | **Sales** | Open Sales Orders | ✅ Live | Territory + salesman rankings, released amount tracking, hourly refresh, CAD→USD, Excel export |
 | **Sales** | Shipments | ✅ Live | Consolidated page: today's pulse + MTD/QTD/YTD with YoY, monthly frozen files, admin data management, Excel export |
+| **Sales** | My Sales Tracker | ✅ Live | Per-salesman monthly: Chart.js (donut, combo, cumulative MTD vs LY, top 10 bar), margin analysis, product line mapping, EmployeeId-locked, 60-min on-demand cache, Excel export |
 | **Sales** | Territory Performance | 🔜 Planned | Monthly trends with period comparison |
 | **Admin** | Dashboard Data | ✅ Live | Tabbed Bookings + Shipments, download/delete yearly frozen files, background task system with progress polling |
 | **Warehouse** | — | 🔜 Planned | Inventory levels, fulfillment tracking |

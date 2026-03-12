@@ -162,6 +162,9 @@ BOOKINGS_SUMMARY_EXPORT_COLUMNS = BOOKINGS_EXPORT_COLUMNS
 # Shipments Summary export uses the shipments column layout
 SHIPMENTS_SUMMARY_EXPORT_COLUMNS = SHIPMENTS_EXPORT_COLUMNS
 
+# My Sales Tracker export — same as shipments but WITHOUT Unit Cost (sensitive)
+TRACKER_EXPORT_COLUMNS = [col for col in SHIPMENTS_EXPORT_COLUMNS if col[1] != 'UnitCost']
+
 
 # ═══════════════════════════════════════════════════════════════
 # Helper: build region data dict with USD conversion for Canada
@@ -749,7 +752,7 @@ def my_tracker_export():
     wb = build_export_workbook(
         rows=rows,
         title_label=f'My Sales Tracker — {salesman} ({region_label}) — {year}-{month:02d}',
-        columns=SHIPMENTS_EXPORT_COLUMNS,
+        columns=TRACKER_EXPORT_COLUMNS,
     )
     return send_workbook(wb, f'MyTracker_{salesman}_{region_label}_{year}{month:02d}_{date.today().strftime("%Y%m%d")}.xlsx')
 

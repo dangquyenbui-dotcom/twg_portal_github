@@ -920,8 +920,9 @@
             return;
         }
 
-        /* Reverse so largest bar is at the top */
-        var sorted = topCustomers.slice().reverse();
+        /* No reverse — Chart.js indexAxis:'y' draws index 0 at the top.
+           Python already sorts largest-first, so #1 at top, #10 at bottom. */
+        var sorted = topCustomers.slice();
         var labels = sorted.map(function(d) {
             var name = d.name.length > 22 ? d.name.substring(0, 20) + '...' : d.name;
             return name;
