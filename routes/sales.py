@@ -688,6 +688,11 @@ def my_tracker():
                    'July', 'August', 'September', 'October', 'November', 'December']
     month_label = f"{month_names[selected_month]} {selected_year}" if 1 <= selected_month <= 12 else ''
 
+    # Is this the current month? (data is live from ERP)
+    is_current_month = (selected_year == date.today().year and selected_month == date.today().month)
+    # Use the actual SQL fetch timestamp from cached data, not page-load time
+    last_updated = data.get('fetched_at') if data else None
+
     return render_template(
         'sales/my_tracker.html',
         user=user,
@@ -702,6 +707,8 @@ def my_tracker():
         data=data,
         ly_by_day=ly_by_day,
         not_configured=not_configured,
+        is_current_month=is_current_month,
+        last_updated=last_updated,
         can_export=can_export,
         currency_label=currency_label,
     )

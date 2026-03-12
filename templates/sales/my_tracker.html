@@ -164,7 +164,7 @@
     width: 100%;
 }
 
-.chart-wrap.donut { height: 400px; }
+.chart-wrap.donut { height: 360px; }
 .chart-wrap.combo { height: 320px; }
 .chart-wrap.cumulative { height: 320px; }
 .chart-wrap.customers { height: 360px; }
@@ -207,6 +207,29 @@
 }
 
 .btn-export svg { width: 14px; height: 14px; }
+
+/* ── Last-updated indicator ── */
+.tracker-updated {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+.tracker-updated .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.tracker-updated .dot.live {
+    background: var(--accent-green);
+    animation: pulse 2s ease-in-out infinite;
+}
+.tracker-updated .dot.historical { background: var(--text-muted); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 /* ── No-data state ── */
 .no-data {
@@ -368,6 +391,18 @@
     </div>
 </div>
 
+{# ════════════════ LAST UPDATED ════════════════ #}
+{% if last_updated %}
+<div class="tracker-updated fade-in stagger-2">
+    <span class="dot {% if is_current_month %}live{% else %}historical{% endif %}"></span>
+    {% if is_current_month %}
+        Live from ERP — updated {{ last_updated.strftime('%b %d, %Y at %I:%M %p') }}
+    {% else %}
+        Historical data — {{ month_label }}
+    {% endif %}
+</div>
+{% endif %}
+
 {# ════════════════ CHARTS ════════════════ #}
 {% if data.total_sales != 0 %}
 <div class="chart-grid fade-in stagger-3">
@@ -442,6 +477,7 @@
             amber:   isDark ? '#F59E0B' : '#D97706',
             red:     isDark ? '#EF4444' : '#DC2626',
             text:    isDark ? '#8B95B0' : '#4B5563',
+            legendText: isDark ? '#D1D5DB' : '#374151',
             grid:    isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
             bg:      isDark ? '#111111' : '#FFFFFF',
             line:    isDark ? '#E5E7EB' : '#1F2937',
@@ -520,42 +556,36 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 cutout: '50%',
-                layout: {
-                    padding: window.innerWidth < 768
-                        ? { top: 4, bottom: 4, left: 4, right: 4 }
-                        : { top: 36, bottom: 8, left: 36, right: 36 }
-                },
+                layout: { padding: { top: 8, bottom: 0, left: 8, right: 8 } },
                 plugins: {
-                    datalabels: {
-                        display: function(ctx) {
-                            if (window.innerWidth < 768) return false;
-                            var pct = total > 0 ? (ctx.dataset.data[ctx.dataIndex] / total * 100) : 0;
-                            return pct >= 3;
-                        },
-                        color: c.text,
-                        font: { size: 11, weight: '600', family: "'JetBrains Mono', monospace" },
-                        backgroundColor: c.bg + 'CC',
-                        borderRadius: 3,
-                        padding: { left: 4, right: 4, top: 2, bottom: 2 },
-                        anchor: 'end',
-                        align: 'end',
-                        offset: 8,
-                        formatter: function(value) {
-                            var pct = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                            return fmt(value) + ' (' + pct + '%)';
-                        }
-                    },
+                    datalabels: { display: false },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
                             boxWidth: 10,
                             boxHeight: 10,
-                            padding: 14,
-                            font: { size: 11, family: "'DM Sans', sans-serif" },
+                            padding: 12,
+                            font: { size: 11, weight: '600', family: "'JetBrains Mono', monospace" },
                             usePointStyle: true,
                             pointStyle: 'circle',
-                            color: c.text
+                            color: c.legendText,
+                            generateLabels: function(chart) {
+                                var ds = chart.data.datasets[0];
+                                return chart.data.labels.map(function(label, i) {
+                                    var val = ds.data[i];
+                                    var pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0.0';
+                                    return {
+                                        text: label + '  ' + fmt(val) + '  (' + pct + '%)',
+                                        fillStyle: ds.backgroundColor[i],
+                                        strokeStyle: ds.backgroundColor[i],
+                                        fontColor: c.legendText,
+                                        hidden: false,
+                                        index: i,
+                                        pointStyle: 'circle'
+                                    };
+                                });
+                            }
                         }
                     },
                     tooltip: {
@@ -658,7 +688,7 @@
                             font: { size: 11, family: "'DM Sans', sans-serif" },
                             usePointStyle: true,
                             pointStyle: 'circle',
-                            color: c.text
+                            color: c.legendText
                         }
                     },
                     tooltip: {
@@ -792,7 +822,7 @@
                         labels: {
                             boxWidth: 10, boxHeight: 10, padding: 14,
                             font: { size: 11, family: "'DM Sans', sans-serif" },
-                            usePointStyle: true, pointStyle: 'circle', color: c.text
+                            usePointStyle: true, pointStyle: 'circle', color: c.legendText
                         }
                     },
                     tooltip: {

@@ -28,7 +28,8 @@ from services.constants import TRACKER_EXCLUDED_CUSTOMERS, map_territory, map_pr
 logger = logging.getLogger(__name__)
 
 TRACKER_YEARS_BACK = 3  # How many years back the month selector goes
-SALESMEN_CACHE_TIMEOUT = 900  # 15 minutes
+SALESMEN_CACHE_TIMEOUT = 900   # 15 minutes
+TRACKER_DATA_CACHE_TTL = 3600  # 60 minutes — per-salesman data cache
 
 
 def _financial_round(value):
@@ -99,12 +100,27 @@ def get_tracker_data(salesman, year, month, region='US'):
     Queries a single region (US or CA) based on the region parameter.
     All amounts are in the region's native currency (USD for US, CAD for CA).
 
+    Results are cached for TRACKER_DATA_CACHE_TTL (60 min) to reduce SQL load.
+    Each cached entry includes a 'fetched_at' timestamp so the UI can show
+    when the data was actually pulled from ERP.
+
     Returns dict with:
       - total_sales, total_margin, margin_pct
       - by_product_line: [{name, amount, margin, pct}, ...]
       - by_day: [{day, date_str, sales, margin, margin_pct}, ...]
       - total_invoices, total_units
+      - top_customers: [{custno, name, amount, margin, margin_pct}, ...]
+      - fetched_at: datetime when data was fetched from SQL
     """
+    cache_key = f'tracker_data_{region}_{salesman}_{year}_{month:02d}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        logger.info(
+            f"MyTracker: Cache HIT for {salesman} {year}-{month:02d} {region} "
+            f"(fetched {cached.get('fetched_at', 'unknown')})"
+        )
+        return cached
+
     db = Config.DB_ORDERS_CA if region == 'CA' else Config.DB_ORDERS
     rows = _fetch_region(salesman, year, month, db, region)
 
@@ -114,7 +130,13 @@ def get_tracker_data(salesman, year, month, region='US'):
         f"{len(rows)} rows, ${total:,.0f}"
     )
 
-    return _aggregate_tracker(rows, year, month)
+    result = _aggregate_tracker(rows, year, month)
+    result['fetched_at'] = datetime.now()
+
+    cache.set(cache_key, result, timeout=TRACKER_DATA_CACHE_TTL)
+    logger.info(f"MyTracker: Cached data for {salesman} {year}-{month:02d} {region} (TTL {TRACKER_DATA_CACHE_TTL}s)")
+
+    return result
 
 
 def _fetch_region(salesman, year, month, database, region):
