@@ -323,7 +323,18 @@
             </div>
         </a>
 
-        {# My Sales Tracker #}
+    </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════════════════════════════
+   MY SALES TRACKER — Per-salesman monthly (own security group)
+   ════════════════════════════════════════════════════════════ #}
+{% if user_has_role(user, 'Sales.MST.View') %}
+<div class="report-section fade-in stagger-2">
+    <div class="section-label">My Sales Tracker</div>
+    <div class="report-grid">
+
         <a href="/sales/my-tracker" class="report-card">
             <div class="report-icon green">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
@@ -334,10 +345,11 @@
                 <h3>My Sales Tracker</h3>
                 <p>Per-salesman monthly sales, margin, product breakdown, and daily trend charts.</p>
                 <div class="report-tags">
-                    <span class="report-tag new">New</span>
                     <span class="report-tag live">Live</span>
-                    {% if user_has_role(user, 'Sales.Shipments.Export') %}
+                    {% if user_has_role(user, 'Sales.MST.Export') %}
                     <span class="report-tag export">Export</span>
+                    {% else %}
+                    <span class="report-tag view-only">View Only</span>
                     {% endif %}
                 </div>
             </div>

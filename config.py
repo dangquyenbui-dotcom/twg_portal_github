@@ -81,6 +81,10 @@ class Config:
             'GROUP_SALES_SHIPMENTSSUMMARY_VIEW':    'Sales.ShipmentsSummary.View',
             'GROUP_SALES_SHIPMENTSSUMMARY_EXPORT':  'Sales.ShipmentsSummary.Export',
 
+            # ── Sales: My Sales Tracker (per-salesman monthly) ──
+            'GROUP_SALES_MST_VIEW':                 'Sales.MST.View',
+            'GROUP_SALES_MST_EXPORT':               'Sales.MST.Export',
+
             # ── Sales: Open Orders ──
             'GROUP_SALES_OPENORDERS_VIEW':          'Sales.OpenOrders.View',
             'GROUP_SALES_OPENORDERS_EXPORT':        'Sales.OpenOrders.Export',

@@ -319,10 +319,17 @@
     <div class="filter-row">
         <div>
             <div class="filter-label">Country</div>
-            <select class="filter-select" id="regionSelect" style="min-width:100px;">
-                <option value="US" {% if selected_region == 'US' %}selected{% endif %}>🇺🇸 US</option>
-                <option value="CA" {% if selected_region == 'CA' %}selected{% endif %}>🇨🇦 CA</option>
-            </select>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <img id="regionFlag"
+                     src="https://flagcdn.com/w20/{{ 'us' if selected_region == 'US' else 'ca' }}.png"
+                     width="20" height="15"
+                     style="border-radius:2px; border:1px solid var(--border); flex-shrink:0;"
+                     alt="{{ selected_region }}">
+                <select class="filter-select" id="regionSelect" style="min-width:100px;">
+                    <option value="US" {% if selected_region == 'US' %}selected{% endif %}>United States</option>
+                    <option value="CA" {% if selected_region == 'CA' %}selected{% endif %}>Canada</option>
+                </select>
+            </div>
         </div>
 
         {% if is_admin %}
@@ -992,7 +999,13 @@ document.addEventListener('DOMContentLoaded', function() {
         window.location.href = url;
     }
 
-    if (regionEl) regionEl.addEventListener('change', function() { navigate(true); });
+    /* Update flag image when region changes */
+    var flagEl = document.getElementById('regionFlag');
+    if (regionEl) regionEl.addEventListener('change', function() {
+        var code = regionEl.value.toLowerCase();
+        if (flagEl) flagEl.src = 'https://flagcdn.com/w20/' + code + '.png';
+        navigate(true);
+    });
     if (salesmanEl) salesmanEl.addEventListener('change', function() { navigate(false); });
     if (monthEl) monthEl.addEventListener('change', function() { navigate(false); });
 });

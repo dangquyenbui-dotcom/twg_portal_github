@@ -114,10 +114,10 @@ def get_tracker_data(salesman, year, month, region='US'):
     """
     cache_key = f'tracker_data_{region}_{salesman}_{year}_{month:02d}'
     cached = cache.get(cache_key)
-    if cached is not None:
+    if cached is not None and 'fetched_at' in cached:
         logger.info(
             f"MyTracker: Cache HIT for {salesman} {year}-{month:02d} {region} "
-            f"(fetched {cached.get('fetched_at', 'unknown')})"
+            f"(fetched {cached['fetched_at']})"
         )
         return cached
 

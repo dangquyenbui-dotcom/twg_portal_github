@@ -19,8 +19,8 @@ Per-report role mapping (using Security Groups):
   /sales/shipments-summary               → redirects to /sales/shipments
 
   -- MY SALES TRACKER (per-salesman monthly) --
-  /sales/my-tracker                       → Sales.Shipments.View
-  /sales/my-tracker/export                → Sales.Shipments.Export
+  /sales/my-tracker                       → Sales.MST.View
+  /sales/my-tracker/export                → Sales.MST.Export
 
   -- OTHER --
   /sales/open-orders                      → Sales.OpenOrders.View
@@ -625,12 +625,13 @@ def shipments_summary_export_ca(horizon):
 
 # ═══════════════════════════════════════════════════════════════
 # MY SALES TRACKER — Per-salesman monthly report
-#   View requires Sales.Shipments.View (reuses existing role)
-#   Export requires Sales.Shipments.Export
+#   View requires Sales.MST.View (dedicated security group)
+#   Export requires Sales.MST.Export
+#   Non-admin users are always locked to their own EmployeeId code
 # ═══════════════════════════════════════════════════════════════
 
 @sales_bp.route('/my-tracker')
-@require_role('Sales.Shipments.View')
+@require_role('Sales.MST.View')
 def my_tracker():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
@@ -678,7 +679,7 @@ def my_tracker():
         ly_data = get_tracker_data(selected_salesman, ly_year, selected_month, region=selected_region)
         ly_by_day = ly_data.get('by_day', []) if ly_data else []
 
-    can_export = user_has_role(user, 'Sales.Shipments.Export')
+    can_export = user_has_role(user, 'Sales.MST.Export')
 
     # Currency label for display
     currency_label = 'CAD' if selected_region == 'CA' else 'USD'
@@ -715,7 +716,7 @@ def my_tracker():
 
 
 @sales_bp.route('/my-tracker/export')
-@require_role('Sales.Shipments.Export')
+@require_role('Sales.MST.Export')
 def my_tracker_export():
     if not session.get("user"):
         return redirect(url_for('main.login_page'))
