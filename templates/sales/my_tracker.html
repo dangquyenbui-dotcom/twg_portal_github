@@ -10,6 +10,22 @@
 {% endblock %}
 
 {% block extra_styles %}
+/* ── Back link ── */
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 6px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    margin-bottom: 12px;
+    transition: color 0.15s;
+    flex-shrink: 0;
+}
+.back-link:hover { color: var(--text-primary); }
+.back-link svg { width: 16px; height: 16px; }
+
 /* ── Page header ── */
 .tracker-header {
     display: flex;
@@ -293,17 +309,42 @@
     .chart-grid { grid-template-columns: 1fr; }
     .chart-grid-2 { grid-template-columns: 1fr; }
     .kpi-value { font-size: 26px; }
+    .tracker-updated { font-size: 12px; }
 }
 
 @media (max-width: 480px) {
+    .back-link { font-size: 14px; margin-bottom: 10px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); gap: 8px; }
+    .back-link svg { width: 18px; height: 18px; }
+    .tracker-header { margin-bottom: 20px; gap: 12px; }
+    .tracker-header h1 { font-size: 18px; }
+    .tracker-header h1 .icon-wrap { width: 30px; height: 30px; }
+    .tracker-header h1 .icon-wrap svg { width: 16px; height: 16px; }
     .filter-row { flex-direction: column; align-items: stretch; }
     .filter-select { min-width: 100%; }
+    .filter-label { font-size: 10px; }
+    .kpi-row { gap: 10px; }
+    .kpi-card { padding: 14px; }
+    .kpi-label { font-size: 10px; }
+    .kpi-value { font-size: 22px; }
+    .chart-card { padding: 16px; }
+    .chart-title { font-size: 13px; margin-bottom: 12px; }
     .chart-wrap.donut, .chart-wrap.combo,
     .chart-wrap.cumulative, .chart-wrap.customers { height: 260px; }
+    .chart-grid, .chart-grid-2 { gap: 14px; margin-bottom: 20px; }
+    .btn-export { font-size: 11px; padding: 8px 12px; }
+    .tracker-updated { font-size: 11px; gap: 6px; }
+    .tracker-updated .dot { width: 6px; height: 6px; }
 }
 {% endblock %}
 
 {% block content %}
+
+<a href="/sales" class="back-link fade-in">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
+    </svg>
+    Back to Sales
+</a>
 
 {# ════════════════ HEADER + FILTERS ════════════════ #}
 <div class="tracker-header fade-in">
