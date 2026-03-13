@@ -1064,4 +1064,10 @@ def get_shipments_summary_from_cache(cad_rate=None):
 
 
 def refresh_shipments_summary_scheduled():
-    refresh_shipments_summary()
+    from services.health_monitor import report_success, report_failure
+    try:
+        refresh_shipments_summary()
+        report_success('shipments_summary')
+    except Exception as e:
+        logger.error(f"ShipmentsSummary: Scheduled refresh failed: {e}")
+        report_failure('shipments_summary', str(e))

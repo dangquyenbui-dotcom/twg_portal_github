@@ -455,6 +455,18 @@
     font-weight: 500;
 }
 
+.podium-goal {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    margin-top: 3px;
+    font-weight: 500;
+}
+.podium-goal .goal-pct { font-weight: 700; }
+.podium-goal .goal-pct.met    { color: var(--accent-green); }
+.podium-goal .goal-pct.close  { color: var(--accent-amber); }
+.podium-goal .goal-pct.behind { color: var(--accent-red, #ef4444); }
+
 /* ── Remaining Ranking Table ── */
 .ranking-wrapper {
     background: var(--bg-card);
@@ -535,6 +547,29 @@
     font-family: var(--font-mono);
     color: var(--text-muted);
     font-weight: 500;
+}
+
+.ranking-table .col-goal {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.ranking-table .col-pct {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+}
+.ranking-table .col-pct.met    { color: var(--accent-green); }
+.ranking-table .col-pct.close  { color: var(--accent-amber); }
+.ranking-table .col-pct.behind { color: var(--accent-red, #ef4444); }
+
+.ranking-table thead th.col-goal,
+.ranking-table thead th.col-pct {
+    text-align: right;
 }
 
 /* ── Error / Empty ── */
@@ -784,33 +819,40 @@
             <div class="ranking-panel active" id="us-territory">
                 {% if us.territory_ranking|length >= 3 %}
                 <div class="podium">
-                    <div class="podium-card gold">
-                        <div class="podium-medal">1</div>
-                        <div class="podium-location">{{ us.territory_ranking[0].location }}</div>
-                        <div class="podium-amount">${{ "{:,}".format(us.territory_ranking[0].total|int) }}</div>
+                    {% for cls in ['gold', 'silver', 'bronze'] %}
+                    {% set item = us.territory_ranking[loop.index0] %}
+                    <div class="podium-card {{ cls }}">
+                        <div class="podium-medal">{{ loop.index }}</div>
+                        <div class="podium-location">{{ item.location }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(item.total|int) }}</div>
+                        {% if item.goal %}
+                        <div class="podium-goal">
+                            <span class="goal-pct {{ 'met' if item.pct_to_goal >= 100 else ('close' if item.pct_to_goal >= 75 else 'behind') }}">{{ item.pct_to_goal }}%</span>
+                            of ${{ "{:,.0f}".format(item.goal / 1000) }}K
+                        </div>
+                        {% endif %}
                     </div>
-                    <div class="podium-card silver">
-                        <div class="podium-medal">2</div>
-                        <div class="podium-location">{{ us.territory_ranking[1].location }}</div>
-                        <div class="podium-amount">${{ "{:,}".format(us.territory_ranking[1].total|int) }}</div>
-                    </div>
-                    <div class="podium-card bronze">
-                        <div class="podium-medal">3</div>
-                        <div class="podium-location">{{ us.territory_ranking[2].location }}</div>
-                        <div class="podium-amount">${{ "{:,}".format(us.territory_ranking[2].total|int) }}</div>
-                    </div>
+                    {% endfor %}
                 </div>
                 {% endif %}
 
                 {% if us.territory_ranking|length > 3 %}
                 <div class="ranking-wrapper">
                     <table class="ranking-table">
-                        <thead><tr><th>Location</th><th class="col-total">Total</th><th class="col-rank">Rank</th></tr></thead>
+                        <thead><tr>
+                            <th>Location</th>
+                            <th class="col-total">Total</th>
+                            <th class="col-goal">Goal</th>
+                            <th class="col-pct">%</th>
+                            <th class="col-rank">Rank</th>
+                        </tr></thead>
                         <tbody>
                             {% for row in us.territory_ranking[3:] %}
                             <tr>
                                 <td class="col-location">{{ row.location }}</td>
                                 <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-goal">{% if row.goal %}${{ "{:,.0f}".format(row.goal / 1000) }}K{% else %}&mdash;{% endif %}</td>
+                                <td class="col-pct {{ 'met' if row.pct_to_goal and row.pct_to_goal >= 100 else ('close' if row.pct_to_goal and row.pct_to_goal >= 75 else 'behind') }}">{% if row.pct_to_goal %}{{ row.pct_to_goal }}%{% else %}&mdash;{% endif %}</td>
                                 <td class="col-rank">{{ row.rank }}</td>
                             </tr>
                             {% endfor %}
@@ -976,13 +1018,22 @@
             <div class="ranking-panel active" id="ca-territory">
                 <div class="ranking-wrapper">
                     <table class="ranking-table">
-                        <thead><tr><th>Location</th><th class="col-total">Total (CAD)</th><th class="col-usd">≈ USD</th><th class="col-rank">Rank</th></tr></thead>
+                        <thead><tr>
+                            <th>Location</th>
+                            <th class="col-total">Total (CAD)</th>
+                            <th class="col-usd">≈ USD</th>
+                            <th class="col-goal">Goal</th>
+                            <th class="col-pct">%</th>
+                            <th class="col-rank">Rank</th>
+                        </tr></thead>
                         <tbody>
                             {% for row in ca.territory_ranking %}
                             <tr>
                                 <td class="col-location">{{ row.location }}</td>
                                 <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
                                 <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
+                                <td class="col-goal">{% if row.goal %}${{ "{:,.0f}".format(row.goal / 1000) }}K{% else %}&mdash;{% endif %}</td>
+                                <td class="col-pct {{ 'met' if row.pct_to_goal and row.pct_to_goal >= 100 else ('close' if row.pct_to_goal and row.pct_to_goal >= 75 else 'behind') }}">{% if row.pct_to_goal %}{{ row.pct_to_goal }}%{% else %}&mdash;{% endif %}</td>
                                 <td class="col-rank">{{ row.rank }}</td>
                             </tr>
                             {% endfor %}

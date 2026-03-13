@@ -17,6 +17,7 @@ from services.data_worker import refresh_bookings_and_rate, refresh_open_orders_
 from services.bookings_dashboard_data_service import refresh_dashboard_current_month
 from services.bookings_summary_service import refresh_bookings_summary_scheduled
 from services.shipments_summary_service import refresh_shipments_summary_scheduled
+from services.health_monitor import send_daily_summary
 
 # --- Logging: INFO level only ---
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
@@ -163,6 +164,29 @@ def create_app():
             misfire_grace_time=120
         )
         logger.info(f"Scheduled 'shipments_summary_refresh' every {Config.SHIPMENTS_SUMMARY_REFRESH_INTERVAL}s")
+
+    # ── Daily health summary email (7:00 AM server time) ──
+    if not scheduler.get_job('daily_health_summary'):
+        scheduler.add_job(
+            id='daily_health_summary',
+            func=send_daily_summary,
+            trigger='cron',
+            hour=7, minute=0,
+            misfire_grace_time=300,
+        )
+        logger.info("Scheduled 'daily_health_summary' at 7:00 AM daily")
+
+    # ── Goals refresh from SharePoint (daily at 2:00 AM) ──
+    from services.goals_service import refresh_goals_cache
+    if not scheduler.get_job('goals_refresh'):
+        scheduler.add_job(
+            id='goals_refresh',
+            func=refresh_goals_cache,
+            trigger='cron',
+            hour=2, minute=0,
+            misfire_grace_time=600,
+        )
+        logger.info("Scheduled 'goals_refresh' at 2:00 AM daily")
 
     with app.app_context():
         logger.info("Running initial startup refresh (all data + dashboard current year)...")

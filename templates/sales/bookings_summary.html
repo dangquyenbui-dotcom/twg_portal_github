@@ -359,6 +359,17 @@
 .ranking-table .col-location { font-weight: 500; color: var(--text-primary); }
 .ranking-table .col-total { text-align: right; font-family: var(--font-mono); font-weight: 500; color: var(--accent-green); }
 .ranking-table .col-rank { text-align: right; font-family: var(--font-mono); color: var(--text-muted); font-weight: 500; }
+.ranking-table .col-goal { text-align: right; font-family: var(--font-mono); font-weight: 500; color: var(--text-muted); font-size: 13px; }
+.ranking-table .col-pct { text-align: right; font-family: var(--font-mono); font-weight: 600; font-size: 13px; }
+.ranking-table .col-pct.met { color: var(--accent-green); }
+.ranking-table .col-pct.close { color: var(--accent-amber); }
+.ranking-table .col-pct.behind { color: var(--accent-red, #ef4444); }
+.ranking-table thead th.col-goal, .ranking-table thead th.col-pct { text-align: right; }
+.podium-goal { font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); margin-top: 3px; font-weight: 500; }
+.podium-goal .goal-pct { font-weight: 700; }
+.podium-goal .goal-pct.met { color: var(--accent-green); }
+.podium-goal .goal-pct.close { color: var(--accent-amber); }
+.podium-goal .goal-pct.behind { color: var(--accent-red, #ef4444); }
 
 /* ── Export row ── */
 .export-row {
@@ -604,6 +615,12 @@
                         <div class="podium-medal">{{ loop.index }}</div>
                         <div class="podium-location">{{ item.location }}</div>
                         <div class="podium-amount">${{ "{:,}".format(item.total|int) }}</div>
+                        {% if item.goal is defined and item.goal %}
+                        <div class="podium-goal">
+                            <span class="goal-pct {{ 'met' if item.pct_to_goal >= 100 else ('close' if item.pct_to_goal >= 75 else 'behind') }}">{{ item.pct_to_goal }}%</span>
+                            of ${{ "{:,.0f}".format(item.goal / 1000) }}K
+                        </div>
+                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
@@ -611,12 +628,20 @@
                 {% if horizon_data.territory_ranking|length > 3 %}
                 <div class="ranking-wrapper">
                     <table class="ranking-table">
-                        <thead><tr><th>Location</th><th class="col-total">Total</th><th class="col-rank">Rank</th></tr></thead>
+                        <thead><tr>
+                            <th>Location</th>
+                            <th class="col-total">Total</th>
+                            <th class="col-goal">Goal</th>
+                            <th class="col-pct">%</th>
+                            <th class="col-rank">Rank</th>
+                        </tr></thead>
                         <tbody>
                             {% for row in horizon_data.territory_ranking[3:] %}
                             <tr>
                                 <td class="col-location">{{ row.location }}</td>
                                 <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-goal">{% if row.goal is defined and row.goal %}${{ "{:,.0f}".format(row.goal / 1000) }}K{% else %}&mdash;{% endif %}</td>
+                                <td class="col-pct {{ 'met' if row.pct_to_goal is defined and row.pct_to_goal and row.pct_to_goal >= 100 else ('close' if row.pct_to_goal is defined and row.pct_to_goal and row.pct_to_goal >= 75 else 'behind') }}">{% if row.pct_to_goal is defined and row.pct_to_goal %}{{ row.pct_to_goal }}%{% else %}&mdash;{% endif %}</td>
                                 <td class="col-rank">{{ row.rank }}</td>
                             </tr>
                             {% endfor %}

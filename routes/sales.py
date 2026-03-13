@@ -222,6 +222,32 @@ def _build_region_data(snapshot, cad_rate=None, is_canada=False):
     return data
 
 
+def _inject_territory_goals(territory_ranking, year, month):
+    """
+    Enrich a territory_ranking list with goal data from the cached
+    SharePoint stretch-goal spreadsheet.
+
+    Adds to each entry:
+        goal         – monthly goal amount (int or None)
+        pct_to_goal  – total / goal * 100 (float or None)
+    """
+    try:
+        from services.goals_service import get_territory_goal
+
+        for terr in territory_ranking:
+            goal_info = get_territory_goal(terr['location'], year, month)
+            terr['goal'] = goal_info.get('goal') if goal_info else None
+            if terr.get('goal') and terr['goal'] > 0:
+                terr['pct_to_goal'] = round(terr['total'] / terr['goal'] * 100, 1)
+            else:
+                terr['pct_to_goal'] = None
+    except Exception:
+        # Goals are non-critical — never break the page
+        for terr in territory_ranking:
+            terr.setdefault('goal', None)
+            terr.setdefault('pct_to_goal', None)
+
+
 # ═══════════════════════════════════════════════════════════════
 # Sales Home — requires Sales.Base (implied by ANY Sales.*.View)
 # ═══════════════════════════════════════════════════════════════
@@ -249,6 +275,11 @@ def bookings():
 
     us_data = _build_region_data(snapshot_us, cad_rate, is_canada=False)
     ca_data = _build_region_data(snapshot_ca, cad_rate, is_canada=True)
+
+    # Inject monthly stretch goals into territory rankings
+    today = date.today()
+    _inject_territory_goals(us_data["territory_ranking"], today.year, today.month)
+    _inject_territory_goals(ca_data["territory_ranking"], today.year, today.month)
 
     error = None
     if snapshot_us is None and snapshot_ca is None:
@@ -341,6 +372,15 @@ def bookings_summary():
 
     _, _, _, cad_rate = get_bookings_from_cache()
     summary_data = get_bookings_summary_from_cache(cad_rate)
+
+    # Inject monthly stretch goals into MTD territory ranking
+    today = date.today()
+    if summary_data and summary_data.get('mtd'):
+        _inject_territory_goals(
+            summary_data['mtd'].get('territory_ranking', []),
+            today.year, today.month,
+        )
+
     can_export = user_has_role(session["user"], 'Sales.BookingsSummary.Export')
 
     return render_template(
@@ -461,6 +501,14 @@ def shipments():
 
     # --- Summary data (MTD / QTD / YTD) ---
     summary_data = get_shipments_summary_from_cache(cad_rate)
+
+    # Inject monthly stretch goals into territory rankings (MTD horizon)
+    today = date.today()
+    if summary_data and summary_data.get('mtd'):
+        _inject_territory_goals(
+            summary_data['mtd'].get('territory_ranking', []),
+            today.year, today.month,
+        )
 
     error = None
     if snapshot_us is None and snapshot_ca is None:
@@ -711,6 +759,18 @@ def my_tracker():
     # Use the actual SQL fetch timestamp from cached data, not page-load time
     last_updated = data.get('fetched_at') if data else None
 
+    # Territory goal for this salesman's primary territory
+    territory_goal = None
+    territory_name = None
+    if data and data.get('primary_territory'):
+        territory_name = data['primary_territory']
+        try:
+            from services.goals_service import get_territory_goal
+            goal_info = get_territory_goal(territory_name, selected_year, selected_month)
+            territory_goal = goal_info.get('goal') if goal_info else None
+        except Exception:
+            pass  # Goals are non-critical
+
     return render_template(
         'sales/my_tracker.html',
         user=user,
@@ -732,6 +792,8 @@ def my_tracker():
         currency_label=currency_label,
         leaderboard=leaderboard,
         winback_customers=winback_customers,
+        territory_goal=territory_goal,
+        territory_name=territory_name,
     )
 
 

@@ -20,6 +20,9 @@ from datetime import datetime
 from flask import Blueprint, render_template, session, redirect, url_for, request, jsonify
 
 from auth.decorators import require_role
+from services.health_monitor import get_health_summary, send_daily_summary
+from services.sharepoint_service import test_sharepoint_access
+from services.graph_mail_service import send_email
 from services.bookings_dashboard_data_service import (
     get_frozen_status as get_bookings_frozen_status,
     download_year_data as download_bookings_year_data,
@@ -156,12 +159,14 @@ def dashboard_data():
 
     bookings_years = _group_statuses_by_year(get_bookings_frozen_status())
     shipments_years = _group_statuses_by_year(get_shipments_frozen_status())
+    health_summary = get_health_summary()
 
     return render_template(
         'admin/dashboard_data.html',
         user=session["user"],
         bookings_years=bookings_years,
         shipments_years=shipments_years,
+        health_summary=health_summary,
     )
 
 
@@ -284,3 +289,71 @@ def dashboard_data_delete():
         return jsonify({'status': 'ok', 'message': f"{label} deleted."})
     else:
         return jsonify({'status': 'ok', 'message': f"{label} was not downloaded."})
+
+
+# ─────────────────────────────────────────────────────────────
+# System Health — Email & SharePoint
+# ─────────────────────────────────────────────────────────────
+
+@admin_bp.route('/dashboard-data/health-status')
+@require_role('Admin')
+def health_status():
+    """AJAX: Return current health status of all components."""
+    summary = get_health_summary()
+    # Convert to JSON-friendly format (datetimes already formatted as strings)
+    return jsonify({'components': summary})
+
+
+@admin_bp.route('/dashboard-data/test-email', methods=['POST'])
+@require_role('Admin')
+def test_email():
+    """AJAX: Send a test email to verify Graph API mail is working."""
+    success = send_email(
+        subject='[TWG Portal] Test Email',
+        body_html=(
+            '<div style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif;">'
+            '<h2 style="color: #059669;">&#x2705; Test Email Successful</h2>'
+            '<p>This is a test email from TWG Portal.</p>'
+            '<p>Microsoft Graph API email integration is working correctly.</p>'
+            '<p style="color: #6b7280; font-size: 12px; margin-top: 16px;">'
+            'Sent from Admin → Dashboard Data → System Health</p>'
+            '</div>'
+        ),
+    )
+    return jsonify({'success': success})
+
+
+@admin_bp.route('/dashboard-data/test-sharepoint', methods=['POST'])
+@require_role('Admin')
+def test_sharepoint():
+    """AJAX: Test SharePoint access and search for the target file."""
+    result = test_sharepoint_access()
+    return jsonify(result)
+
+
+@admin_bp.route('/dashboard-data/send-summary', methods=['POST'])
+@require_role('Admin')
+def trigger_summary():
+    """AJAX: Manually trigger a health summary email."""
+    try:
+        send_daily_summary()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@admin_bp.route('/dashboard-data/refresh-goals', methods=['POST'])
+@require_role('Admin')
+def refresh_goals():
+    """AJAX: Refresh goals from SharePoint stretch-goal spreadsheet."""
+    try:
+        from services.goals_service import refresh_goals_cache, get_goals_from_cache
+        success = refresh_goals_cache()
+        if success:
+            data = get_goals_from_cache()
+            terr_count = len(data.get('territories', {})) if data else 0
+            return jsonify({'success': True, 'territories': terr_count})
+        else:
+            return jsonify({'success': False, 'error': 'Refresh returned False — check logs for details.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})

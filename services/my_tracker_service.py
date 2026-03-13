@@ -131,7 +131,7 @@ def get_tracker_data(salesman, year, month, region='US'):
         f"{len(rows)} rows, ${total:,.0f}"
     )
 
-    result = _aggregate_tracker(rows, year, month)
+    result = _aggregate_tracker(rows, year, month, region)
     result['fetched_at'] = datetime.now()
 
     cache.set(cache_key, result, timeout=TRACKER_DATA_CACHE_TTL)
@@ -196,6 +196,7 @@ def _fetch_region(salesman, year, month, database, region):
                 'product_line': map_product_line(plinid),
                 'custno': custno_clean,
                 'cust_name': (cust_name or '').strip() or custno_clean,
+                'terr_code': (terr or '').strip(),
             })
 
         cursor.close()
@@ -207,10 +208,10 @@ def _fetch_region(salesman, year, month, database, region):
     return rows
 
 
-def _aggregate_tracker(rows, year, month):
+def _aggregate_tracker(rows, year, month, region='US'):
     """
     Aggregate raw rows into tracker summary.
-    Returns dict with KPIs, product line breakdown, and daily trend.
+    Returns dict with KPIs, product line breakdown, daily trend, and primary territory.
     """
     total_sales = 0.0
     total_margin = 0.0
@@ -220,6 +221,7 @@ def _aggregate_tracker(rows, year, month):
     product_totals = defaultdict(lambda: {'amount': 0.0, 'margin': 0.0})
     day_totals = defaultdict(lambda: {'sales': 0.0, 'margin': 0.0})
     cust_totals = defaultdict(lambda: {'name': '', 'amount': 0.0, 'margin': 0.0})
+    terr_counts = defaultdict(int)  # territory code → invoice line count
 
     for row in rows:
         amt = row['amount']
@@ -247,6 +249,11 @@ def _aggregate_tracker(rows, year, month):
             cust_totals[cno]['name'] = row['cust_name']
             cust_totals[cno]['amount'] += amt
             cust_totals[cno]['margin'] += mgn
+
+        # Territory tracking (for goal integration)
+        tc = row.get('terr_code', '')
+        if tc:
+            terr_counts[tc] += 1
 
     # Margin %
     margin_pct = (total_margin / total_sales * 100) if total_sales != 0 else 0.0
@@ -309,6 +316,13 @@ def _aggregate_tracker(rows, year, month):
             'amount': _financial_round(ct['amount']),
         })
 
+    # Determine primary territory (most common territory code)
+    primary_terr_code = ''
+    primary_territory = ''
+    if terr_counts:
+        primary_terr_code = max(terr_counts, key=terr_counts.get)
+        primary_territory = map_territory(primary_terr_code, region)
+
     return {
         'total_sales': _financial_round(total_sales),
         'total_margin': _financial_round(total_margin),
@@ -319,6 +333,8 @@ def _aggregate_tracker(rows, year, month):
         'by_day': by_day,
         'top_customers': top_customers,
         'all_customers': all_customers,
+        'primary_territory': primary_territory,
+        'primary_terr_code': primary_terr_code,
     }
 
 

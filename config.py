@@ -118,6 +118,19 @@ class Config:
     # The user's ERP salesman code is read from Microsoft Graph (employeeId field)
     # at login time. Set it on each user via Entra ID → Users → Job Information → Employee ID.
 
+    # ── Graph API / Email Alerts ──
+    ALERT_EMAIL_FROM = os.getenv('ALERT_EMAIL_FROM', '')
+    ALERT_EMAIL_TO = os.getenv('ALERT_EMAIL_TO', '')
+    GRAPH_API_BASE = 'https://graph.microsoft.com/v1.0'
+
+    # ── SharePoint ──
+    SHAREPOINT_SITE_NAME = os.getenv('SHAREPOINT_SITE_NAME', '')
+
+    # ── Goals from SharePoint ──
+    GOALS_FILE_NAME = os.getenv('GOALS_FILE_NAME', '')
+    GOALS_SHEET_NAME = 'Sales Stretch Goal.v2'
+    GOAL_MULTIPLIER = int(os.getenv('GOAL_MULTIPLIER', '1000'))  # spreadsheet values × this
+
     # SQL Server Settings
     DB_DRIVER = os.getenv('DB_DRIVER', '{ODBC Driver 18 for SQL Server}')
     DB_SERVER = os.getenv('DB_SERVER')

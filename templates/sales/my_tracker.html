@@ -102,7 +102,7 @@
 /* ── KPI row ── */
 .kpi-row {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 16px;
     margin-bottom: 28px;
 }
@@ -130,6 +130,19 @@
 .kpi-card.blue::before { background: linear-gradient(90deg, var(--accent-blue), #60A5FA); }
 .kpi-card.amber::before { background: linear-gradient(90deg, var(--accent-amber), #FBBF24); }
 .kpi-card.red::before { background: linear-gradient(90deg, var(--accent-red), #F87171); }
+.kpi-card.purple::before { background: linear-gradient(90deg, #8B5CF6, #A78BFA); }
+
+.kpi-sub {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-weight: 500;
+}
+.kpi-sub .goal-pct { font-weight: 700; }
+.kpi-sub .goal-pct.met    { color: var(--accent-green); }
+.kpi-sub .goal-pct.close  { color: var(--accent-amber); }
+.kpi-sub .goal-pct.behind { color: var(--accent-red, #ef4444); }
 
 .kpi-label {
     font-size: 11px;
@@ -564,6 +577,17 @@
         <div class="kpi-label">Margin %</div>
         <div class="kpi-value {% if data.margin_pct < 0 %}red-text{% else %}amber-text{% endif %}">{{ data.margin_pct }}%</div>
     </div>
+    {% if territory_goal %}
+    {% set pct = (data.total_sales / territory_goal * 100)|round(1) if territory_goal > 0 else 0 %}
+    <div class="kpi-card purple">
+        <div class="kpi-label">{{ territory_name }} Goal</div>
+        <div class="kpi-value" style="color: #8B5CF6;">${{ "{:,.0f}".format(territory_goal / 1000) }}K</div>
+        <div class="kpi-sub">
+            <span class="goal-pct {{ 'met' if pct >= 100 else ('close' if pct >= 75 else 'behind') }}">{{ pct }}%</span>
+            — ${{ "{:,.0f}".format(data.total_sales / 1000) }}K invoiced
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 {# ════════════════ LAST UPDATED ════════════════ #}
@@ -775,6 +799,7 @@
     var lyDayData = {{ ly_by_day | tojson }};
     var topCustomers = {{ data.top_customers | tojson }};
     var lyYear = {{ selected_year - 1 }};
+    var territoryGoal = {{ territory_goal|default(0, true) }};
 
     /* ── Theme colors ── */
     function getColors() {
@@ -1089,35 +1114,55 @@
         var labels = [];
         for (var d = 1; d <= maxDays; d++) labels.push(d);
 
+        /* Build datasets */
+        var datasets = [
+            {
+                label: '{{ selected_year }}',
+                data: cumTY,
+                borderColor: c.green,
+                backgroundColor: c.green + '18',
+                borderWidth: 2.5,
+                pointRadius: 2,
+                pointBackgroundColor: c.green,
+                tension: 0.2,
+                fill: true,
+                datalabels: { display: false }
+            },
+            {
+                label: '' + lyYear,
+                data: cumLY,
+                borderColor: c.text,
+                borderDash: [6, 3],
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.2,
+                fill: false,
+                datalabels: { display: false }
+            }
+        ];
+
+        /* Add goal line if territory goal exists */
+        if (territoryGoal > 0) {
+            var goalLine = [];
+            for (var g = 0; g < maxDays; g++) goalLine.push(territoryGoal);
+            datasets.push({
+                label: 'Goal ($' + fmtShort(territoryGoal) + ')',
+                data: goalLine,
+                borderColor: '#8B5CF6',
+                borderDash: [4, 4],
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0,
+                fill: false,
+                datalabels: { display: false }
+            });
+        }
+
         cumulativeChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: labels,
-                datasets: [
-                    {
-                        label: '{{ selected_year }}',
-                        data: cumTY,
-                        borderColor: c.green,
-                        backgroundColor: c.green + '18',
-                        borderWidth: 2.5,
-                        pointRadius: 2,
-                        pointBackgroundColor: c.green,
-                        tension: 0.2,
-                        fill: true,
-                        datalabels: { display: false }
-                    },
-                    {
-                        label: '' + lyYear,
-                        data: cumLY,
-                        borderColor: c.text,
-                        borderDash: [6, 3],
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        tension: 0.2,
-                        fill: false,
-                        datalabels: { display: false }
-                    }
-                ]
+                datasets: datasets
             },
             options: {
                 responsive: true,

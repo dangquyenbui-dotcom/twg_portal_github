@@ -41,6 +41,8 @@ from services.open_orders_service import (
     fetch_open_orders_raw_us, fetch_open_orders_raw_ca,
 )
 
+from services.health_monitor import report_success, report_failure
+
 logger = logging.getLogger(__name__)
 
 # ── Cache keys (centralized so routes and worker stay in sync) ──
@@ -136,16 +138,20 @@ def refresh_bookings_cache():
         if result_us is not None:
             cache.set(CACHE_KEY_BOOKINGS_US, result_us, timeout=BOOKINGS_CACHE_TIMEOUT)
             logger.info("Worker: US bookings snapshot cache updated.")
+            report_success('bookings_us')
         else:
             logger.warning("Worker: US bookings snapshot returned None — keeping stale cache.")
+            report_failure('bookings_us', 'Query returned None — possible SQL issue')
 
         # ── CA snapshot ──
         result_ca = fetch_bookings_snapshot_ca()
         if result_ca is not None:
             cache.set(CACHE_KEY_BOOKINGS_CA, result_ca, timeout=BOOKINGS_CACHE_TIMEOUT)
             logger.info("Worker: CA bookings snapshot cache updated.")
+            report_success('bookings_ca')
         else:
             logger.warning("Worker: CA bookings snapshot returned None — keeping stale cache.")
+            report_failure('bookings_ca', 'Query returned None — possible SQL issue')
 
         # ── US raw export data ──
         raw_us = fetch_bookings_raw_us()
@@ -169,6 +175,8 @@ def refresh_bookings_cache():
 
     except Exception as e:
         logger.error(f"Worker: Failed to refresh bookings cache: {e}")
+        report_failure('bookings_us', str(e))
+        report_failure('bookings_ca', str(e))
 
 
 def get_bookings_from_cache():
@@ -228,16 +236,20 @@ def refresh_shipments_cache():
         if result_us is not None:
             cache.set(CACHE_KEY_SHIPMENTS_US, result_us, timeout=BOOKINGS_CACHE_TIMEOUT)
             logger.info("Worker: US shipments snapshot cache updated.")
+            report_success('shipments_us')
         else:
             logger.warning("Worker: US shipments snapshot returned None — keeping stale cache.")
+            report_failure('shipments_us', 'Query returned None — possible SQL issue')
 
         # ── CA snapshot ──
         result_ca = fetch_shipments_snapshot_ca()
         if result_ca is not None:
             cache.set(CACHE_KEY_SHIPMENTS_CA, result_ca, timeout=BOOKINGS_CACHE_TIMEOUT)
             logger.info("Worker: CA shipments snapshot cache updated.")
+            report_success('shipments_ca')
         else:
             logger.warning("Worker: CA shipments snapshot returned None — keeping stale cache.")
+            report_failure('shipments_ca', 'Query returned None — possible SQL issue')
 
         # ── US raw export data ──
         raw_us = fetch_shipments_raw_us()
@@ -261,6 +273,8 @@ def refresh_shipments_cache():
 
     except Exception as e:
         logger.error(f"Worker: Failed to refresh shipments cache: {e}")
+        report_failure('shipments_us', str(e))
+        report_failure('shipments_ca', str(e))
 
 
 def get_shipments_from_cache():
@@ -322,16 +336,20 @@ def refresh_open_orders_cache():
         if result_us is not None:
             cache.set(CACHE_KEY_OPEN_ORDERS_US, result_us, timeout=OO_CACHE_TIMEOUT)
             logger.info("Worker: US open orders snapshot cache updated.")
+            report_success('open_orders_us')
         else:
             logger.warning("Worker: US open orders snapshot returned None — keeping stale cache.")
+            report_failure('open_orders_us', 'Query returned None — possible SQL issue')
 
         # ── CA snapshot ──
         result_ca = fetch_open_orders_snapshot_ca()
         if result_ca is not None:
             cache.set(CACHE_KEY_OPEN_ORDERS_CA, result_ca, timeout=OO_CACHE_TIMEOUT)
             logger.info("Worker: CA open orders snapshot cache updated.")
+            report_success('open_orders_ca')
         else:
             logger.warning("Worker: CA open orders snapshot returned None — keeping stale cache.")
+            report_failure('open_orders_ca', 'Query returned None — possible SQL issue')
 
         # ── US raw export data ──
         raw_us = fetch_open_orders_raw_us()
@@ -355,6 +373,8 @@ def refresh_open_orders_cache():
 
     except Exception as e:
         logger.error(f"Worker: Failed to refresh open orders cache: {e}")
+        report_failure('open_orders_us', str(e))
+        report_failure('open_orders_ca', str(e))
 
 
 def get_open_orders_from_cache():
@@ -410,6 +430,12 @@ def refresh_bookings_and_rate():
 
     rate = _fetch_cad_to_usd_rate()
     cache.set(CACHE_KEY_CAD_RATE, rate, timeout=OO_CACHE_TIMEOUT)
+
+    # Track exchange rate health — DEFAULT_CAD_TO_USD means all APIs failed
+    if rate != DEFAULT_CAD_TO_USD:
+        report_success('exchange_rate')
+    else:
+        report_failure('exchange_rate', 'All exchange rate APIs failed — using fallback rate')
 
     refresh_bookings_cache()
     refresh_shipments_cache()
@@ -471,5 +497,13 @@ def refresh_all_on_startup():
     from services.shipments_summary_service import refresh_shipments_summary
     logger.info("Worker: Refreshing Shipments Summary (frozen months + live current month)...")
     refresh_shipments_summary(cad_rate=rate)
+
+    # 7. Goals from SharePoint (non-blocking — portal works without goals)
+    try:
+        from services.goals_service import refresh_goals_cache as _refresh_goals
+        logger.info("Worker: Refreshing Goals from SharePoint...")
+        _refresh_goals()
+    except Exception as e:
+        logger.warning(f"Worker: Goals refresh failed (non-blocking): {e}")
 
     logger.info("Worker: ═══ Startup complete — all caches warm ═══")

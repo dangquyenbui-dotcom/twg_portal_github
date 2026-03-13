@@ -170,6 +170,93 @@
     opacity:0.7; flex-shrink:0;
 }
 
+/* ── System Health ── */
+.health-card {
+    background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg);
+    margin-bottom:16px; overflow:hidden; box-shadow:var(--shadow-sm);
+}
+.health-card-header {
+    padding:16px 20px; border-bottom:1px solid var(--border);
+    font-size:15px; font-weight:700; color:var(--text-primary);
+    display:flex; align-items:center; gap:10px;
+}
+.health-card-header svg { width:18px; height:18px; flex-shrink:0; }
+
+.health-table {
+    width:100%; border-collapse:collapse; font-size:12px;
+}
+.health-table th {
+    padding:8px 14px; text-align:left; font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:0.4px; color:var(--text-muted);
+    background:var(--bg-page); border-bottom:1px solid var(--border);
+}
+.health-table td {
+    padding:8px 14px; border-bottom:1px solid var(--row-border);
+    color:var(--text-secondary); vertical-align:middle;
+}
+.health-table tr:last-child td { border-bottom:none; }
+
+.health-status-ok { color:var(--accent-green); font-weight:600; }
+.health-status-error { color:var(--accent-red); font-weight:600; }
+.health-error-msg { font-size:11px; color:var(--accent-red); font-family:var(--font-mono); max-width:260px; word-break:break-word; }
+.health-ts { font-family:var(--font-mono); font-size:11px; color:var(--text-muted); white-space:nowrap; }
+
+.health-actions {
+    display:flex; gap:10px; padding:16px 20px; flex-wrap:wrap;
+}
+
+.btn-health {
+    display:inline-flex; align-items:center; gap:6px; padding:8px 18px;
+    font-size:12px; font-weight:600; font-family:var(--font-body);
+    border-radius:var(--radius-sm); cursor:pointer; transition:all 0.2s; border:1px solid;
+}
+.btn-health:disabled { opacity:0.5; cursor:wait; }
+.btn-health svg { width:14px; height:14px; }
+
+.btn-health.email {
+    color:var(--accent-blue); background:rgba(37,99,235,0.06); border-color:rgba(37,99,235,0.15);
+}
+.btn-health.email:hover { background:rgba(37,99,235,0.12); }
+[data-theme="dark"] .btn-health.email { background:rgba(59,130,246,0.08); border-color:rgba(59,130,246,0.2); }
+
+.btn-health.sharepoint {
+    color:var(--accent-amber); background:rgba(217,119,6,0.06); border-color:rgba(217,119,6,0.15);
+}
+.btn-health.sharepoint:hover { background:rgba(217,119,6,0.12); }
+[data-theme="dark"] .btn-health.sharepoint { background:rgba(245,158,11,0.08); border-color:rgba(245,158,11,0.2); }
+
+.btn-health.goals {
+    color:#7C3AED; border:1px solid rgba(124,58,237,0.15); background:rgba(124,58,237,0.04); }
+.btn-health.goals:hover { background:rgba(124,58,237,0.12); }
+[data-theme="dark"] .btn-health.goals { background:rgba(139,92,246,0.08); border-color:rgba(139,92,246,0.2); }
+
+.btn-health.summary {
+    color:var(--accent-green); background:rgba(5,150,105,0.06); border-color:rgba(5,150,105,0.15);
+}
+.btn-health.summary:hover { background:rgba(5,150,105,0.12); }
+[data-theme="dark"] .btn-health.summary { background:rgba(16,185,129,0.08); border-color:rgba(16,185,129,0.2); }
+
+/* SharePoint result card */
+.sp-result {
+    display:none; margin:0 20px 16px; padding:14px 18px;
+    background:var(--bg-page); border:1px solid var(--border); border-radius:var(--radius-md);
+    font-size:12px; line-height:1.7;
+}
+.sp-result.show { display:block; }
+.sp-result strong { color:var(--text-primary); }
+.sp-result .sp-ok { color:var(--accent-green); font-weight:600; }
+.sp-result .sp-fail { color:var(--accent-red); font-weight:600; }
+
+/* Config info */
+.health-config {
+    padding:14px 20px; border-top:1px solid var(--border);
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:8px 24px;
+    font-size:11px; color:var(--text-muted);
+}
+.health-config-item { display:flex; gap:6px; }
+.health-config-label { font-weight:600; color:var(--text-secondary); white-space:nowrap; }
+.health-config-value { font-family:var(--font-mono); word-break:break-all; }
+
 /* Phone */
 @media (max-width:480px) {
     .back-link { font-size:14px; padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); gap:8px; margin-bottom:10px; }
@@ -182,6 +269,10 @@
     .region-status { min-width:100%; }
     .region-actions { min-width:100%; }
     .btn-sm { flex:1; text-align:center; justify-content:center; padding:8px 12px; }
+    .health-table th, .health-table td { padding:6px 10px; font-size:11px; }
+    .health-actions { flex-direction:column; }
+    .btn-health { justify-content:center; }
+    .health-config { grid-template-columns:1fr; }
 }
 {% endblock %}
 
@@ -209,6 +300,7 @@
     <div class="data-type-tabs fade-in stagger-1">
         <button class="data-type-tab active" onclick="switchDataType('bookings')">Bookings</button>
         <button class="data-type-tab" onclick="switchDataType('shipments')">Shipments</button>
+        <button class="data-type-tab" onclick="switchDataType('health')">System Health</button>
     </div>
 
     <!-- ════════════ BOOKINGS PANEL ════════════ -->
@@ -394,6 +486,129 @@
         </div>
         {% endfor %}
     </div>
+
+    <!-- ════════════ SYSTEM HEALTH PANEL ════════════ -->
+    <div class="data-type-panel" id="panel-health">
+        <div class="info-box">
+            <strong>System Health</strong> monitors all background refresh jobs and provides email alerting via Microsoft Graph API.
+            Failure alerts are sent within 30 seconds and throttled to 1 per component per 30 minutes.
+            A daily summary email is sent at 7:00 AM.
+        </div>
+
+        <!-- Component Status -->
+        <div class="health-card fade-in stagger-2">
+            <div class="health-card-header">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
+                </svg>
+                Component Status
+            </div>
+            <table class="health-table" id="health-table">
+                <thead>
+                    <tr>
+                        <th>Component</th>
+                        <th>Status</th>
+                        <th>Last Success</th>
+                        <th>Last Failure</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for comp in health_summary %}
+                    <tr data-component="{{ comp.component }}">
+                        <td style="font-weight:500; color:var(--text-primary);">{{ comp.display_name }}</td>
+                        <td>
+                            {% if comp.status == 'ok' %}
+                            <span class="health-status-ok">&#x2705; OK</span>
+                            {% else %}
+                            <span class="health-status-error">&#x274C; ERROR</span>
+                            {% endif %}
+                        </td>
+                        <td class="health-ts">{{ comp.last_success_fmt }}</td>
+                        <td class="health-ts">{{ comp.last_failure_fmt }}</td>
+                        <td>
+                            {% if comp.error %}
+                            <span class="health-error-msg">{{ comp.error }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="health-card fade-in stagger-3">
+            <div class="health-card-header">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17l-5.1-5.1m0 0L11.42 4.97m-5.1 5.1H21"/>
+                </svg>
+                Quick Actions
+            </div>
+            <div class="health-actions">
+                <button class="btn-health email" onclick="testEmail(this)">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/>
+                    </svg>
+                    Send Test Email
+                </button>
+                <button class="btn-health sharepoint" onclick="testSharePoint(this)">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
+                    </svg>
+                    Test SharePoint Access
+                </button>
+                <button class="btn-health summary" onclick="sendSummary(this)">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/>
+                    </svg>
+                    Send Health Summary Now
+                </button>
+                <button class="btn-health goals" onclick="refreshGoals(this)">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5"/>
+                    </svg>
+                    Refresh Goals from SharePoint
+                </button>
+            </div>
+
+            <!-- SharePoint result card (hidden by default) -->
+            <div class="sp-result" id="sp-result"></div>
+        </div>
+
+        <!-- Configuration -->
+        <div class="health-card fade-in stagger-4">
+            <div class="health-card-header">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                Configuration
+            </div>
+            <div class="health-config">
+                <div class="health-config-item">
+                    <span class="health-config-label">Alert From:</span>
+                    <span class="health-config-value">{{ config.ALERT_EMAIL_FROM or '(not set)' }}</span>
+                </div>
+                <div class="health-config-item">
+                    <span class="health-config-label">Alert To:</span>
+                    <span class="health-config-value">{{ config.ALERT_EMAIL_TO or '(not set)' }}</span>
+                </div>
+                <div class="health-config-item">
+                    <span class="health-config-label">Daily Summary:</span>
+                    <span class="health-config-value">7:00 AM daily</span>
+                </div>
+                <div class="health-config-item">
+                    <span class="health-config-label">Alert Throttle:</span>
+                    <span class="health-config-value">30 min / component</span>
+                </div>
+                <div class="health-config-item">
+                    <span class="health-config-label">SharePoint Site:</span>
+                    <span class="health-config-value">{{ config.SHAREPOINT_SITE_NAME or '(not set)' }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -407,9 +622,17 @@ function switchDataType(type) {
     document.querySelectorAll('.data-type-panel').forEach(function(panel) {
         panel.classList.remove('active');
     });
-    event.target.classList.add('active');
+    /* Find the tab button that matches — handles click on child elements too */
+    document.querySelectorAll('.data-type-tab').forEach(function(tab) {
+        var t = tab.textContent.trim().toLowerCase().replace(/\s+/g, '');
+        if (t === type || (type === 'health' && t === 'systemhealth')) tab.classList.add('active');
+    });
     document.getElementById('panel-' + type).classList.add('active');
     window.location.hash = type;
+
+    /* Start auto-refresh when health tab is shown */
+    if (type === 'health') startHealthRefresh();
+    else stopHealthRefresh();
 }
 
 /* ── Toast with spinner + elapsed ── */
@@ -556,18 +779,200 @@ function deleteOne(year, region, dataType, btn) {
     });
 }
 
+/* ══════════════════════════════════════════════
+   System Health — auto-refresh + quick actions
+   ══════════════════════════════════════════════ */
+var _healthInterval = null;
+
+function startHealthRefresh() {
+    if (_healthInterval) return;
+    _healthInterval = setInterval(refreshHealthTable, 60000); /* every 60s */
+}
+
+function stopHealthRefresh() {
+    if (_healthInterval) { clearInterval(_healthInterval); _healthInterval = null; }
+}
+
+function refreshHealthTable() {
+    fetch('/admin/dashboard-data/health-status')
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        var comps = data.components || [];
+        comps.forEach(function(c) {
+            var row = document.querySelector('tr[data-component="' + c.component + '"]');
+            if (!row) return;
+            var cells = row.querySelectorAll('td');
+            /* Status */
+            if (c.status === 'ok') {
+                cells[1].innerHTML = '<span class="health-status-ok">&#x2705; OK</span>';
+            } else {
+                cells[1].innerHTML = '<span class="health-status-error">&#x274C; ERROR</span>';
+            }
+            /* Last Success */
+            cells[2].textContent = c.last_success_fmt || '\u2014';
+            /* Last Failure */
+            cells[3].textContent = c.last_failure_fmt || '\u2014';
+            /* Error */
+            cells[4].innerHTML = c.error ? '<span class="health-error-msg">' + c.error + '</span>' : '';
+        });
+    })
+    .catch(function() { /* silent — will retry next interval */ });
+}
+
+function testEmail(btn) {
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    showToast('Sending test email...', 'running');
+
+    fetch('/admin/dashboard-data/test-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (data.success) {
+            showToast('Test email sent successfully! Check your inbox.', 'success');
+        } else {
+            showToast('Failed to send test email. Check Mail.Send permission and admin consent.', 'error');
+        }
+    })
+    .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        showToast('Network error: ' + err.message, 'error');
+    });
+}
+
+function testSharePoint(btn) {
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    showToast('Testing SharePoint access...', 'running');
+
+    var resultDiv = document.getElementById('sp-result');
+    resultDiv.className = 'sp-result';
+
+    fetch('/admin/dashboard-data/test-sharepoint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = orig;
+
+        var html = '<strong>SharePoint Access Test</strong><br>';
+        html += 'Site: <strong>' + (data.site_name || '—') + '</strong> — ';
+        html += data.site_found
+            ? '<span class="sp-ok">Site Found</span>'
+            : '<span class="sp-fail">Site Not Found</span>';
+
+        if (data.site_found) {
+            html += '<br>Files in root: <strong>' + data.file_count + '</strong>';
+            html += '<br>Target file: ';
+            if (data.file_found) {
+                html += '<span class="sp-ok">Found</span> — <strong>' + data.file_name + '</strong>';
+                if (data.file_size) html += ' (' + (data.file_size / 1024).toFixed(1) + ' KB)';
+                if (data.file_modified) html += ' — modified: ' + data.file_modified.substring(0, 19).replace('T', ' ');
+            } else {
+                html += '<span class="sp-fail">Not Found</span>';
+            }
+        }
+
+        if (data.error) {
+            html += '<br><span class="sp-fail">Note:</span> ' + data.error;
+        }
+
+        resultDiv.innerHTML = html;
+        resultDiv.className = 'sp-result show';
+
+        if (data.success) {
+            showToast('SharePoint access test completed successfully.', 'success');
+        } else {
+            showToast('SharePoint test failed. Check Sites.Read.All permission.', 'error');
+        }
+    })
+    .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        showToast('Network error: ' + err.message, 'error');
+    });
+}
+
+function sendSummary(btn) {
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    showToast('Sending health summary email...', 'running');
+
+    fetch('/admin/dashboard-data/send-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (data.success) {
+            showToast('Health summary email sent! Check your inbox.', 'success');
+        } else {
+            showToast('Failed to send summary: ' + (data.error || 'Unknown error'), 'error');
+        }
+    })
+    .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        showToast('Network error: ' + err.message, 'error');
+    });
+}
+
+function refreshGoals(btn) {
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+    showToast('Refreshing goals from SharePoint...', 'running');
+
+    fetch('/admin/dashboard-data/refresh-goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (data.success) {
+            showToast('Goals refreshed! ' + (data.territories || 0) + ' territories loaded.', 'success');
+        } else {
+            showToast('Goals refresh failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+    })
+    .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        showToast('Network error: ' + err.message, 'error');
+    });
+}
+
 /* ── Preserve active tab on reload ── */
 (function() {
     var hash = window.location.hash.replace('#', '');
-    if (hash === 'shipments') {
+    if (hash === 'shipments' || hash === 'health') {
         document.querySelectorAll('.data-type-tab').forEach(function(tab) {
             tab.classList.remove('active');
-            if (tab.textContent.trim() === 'Shipments') tab.classList.add('active');
+            var t = tab.textContent.trim();
+            if (hash === 'shipments' && t === 'Shipments') tab.classList.add('active');
+            if (hash === 'health' && t === 'System Health') tab.classList.add('active');
         });
         document.querySelectorAll('.data-type-panel').forEach(function(panel) {
             panel.classList.remove('active');
         });
-        document.getElementById('panel-shipments').classList.add('active');
+        var targetPanel = document.getElementById('panel-' + hash);
+        if (targetPanel) targetPanel.classList.add('active');
+
+        if (hash === 'health') startHealthRefresh();
     }
 })();
 </script>

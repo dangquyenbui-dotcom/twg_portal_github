@@ -32,6 +32,47 @@ TERRITORY_MAP_CA = {
     '503': 'Montreal',
 }
 
+# ── Goal spreadsheet → Portal territory mapping ──
+# Maps abbreviated branch codes in the SharePoint stretch-goal spreadsheet
+# to the display names used in the portal's territory rankings.
+GOAL_TERRITORY_MAP = {
+    # US territories
+    'LA':         'LA',
+    'SEAWA':      'Seattle',
+    'DEN':        'Denver',
+    'HOUS':       'Houston',
+    'SANT':       'San Antonio',
+    'DAL':        'Dallas',
+    'KSCITY':     'Kansas City',
+    'NJ':         'Levittown,PA',
+    'IND':        'Indianapolis',
+    'COL':        'Columbus',
+    'JACKFL':     'Jacksonville',
+    'ATL':        'Atlanta',
+    'CHAR':       'Charlotte',
+    'NASH':       'Nashville',
+    'DTC':        'DTC',
+    'LA - CORP':  'LA',
+    # Canada
+    'CNTRL':      'Central Billing',
+    'VAN':        'Vancouver',
+    'MON':        'Montreal',
+    'TOR':        'Toronto',
+}
+
+# Region subtotals in the spreadsheet — stored separately, not matched to individual territories
+GOAL_REGION_MAP = {
+    'WEST':                'WEST',
+    'MIDWEST':             'MIDWEST',
+    'NORTHEAST':           'NORTHEAST',
+    'SOUTHEAST':           'SOUTHEAST',
+    'U.S. BRANCHES TOTAL': 'US_TOTAL',
+    'CANADA':              'CANADA',
+    'INTERNATIONAL':       'INTERNATIONAL',
+    'OTHER CREDITS / REBATES': 'OTHER_CREDITS',
+    'TWG TOTAL':           'TWG_TOTAL',
+}
+
 # ── Excluded customers (shared by bookings and open orders) ──
 BOOKINGS_EXCLUDED_CUSTOMERS = frozenset({
     'W1VAN', 'W1TOR', 'W1MON', 'MISC', 'TWGMARKET', 'EMP-US', 'TEST123'

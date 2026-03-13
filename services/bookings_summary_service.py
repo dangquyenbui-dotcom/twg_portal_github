@@ -1172,4 +1172,10 @@ def get_bookings_summary_from_cache(cad_rate=None):
 
 
 def refresh_bookings_summary_scheduled():
-    refresh_bookings_summary()
+    from services.health_monitor import report_success, report_failure
+    try:
+        refresh_bookings_summary()
+        report_success('bookings_summary')
+    except Exception as e:
+        logger.error(f"BookingsSummary: Scheduled refresh failed: {e}")
+        report_failure('bookings_summary', str(e))
