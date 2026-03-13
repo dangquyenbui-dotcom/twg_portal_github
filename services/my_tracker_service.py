@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 TRACKER_YEARS_BACK = 3  # How many years back the month selector goes
 SALESMEN_CACHE_TIMEOUT = 900   # 15 minutes
 TRACKER_DATA_CACHE_TTL = 3600  # 60 minutes — per-salesman data cache
+LEADERBOARD_CACHE_TTL = 900   # 15 minutes — shared leaderboard (same for all users)
 
 
 def _financial_round(value):
@@ -282,9 +283,14 @@ def _aggregate_tracker(rows, year, month):
             'margin_pct': round(day_margin_pct, 1),
         })
 
+    # All customers sorted by amount desc (for win-back comparisons)
+    all_customers_sorted = sorted(cust_totals.items(),
+                                  key=lambda x: abs(x[1]['amount']),
+                                  reverse=True)
+
     # Top 10 customers by sales amount
     top_customers = []
-    for cno, ct in sorted(cust_totals.items(), key=lambda x: abs(x[1]['amount']), reverse=True)[:10]:
+    for cno, ct in all_customers_sorted[:10]:
         mgn_pct = (ct['margin'] / ct['amount'] * 100) if ct['amount'] != 0 else 0.0
         top_customers.append({
             'custno': cno,
@@ -292,6 +298,15 @@ def _aggregate_tracker(rows, year, month):
             'amount': _financial_round(ct['amount']),
             'margin': _financial_round(ct['margin']),
             'margin_pct': round(mgn_pct, 1),
+        })
+
+    # Full customer list (used by win-back opportunity comparison)
+    all_customers = []
+    for cno, ct in all_customers_sorted:
+        all_customers.append({
+            'custno': cno,
+            'name': ct['name'] or cno,
+            'amount': _financial_round(ct['amount']),
         })
 
     return {
@@ -303,6 +318,7 @@ def _aggregate_tracker(rows, year, month):
         'by_product_line': by_product_line,
         'by_day': by_day,
         'top_customers': top_customers,
+        'all_customers': all_customers,
     }
 
 
@@ -385,6 +401,115 @@ def fetch_raw_tracker_export(salesman, year, month, region='US'):
         logger.error(f"MyTracker export: Error fetching {region}: {e}")
 
     return all_rows
+
+
+# ─────────────────────────────────────────────────────────────
+# Leaderboard — all salesmen ranked by total invoiced
+# ─────────────────────────────────────────────────────────────
+
+def get_leaderboard_data(year, month, region='US'):
+    """
+    Get total invoiced amount per salesman for the given month/region.
+    Shared across all users viewing the same month/region.
+
+    Returns list of dicts sorted by total desc:
+      [{'rank': 1, 'salesman': 'ABC', 'total': 150000}, ...]
+    """
+    cache_key = f'tracker_leaderboard_{region}_{year}_{month:02d}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    database = Config.DB_ORDERS_CA if region == 'CA' else Config.DB_ORDERS
+    table = 'artran' if _is_current_month(year, month) else 'arytrn'
+    _, last_day = monthrange(year, month)
+    start_date = f'{year}-{month:02d}-01'
+    end_date = f'{year}-{month:02d}-{last_day:02d}'
+
+    # Build excluded-customers placeholders
+    excluded = list(TRACKER_EXCLUDED_CUSTOMERS)
+    placeholders = ','.join(['?'] * len(excluded))
+
+    query = f"""
+    SELECT tr.salesmn, SUM(tr.extprice) AS total_invoiced
+    FROM {database}.dbo.{table} tr WITH (NOLOCK)
+    WHERE tr.invdte BETWEEN ? AND ?
+      AND tr.currhist <> 'X'
+      AND tr.salesmn IS NOT NULL
+      AND LTRIM(RTRIM(tr.salesmn)) <> ''
+      AND tr.custno NOT IN ({placeholders})
+    GROUP BY tr.salesmn
+    ORDER BY SUM(tr.extprice) DESC
+    """
+    params = [start_date, end_date] + excluded
+
+    results = []
+    try:
+        conn = get_connection(database)
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        rank = 0
+        for row in cursor.fetchall():
+            code = (row[0] or '').strip()
+            if not code:
+                continue
+            rank += 1
+            results.append({
+                'rank': rank,
+                'salesman': code,
+                'total': _financial_round(float(row[1] or 0)),
+            })
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"MyTracker leaderboard: Error fetching {region} {year}-{month:02d}: {e}")
+
+    cache.set(cache_key, results, timeout=LEADERBOARD_CACHE_TTL)
+    logger.info(
+        f"MyTracker: Cached leaderboard for {region} {year}-{month:02d} "
+        f"({len(results)} salesmen)"
+    )
+    return results
+
+
+# ─────────────────────────────────────────────────────────────
+# Win-back opportunities — lapsed customers from last year
+# ─────────────────────────────────────────────────────────────
+
+def get_winback_customers(salesman, year, month, region='US'):
+    """
+    Identify customers who bought from this salesman in the same month
+    last year but have NOT purchased this month yet.
+
+    Uses cached get_tracker_data() calls — zero additional SQL.
+
+    Returns list sorted by last year amount desc (biggest opportunities first):
+      [{'custno': 'XYZ', 'name': 'Acme Corp', 'ly_amount': 50000}, ...]
+    """
+    # Current year customer set
+    cy_data = get_tracker_data(salesman, year, month, region=region)
+    cy_customers = set()
+    if cy_data:
+        for c in cy_data.get('all_customers', []):
+            cy_customers.add(c['custno'])
+
+    # Last year same month customer set
+    ly_year = year - 1
+    ly_data = get_tracker_data(salesman, ly_year, month, region=region)
+
+    winback = []
+    if ly_data:
+        for c in ly_data.get('all_customers', []):
+            if c['custno'] not in cy_customers and c['amount'] > 0:
+                winback.append({
+                    'custno': c['custno'],
+                    'name': c['name'],
+                    'ly_amount': c['amount'],
+                })
+
+    # Biggest opportunities first
+    winback.sort(key=lambda x: abs(x['ly_amount']), reverse=True)
+    return winback
 
 
 # ─────────────────────────────────────────────────────────────

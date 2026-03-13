@@ -302,6 +302,121 @@
     line-height: 1.6;
 }
 
+/* ── Leaderboard ── */
+.podium { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+.podium-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 18px 14px 14px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.15s;
+}
+.podium-card:hover { transform: translateY(-2px); }
+.podium-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+}
+.podium-card.gold   { border-color: var(--podium-gold-border,   #D4A017); }
+.podium-card.silver { border-color: var(--podium-silver-border, #9CA3AF); }
+.podium-card.bronze { border-color: var(--podium-bronze-border, #B87333); }
+.podium-card.gold::before   { background: var(--podium-gold-bar,   #D4A017); }
+.podium-card.silver::before { background: var(--podium-silver-bar, #9CA3AF); }
+.podium-card.bronze::before { background: var(--podium-bronze-bar, #B87333); }
+.podium-medal {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14px;
+    margin: 0 auto 8px;
+    color: #fff;
+}
+.podium-card.gold .podium-medal   { background: linear-gradient(135deg, #D4A017, #F5D36E); color: #5C3D00; }
+.podium-card.silver .podium-medal { background: linear-gradient(135deg, #9CA3AF, #D1D5DB); color: #374151; }
+.podium-card.bronze .podium-medal { background: linear-gradient(135deg, #B87333, #DFAA7A); color: #5C3309; }
+.podium-location {
+    font-size: 14px; font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.podium-amount {
+    font-size: 16px; font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+}
+.podium-card.gold .podium-amount   { color: var(--podium-gold-amount,   #D4A017); }
+.podium-card.silver .podium-amount { color: var(--podium-silver-amount, #6B7280); }
+.podium-card.bronze .podium-amount { color: var(--podium-bronze-amount, #B87333); }
+.podium-you-badge {
+    display: inline-block; font-size: 8px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    background: var(--accent-blue); color: #fff;
+    padding: 1px 5px; border-radius: 3px; margin-top: 4px;
+}
+
+/* ── Ranking table (leaderboard + win-back) ── */
+.ranking-wrapper { overflow-y: auto; }
+.ranking-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 13px;
+}
+.ranking-table thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bg-card);
+    padding: 8px 14px;
+    font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+}
+.ranking-table tbody td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+}
+.ranking-table tbody tr:last-child td { border-bottom: none; }
+.ranking-table .col-rank { width: 50px; text-align: center; font-weight: 700; color: var(--text-muted); }
+.ranking-table .col-total {
+    text-align: right; font-weight: 600;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+}
+.ranking-table .col-location { font-weight: 500; }
+
+.leaderboard-you {
+    background: rgba(37,99,235,0.06) !important;
+    border-left: 3px solid var(--accent-blue);
+}
+[data-theme="dark"] .leaderboard-you {
+    background: rgba(59,130,246,0.10) !important;
+}
+.you-badge {
+    display: inline-block; font-size: 9px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    background: var(--accent-blue); color: #fff;
+    padding: 1px 6px; border-radius: 4px; margin-left: 6px;
+    vertical-align: middle;
+}
+
+/* ── Win-back ── */
+.winback-subtitle {
+    text-align: center; font-size: 12px;
+    color: var(--text-muted); margin-bottom: 14px; line-height: 1.5;
+}
+.winback-custno {
+    font-size: 11px; font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted); margin-top: 1px;
+}
+.winback-count {
+    text-align: center; font-size: 12px; font-weight: 600;
+    color: var(--accent-amber); margin-top: 10px; padding: 6px;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
     .tracker-header { flex-direction: column; align-items: flex-start; }
@@ -334,6 +449,18 @@
     .btn-export { font-size: 11px; padding: 8px 12px; }
     .tracker-updated { font-size: 11px; gap: 6px; }
     .tracker-updated .dot { width: 6px; height: 6px; }
+    .podium { gap: 8px; }
+    .podium-card { padding: 12px 8px 10px; }
+    .podium-medal { width: 28px; height: 28px; font-size: 12px; margin-bottom: 6px; }
+    .podium-location { font-size: 11px; }
+    .podium-amount { font-size: 13px; }
+    .podium-you-badge { font-size: 7px; }
+    .ranking-wrapper { max-height: 260px; }
+    .ranking-table tbody td { padding: 6px 10px; font-size: 12px; }
+    .ranking-table thead th { padding: 6px 10px; font-size: 9px; }
+    .you-badge { font-size: 8px; padding: 1px 4px; }
+    .winback-subtitle { font-size: 11px; }
+    .winback-custno { font-size: 10px; }
 }
 {% endblock %}
 
@@ -487,6 +614,139 @@
         </div>
     </div>
 </div>
+
+{# ── Row 3: Sales Leaderboard + Win-Back Opportunities ── #}
+{% if leaderboard %}
+<div class="chart-grid-2 fade-in stagger-5">
+
+    {# ── Leaderboard ── #}
+    <div class="chart-card">
+        <div class="chart-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                 stroke-width="1.5" stroke="currentColor" style="width:18px;height:18px;color:var(--accent-amber);">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0016.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a6.003 6.003 0 01-4.52 1.772 6.003 6.003 0 01-4.52-1.772"/>
+            </svg>
+            Sales Leaderboard — {{ month_label }}
+        </div>
+
+        {# Top 3 podium #}
+        {% if leaderboard|length >= 3 %}
+        <div class="podium">
+            {% for i in range(3) %}
+            {% set cls = ['gold', 'silver', 'bronze'][i] %}
+            <div class="podium-card {{ cls }}">
+                <div class="podium-medal">{{ i + 1 }}</div>
+                <div class="podium-location">{{ leaderboard[i].salesman }}</div>
+                <div class="podium-amount">${{ "{:,}".format(leaderboard[i].total) }}</div>
+                {% if leaderboard[i].salesman == selected_salesman %}
+                <div class="podium-you-badge">YOU</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% elif leaderboard|length > 0 %}
+        {# Fewer than 3 salesmen — show all as podium #}
+        <div class="podium" style="grid-template-columns: repeat({{ leaderboard|length }}, 1fr);">
+            {% for row in leaderboard %}
+            {% set cls = ['gold', 'silver', 'bronze'][loop.index0] if loop.index0 < 3 else '' %}
+            <div class="podium-card {{ cls }}">
+                <div class="podium-medal">{{ loop.index }}</div>
+                <div class="podium-location">{{ row.salesman }}</div>
+                <div class="podium-amount">${{ "{:,}".format(row.total) }}</div>
+                {% if row.salesman == selected_salesman %}
+                <div class="podium-you-badge">YOU</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {# Remaining rows (4th–10th) #}
+        {% if leaderboard|length > 3 %}
+        <div class="ranking-wrapper">
+            <table class="ranking-table">
+                <thead>
+                    <tr>
+                        <th class="col-rank">Rank</th>
+                        <th>Salesman</th>
+                        <th class="col-total">Total Invoiced ({{ currency_label }})</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in leaderboard[3:10] %}
+                    <tr class="{% if row.salesman == selected_salesman %}leaderboard-you{% endif %}">
+                        <td class="col-rank">{{ row.rank }}</td>
+                        <td class="col-location">
+                            {{ row.salesman }}
+                            {% if row.salesman == selected_salesman %}
+                            <span class="you-badge">YOU</span>
+                            {% endif %}
+                        </td>
+                        <td class="col-total">${{ "{:,}".format(row.total) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ── Win-Back Opportunities ── #}
+    <div class="chart-card">
+        <div class="chart-title" style="display:flex;align-items:center;justify-content:center;gap:8px;">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                 stroke-width="1.5" stroke="currentColor" style="width:18px;height:18px;color:var(--accent-amber);">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/>
+            </svg>
+            Win-Back Opportunities
+        </div>
+        <div class="winback-subtitle">
+            Customers who bought in {{ ly_month_label }} but have not purchased this month yet.
+        </div>
+
+        {% if winback_customers %}
+        <div class="ranking-wrapper" style="max-height:380px;">
+            <table class="ranking-table">
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th class="col-total">{{ ly_month_label }} Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in winback_customers %}
+                    <tr>
+                        <td class="col-location">
+                            <div>{{ c.name }}</div>
+                            <div class="winback-custno">{{ c.custno }}</div>
+                        </td>
+                        <td class="col-total">${{ "{:,}".format(c.ly_amount) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="winback-count">
+            {{ winback_customers|length }} customer{{ 's' if winback_customers|length != 1 else '' }} to re-engage
+        </div>
+        {% else %}
+        <div class="no-data" style="padding:40px 20px;">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                 stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <h3>All Caught Up!</h3>
+            <p>Every customer from {{ ly_month_label }} has already purchased this month. Great work!</p>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endif %}
+
 {% else %}
 <div class="no-data fade-in stagger-3">
     <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">

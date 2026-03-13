@@ -57,6 +57,7 @@ from services.bookings_dashboard_data_service import (
 )
 from services.my_tracker_service import (
     get_salesmen_list, get_tracker_data, fetch_raw_tracker_export, get_available_months,
+    get_leaderboard_data, get_winback_customers,
 )
 from services.excel_helper import build_export_workbook, send_workbook
 from auth.decorators import require_role, user_has_role
@@ -684,6 +685,18 @@ def my_tracker():
 
     can_export = user_has_role(user, 'Sales.MST.Export')
 
+    # Leaderboard — all salesmen ranked by total invoiced (shared cache)
+    leaderboard = []
+    if not not_configured:
+        leaderboard = get_leaderboard_data(selected_year, selected_month, region=selected_region)
+
+    # Win-back opportunities — lapsed customers from same month last year
+    winback_customers = []
+    if selected_salesman and not not_configured and data:
+        winback_customers = get_winback_customers(
+            selected_salesman, selected_year, selected_month, region=selected_region
+        )
+
     # Currency label for display
     currency_label = 'CAD' if selected_region == 'CA' else 'USD'
 
@@ -691,6 +704,7 @@ def my_tracker():
     month_names = ['', 'January', 'February', 'March', 'April', 'May', 'June',
                    'July', 'August', 'September', 'October', 'November', 'December']
     month_label = f"{month_names[selected_month]} {selected_year}" if 1 <= selected_month <= 12 else ''
+    ly_month_label = f"{month_names[selected_month]} {selected_year - 1}" if 1 <= selected_month <= 12 else ''
 
     # Is this the current month? (data is live from ERP)
     is_current_month = (selected_year == date.today().year and selected_month == date.today().month)
@@ -708,6 +722,7 @@ def my_tracker():
         selected_region=selected_region,
         available_months=available_months,
         month_label=month_label,
+        ly_month_label=ly_month_label,
         data=data,
         ly_by_day=ly_by_day,
         not_configured=not_configured,
@@ -715,6 +730,8 @@ def my_tracker():
         last_updated=last_updated,
         can_export=can_export,
         currency_label=currency_label,
+        leaderboard=leaderboard,
+        winback_customers=winback_customers,
     )
 
 
