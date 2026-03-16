@@ -1007,10 +1007,15 @@ def refresh_bookings_summary(cad_rate=None):
                 f"vs Jan–{calendar.month_abbr[dr['prior_end'].month]} {prior_year} (full months)"
             )
 
-        # Cache
+        # Cache — merged (US+CA)
         cache.set(_cache_key(horizon), current_merged, timeout=CACHE_TIMEOUT)
         if prior_merged:
             cache.set(_cache_key_prior(horizon), prior_merged, timeout=CACHE_TIMEOUT)
+
+        # Cache — per-region (used by Daily Bookings for MTD column)
+        if horizon == 'mtd':
+            cache.set(_cache_key('mtd_us'), us_summary or _empty_result(), timeout=CACHE_TIMEOUT)
+            cache.set(_cache_key('mtd_ca'), ca_summary or _empty_result(), timeout=CACHE_TIMEOUT)
 
         logger.info(
             f"BookingsSummary: {horizon.upper()} cached — "
@@ -1168,6 +1173,23 @@ def get_bookings_summary_from_cache(cad_rate=None):
             }
             for h in HORIZONS
         },
+    }
+
+
+def get_mtd_by_region(cad_rate=None):
+    """Return per-region MTD data (US + CA separately) for Daily Bookings page."""
+    us_mtd = cache.get(_cache_key('mtd_us'))
+    ca_mtd = cache.get(_cache_key('mtd_ca'))
+
+    if us_mtd is None and ca_mtd is None:
+        # Trigger a full refresh to populate per-region cache
+        refresh_bookings_summary(cad_rate)
+        us_mtd = cache.get(_cache_key('mtd_us'))
+        ca_mtd = cache.get(_cache_key('mtd_ca'))
+
+    return {
+        'us': us_mtd or _empty_result(),
+        'ca': ca_mtd or _empty_result(),
     }
 
 

@@ -498,6 +498,7 @@
 }
 
 .ranking-table thead th.col-total,
+.ranking-table thead th.col-mtd,
 .ranking-table thead th.col-usd,
 .ranking-table thead th.col-rank {
     text-align: right;
@@ -532,6 +533,13 @@
     font-family: var(--font-mono);
     font-weight: 500;
     color: var(--accent-green);
+}
+
+.ranking-table .col-mtd {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--accent-blue);
 }
 
 .ranking-table .col-usd {
@@ -821,14 +829,21 @@
                 <div class="podium">
                     {% for cls in ['gold', 'silver', 'bronze'] %}
                     {% set item = us.territory_ranking[loop.index0] %}
+                    {% set mtd_row = us_mtd_terr.get(item.location, {}) %}
                     <div class="podium-card {{ cls }}">
                         <div class="podium-medal">{{ loop.index }}</div>
                         <div class="podium-location">{{ item.location }}</div>
                         <div class="podium-amount">${{ "{:,}".format(item.total|int) }}</div>
-                        {% if item.goal %}
+                        {% if mtd_row.get('total') %}
+                        <div class="podium-goal" style="color:var(--accent-blue);">
+                            MTD ${{ "{:,}".format(mtd_row.total|int) }}
+                        </div>
+                        {% endif %}
+                        {% if mtd_row.get('goal') %}
+                        {% set mtd_pct = (mtd_row.total / mtd_row.goal * 100)|round(1) %}
                         <div class="podium-goal">
-                            <span class="goal-pct {{ 'met' if item.pct_to_goal >= 100 else ('close' if item.pct_to_goal >= 75 else 'behind') }}">{{ item.pct_to_goal }}%</span>
-                            of ${{ "{:,.0f}".format(item.goal / 1000) }}K
+                            <span class="goal-pct {{ 'met' if mtd_pct >= 100 else ('close' if mtd_pct >= 75 else 'behind') }}">{{ mtd_pct }}%</span>
+                            of ${{ "{:,.0f}".format(mtd_row.goal / 1000) }}K
                         </div>
                         {% endif %}
                     </div>
@@ -836,23 +851,30 @@
                 </div>
                 {% endif %}
 
-                {% if us.territory_ranking|length > 3 %}
+                {% set us_terr_table = us.territory_ranking[3:] if us.territory_ranking|length >= 3 else us.territory_ranking %}
+                {% if us_terr_table %}
                 <div class="ranking-wrapper">
                     <table class="ranking-table">
                         <thead><tr>
                             <th>Location</th>
-                            <th class="col-total">Total</th>
-                            <th class="col-goal">Goal</th>
+                            <th class="col-total">Today</th>
+                            <th class="col-mtd">MTD</th>
+                            <th class="col-goal">Goal (Inv.)</th>
                             <th class="col-pct">%</th>
                             <th class="col-rank">Rank</th>
                         </tr></thead>
                         <tbody>
-                            {% for row in us.territory_ranking[3:] %}
+                            {% for row in us_terr_table %}
+                            {% set mtd_row = us_mtd_terr.get(row.location, {}) %}
+                            {% set mtd_total = mtd_row.get('total', 0)|int %}
+                            {% set mtd_goal = mtd_row.get('goal') %}
+                            {% set mtd_pct = (mtd_total / mtd_goal * 100)|round(1) if mtd_goal else none %}
                             <tr>
                                 <td class="col-location">{{ row.location }}</td>
                                 <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
-                                <td class="col-goal">{% if row.goal %}${{ "{:,.0f}".format(row.goal / 1000) }}K{% else %}&mdash;{% endif %}</td>
-                                <td class="col-pct {{ 'met' if row.pct_to_goal and row.pct_to_goal >= 100 else ('close' if row.pct_to_goal and row.pct_to_goal >= 75 else 'behind') }}">{% if row.pct_to_goal %}{{ row.pct_to_goal }}%{% else %}&mdash;{% endif %}</td>
+                                <td class="col-mtd">${{ "{:,}".format(mtd_total) }}</td>
+                                <td class="col-goal">{% if mtd_goal %}${{ "{:,.0f}".format(mtd_goal / 1000) }}K{% else %}&mdash;{% endif %}</td>
+                                <td class="col-pct {{ 'met' if mtd_pct and mtd_pct >= 100 else ('close' if mtd_pct and mtd_pct >= 75 else 'behind') }}">{% if mtd_pct is not none %}{{ mtd_pct }}%{% else %}&mdash;{% endif %}</td>
                                 <td class="col-rank">{{ row.rank }}</td>
                             </tr>
                             {% endfor %}
@@ -866,33 +888,35 @@
             <div class="ranking-panel" id="us-salesman">
                 {% if us.salesman_ranking|length >= 3 %}
                 <div class="podium">
-                    <div class="podium-card gold">
-                        <div class="podium-medal">1</div>
-                        <div class="podium-location">{{ us.salesman_ranking[0].salesman }}</div>
-                        <div class="podium-amount">${{ "{:,}".format(us.salesman_ranking[0].total|int) }}</div>
+                    {% for cls in ['gold', 'silver', 'bronze'] %}
+                    {% set item = us.salesman_ranking[loop.index0] %}
+                    {% set mtd_row = us_mtd_sm.get(item.salesman, {}) %}
+                    <div class="podium-card {{ cls }}">
+                        <div class="podium-medal">{{ loop.index }}</div>
+                        <div class="podium-location">{{ item.salesman }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(item.total|int) }}</div>
+                        {% if mtd_row.get('total') %}
+                        <div class="podium-goal" style="color:var(--accent-blue);">
+                            MTD ${{ "{:,}".format(mtd_row.total|int) }}
+                        </div>
+                        {% endif %}
                     </div>
-                    <div class="podium-card silver">
-                        <div class="podium-medal">2</div>
-                        <div class="podium-location">{{ us.salesman_ranking[1].salesman }}</div>
-                        <div class="podium-amount">${{ "{:,}".format(us.salesman_ranking[1].total|int) }}</div>
-                    </div>
-                    <div class="podium-card bronze">
-                        <div class="podium-medal">3</div>
-                        <div class="podium-location">{{ us.salesman_ranking[2].salesman }}</div>
-                        <div class="podium-amount">${{ "{:,}".format(us.salesman_ranking[2].total|int) }}</div>
-                    </div>
+                    {% endfor %}
                 </div>
                 {% endif %}
 
-                {% if us.salesman_ranking|length > 3 %}
+                {% set us_sm_table = us.salesman_ranking[3:] if us.salesman_ranking|length >= 3 else us.salesman_ranking %}
+                {% if us_sm_table %}
                 <div class="ranking-wrapper">
                     <table class="ranking-table">
-                        <thead><tr><th>Salesman</th><th class="col-total">Total</th><th class="col-rank">Rank</th></tr></thead>
+                        <thead><tr><th>Salesman</th><th class="col-total">Today</th><th class="col-mtd">MTD</th><th class="col-rank">Rank</th></tr></thead>
                         <tbody>
-                            {% for row in us.salesman_ranking[3:] %}
+                            {% for row in us_sm_table %}
+                            {% set mtd_row = us_mtd_sm.get(row.salesman, {}) %}
                             <tr>
                                 <td class="col-location">{{ row.salesman }}</td>
                                 <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-mtd">${{ "{:,}".format(mtd_row.get('total', 0)|int) }}</td>
                                 <td class="col-rank">{{ row.rank }}</td>
                             </tr>
                             {% endfor %}
@@ -906,33 +930,35 @@
             <div class="ranking-panel" id="us-customer">
                 {% if us.customer_ranking|length >= 3 %}
                 <div class="podium">
-                    <div class="podium-card gold">
-                        <div class="podium-medal">1</div>
-                        <div class="podium-location">{{ us.customer_ranking[0].customer }}</div>
-                        <div class="podium-amount">${{ "{:,}".format(us.customer_ranking[0].total|int) }}</div>
+                    {% for cls in ['gold', 'silver', 'bronze'] %}
+                    {% set item = us.customer_ranking[loop.index0] %}
+                    {% set mtd_row = us_mtd_cust.get(item.custno, {}) %}
+                    <div class="podium-card {{ cls }}">
+                        <div class="podium-medal">{{ loop.index }}</div>
+                        <div class="podium-location">{{ item.customer }}</div>
+                        <div class="podium-amount">${{ "{:,}".format(item.total|int) }}</div>
+                        {% if mtd_row.get('total') %}
+                        <div class="podium-goal" style="color:var(--accent-blue);">
+                            MTD ${{ "{:,}".format(mtd_row.total|int) }}
+                        </div>
+                        {% endif %}
                     </div>
-                    <div class="podium-card silver">
-                        <div class="podium-medal">2</div>
-                        <div class="podium-location">{{ us.customer_ranking[1].customer }}</div>
-                        <div class="podium-amount">${{ "{:,}".format(us.customer_ranking[1].total|int) }}</div>
-                    </div>
-                    <div class="podium-card bronze">
-                        <div class="podium-medal">3</div>
-                        <div class="podium-location">{{ us.customer_ranking[2].customer }}</div>
-                        <div class="podium-amount">${{ "{:,}".format(us.customer_ranking[2].total|int) }}</div>
-                    </div>
+                    {% endfor %}
                 </div>
                 {% endif %}
 
-                {% if us.customer_ranking|length > 3 %}
+                {% set us_cust_table = us.customer_ranking[3:] if us.customer_ranking|length >= 3 else us.customer_ranking %}
+                {% if us_cust_table %}
                 <div class="ranking-wrapper">
                     <table class="ranking-table">
-                        <thead><tr><th>Customer</th><th class="col-total">Total</th><th class="col-rank">Rank</th></tr></thead>
+                        <thead><tr><th>Customer</th><th class="col-total">Today</th><th class="col-mtd">MTD</th><th class="col-rank">Rank</th></tr></thead>
                         <tbody>
-                            {% for row in us.customer_ranking[3:] %}
+                            {% for row in us_cust_table %}
+                            {% set mtd_row = us_mtd_cust.get(row.custno, {}) %}
                             <tr>
                                 <td class="col-location">{{ row.customer }}</td>
                                 <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
+                                <td class="col-mtd">${{ "{:,}".format(mtd_row.get('total', 0)|int) }}</td>
                                 <td class="col-rank">{{ row.rank }}</td>
                             </tr>
                             {% endfor %}
@@ -1020,20 +1046,26 @@
                     <table class="ranking-table">
                         <thead><tr>
                             <th>Location</th>
-                            <th class="col-total">Total (CAD)</th>
+                            <th class="col-total">Today (CAD)</th>
                             <th class="col-usd">≈ USD</th>
-                            <th class="col-goal">Goal</th>
+                            <th class="col-mtd">MTD</th>
+                            <th class="col-goal">Goal (Inv.)</th>
                             <th class="col-pct">%</th>
                             <th class="col-rank">Rank</th>
                         </tr></thead>
                         <tbody>
                             {% for row in ca.territory_ranking %}
+                            {% set mtd_row = ca_mtd_terr.get(row.location, {}) %}
+                            {% set mtd_total = mtd_row.get('total', 0)|int %}
+                            {% set mtd_goal = mtd_row.get('goal') %}
+                            {% set mtd_pct = (mtd_total / mtd_goal * 100)|round(1) if mtd_goal else none %}
                             <tr>
                                 <td class="col-location">{{ row.location }}</td>
                                 <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
                                 <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
-                                <td class="col-goal">{% if row.goal %}${{ "{:,.0f}".format(row.goal / 1000) }}K{% else %}&mdash;{% endif %}</td>
-                                <td class="col-pct {{ 'met' if row.pct_to_goal and row.pct_to_goal >= 100 else ('close' if row.pct_to_goal and row.pct_to_goal >= 75 else 'behind') }}">{% if row.pct_to_goal %}{{ row.pct_to_goal }}%{% else %}&mdash;{% endif %}</td>
+                                <td class="col-mtd">${{ "{:,}".format(mtd_total) }}</td>
+                                <td class="col-goal">{% if mtd_goal %}${{ "{:,.0f}".format(mtd_goal / 1000) }}K{% else %}&mdash;{% endif %}</td>
+                                <td class="col-pct {{ 'met' if mtd_pct and mtd_pct >= 100 else ('close' if mtd_pct and mtd_pct >= 75 else 'behind') }}">{% if mtd_pct is not none %}{{ mtd_pct }}%{% else %}&mdash;{% endif %}</td>
                                 <td class="col-rank">{{ row.rank }}</td>
                             </tr>
                             {% endfor %}
@@ -1046,13 +1078,15 @@
             <div class="ranking-panel" id="ca-salesman">
                 <div class="ranking-wrapper">
                     <table class="ranking-table">
-                        <thead><tr><th>Salesman</th><th class="col-total">Total (CAD)</th><th class="col-usd">≈ USD</th><th class="col-rank">Rank</th></tr></thead>
+                        <thead><tr><th>Salesman</th><th class="col-total">Today (CAD)</th><th class="col-usd">≈ USD</th><th class="col-mtd">MTD</th><th class="col-rank">Rank</th></tr></thead>
                         <tbody>
                             {% for row in ca.salesman_ranking %}
+                            {% set mtd_row = ca_mtd_sm.get(row.salesman, {}) %}
                             <tr>
                                 <td class="col-location">{{ row.salesman }}</td>
                                 <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
                                 <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
+                                <td class="col-mtd">${{ "{:,}".format(mtd_row.get('total', 0)|int) }}</td>
                                 <td class="col-rank">{{ row.rank }}</td>
                             </tr>
                             {% endfor %}
@@ -1065,13 +1099,15 @@
             <div class="ranking-panel" id="ca-customer">
                 <div class="ranking-wrapper">
                     <table class="ranking-table">
-                        <thead><tr><th>Customer</th><th class="col-total">Total (CAD)</th><th class="col-usd">≈ USD</th><th class="col-rank">Rank</th></tr></thead>
+                        <thead><tr><th>Customer</th><th class="col-total">Today (CAD)</th><th class="col-usd">≈ USD</th><th class="col-mtd">MTD</th><th class="col-rank">Rank</th></tr></thead>
                         <tbody>
                             {% for row in ca.customer_ranking %}
+                            {% set mtd_row = ca_mtd_cust.get(row.custno, {}) %}
                             <tr>
                                 <td class="col-location">{{ row.customer }}</td>
                                 <td class="col-total">${{ "{:,}".format(row.total|int) }}</td>
                                 <td class="col-usd">${{ "{:,}".format(row.total_usd|int) }}</td>
+                                <td class="col-mtd">${{ "{:,}".format(mtd_row.get('total', 0)|int) }}</td>
                                 <td class="col-rank">{{ row.rank }}</td>
                             </tr>
                             {% endfor %}

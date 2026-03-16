@@ -45,6 +45,7 @@ from services.data_worker import (
 )
 from services.bookings_summary_service import (
     get_bookings_summary_from_cache,
+    get_mtd_by_region,
     fetch_raw_export_data as fetch_bookings_raw_export_data,
 )
 from services.shipments_summary_service import (
@@ -281,6 +282,25 @@ def bookings():
     _inject_territory_goals(us_data["territory_ranking"], today.year, today.month)
     _inject_territory_goals(ca_data["territory_ranking"], today.year, today.month)
 
+    # ── MTD data (per-region) for all ranking tabs ──
+    mtd_regions = get_mtd_by_region(cad_rate)
+    us_mtd_data = mtd_regions.get('us') or {}
+    ca_mtd_data = mtd_regions.get('ca') or {}
+
+    # Inject goals into MTD territory rankings so template can compute % = MTD / Goal
+    us_mtd_terr_list = us_mtd_data.get('territory_ranking') or []
+    ca_mtd_terr_list = ca_mtd_data.get('territory_ranking') or []
+    _inject_territory_goals(us_mtd_terr_list, today.year, today.month)
+    _inject_territory_goals(ca_mtd_terr_list, today.year, today.month)
+
+    # Build lookup dicts keyed by name for template merging
+    us_mtd_terr = {r['location']: r for r in us_mtd_terr_list}
+    us_mtd_sm   = {r['salesman']: r for r in (us_mtd_data.get('salesman_ranking') or [])}
+    us_mtd_cust = {r['custno']: r   for r in (us_mtd_data.get('customer_ranking') or [])}
+    ca_mtd_terr = {r['location']: r for r in ca_mtd_terr_list}
+    ca_mtd_sm   = {r['salesman']: r for r in (ca_mtd_data.get('salesman_ranking') or [])}
+    ca_mtd_cust = {r['custno']: r   for r in (ca_mtd_data.get('customer_ranking') or [])}
+
     error = None
     if snapshot_us is None and snapshot_ca is None:
         error = "Unable to load data. Please try again shortly."
@@ -293,6 +313,12 @@ def bookings():
         error=error,
         us=us_data,
         ca=ca_data,
+        us_mtd_terr=us_mtd_terr,
+        us_mtd_sm=us_mtd_sm,
+        us_mtd_cust=us_mtd_cust,
+        ca_mtd_terr=ca_mtd_terr,
+        ca_mtd_sm=ca_mtd_sm,
+        ca_mtd_cust=ca_mtd_cust,
         cad_rate=cad_rate,
         last_updated=last_updated,
         can_export=can_export,
@@ -763,6 +789,9 @@ def my_tracker():
     territory_goal = None
     territory_name = None
     territory_invoiced = None
+    region_goal = None
+    region_name = None
+    region_invoiced = None
     if data and data.get('primary_territory'):
         territory_name = data['primary_territory']
         try:
@@ -779,6 +808,43 @@ def my_tracker():
                 )
             except Exception:
                 pass  # Territory total is non-critical
+
+        # Region goal — look up which region this territory belongs to
+        try:
+            from services.constants import TERRITORY_TO_REGION
+            from services.goals_service import get_region_goal
+            from services.my_tracker_service import get_region_invoiced
+            region_key = TERRITORY_TO_REGION.get(territory_name)
+            if region_key:
+                region_name = region_key  # e.g. 'WEST', 'SOUTHEAST'
+                region_info = get_region_goal(region_key, selected_year, selected_month)
+                region_goal = region_info.get('goal') if region_info else None
+                if region_goal:
+                    region_invoiced = get_region_invoiced(
+                        region_key, selected_year, selected_month, region=selected_region
+                    )
+        except Exception:
+            pass  # Region goals are non-critical
+
+    # Territory & region daily invoiced — for cumulative chart
+    territory_daily = None
+    region_daily = None
+    if territory_name:
+        try:
+            from services.my_tracker_service import get_territory_daily_invoiced
+            territory_daily = get_territory_daily_invoiced(
+                territory_name, selected_year, selected_month, region=selected_region
+            )
+        except Exception:
+            pass
+    if region_name:
+        try:
+            from services.my_tracker_service import get_region_daily_invoiced
+            region_daily = get_region_daily_invoiced(
+                region_name, selected_year, selected_month, region=selected_region
+            )
+        except Exception:
+            pass
 
     # Estimated commission
     commission_data = None
@@ -820,6 +886,11 @@ def my_tracker():
         territory_goal=territory_goal,
         territory_name=territory_name,
         territory_invoiced=territory_invoiced,
+        region_goal=region_goal,
+        region_name=region_name,
+        region_invoiced=region_invoiced,
+        territory_daily=territory_daily,
+        region_daily=region_daily,
         commission_data=commission_data,
     )
 

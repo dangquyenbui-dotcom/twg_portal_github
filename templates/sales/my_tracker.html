@@ -102,8 +102,8 @@
 /* ── KPI row ── */
 .kpi-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
     margin-bottom: 28px;
 }
 
@@ -111,7 +111,7 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    padding: 20px;
+    padding: 14px 16px;
     position: relative;
     overflow: hidden;
     box-shadow: var(--shadow-sm);
@@ -131,9 +131,10 @@
 .kpi-card.amber::before { background: linear-gradient(90deg, var(--accent-amber), #FBBF24); }
 .kpi-card.red::before { background: linear-gradient(90deg, var(--accent-red), #F87171); }
 .kpi-card.purple::before { background: linear-gradient(90deg, #8B5CF6, #A78BFA); }
+.kpi-card.sky::before { background: linear-gradient(90deg, #0EA5E9, #38BDF8); }
 
 .kpi-sub {
-    font-size: 12px;
+    font-size: 11px;
     font-family: var(--font-mono);
     color: var(--text-muted);
     margin-top: 4px;
@@ -154,7 +155,7 @@
 }
 
 .kpi-value {
-    font-size: 32px;
+    font-size: 26px;
     font-weight: 700;
     font-family: var(--font-mono);
     letter-spacing: -1px;
@@ -431,13 +432,18 @@
 }
 
 /* ── Responsive ── */
+@media (max-width: 1100px) {
+    .kpi-row { grid-template-columns: repeat(3, 1fr); }
+    .kpi-value { font-size: 24px; }
+}
+
 @media (max-width: 768px) {
     .tracker-header { flex-direction: column; align-items: flex-start; }
     .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
     .kpi-row .kpi-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
     .chart-grid { grid-template-columns: 1fr; }
     .chart-grid-2 { grid-template-columns: 1fr; }
-    .kpi-value { font-size: 26px; }
+    .kpi-value { font-size: 22px; }
     .tracker-updated { font-size: 12px; }
 }
 
@@ -535,7 +541,9 @@
             <div class="filter-label">Month</div>
             <select class="filter-select" id="monthSelect">
                 {% for y, m, label in available_months %}
+                {% if y >= 2025 %}
                 <option value="{{ y }}-{{ '%02d'|format(m) }}" {% if y == selected_year and m == selected_month %}selected{% endif %}>{{ label }}</option>
+                {% endif %}
                 {% endfor %}
             </select>
         </div>
@@ -581,7 +589,7 @@
     </div>
     {% if commission_data %}
     <div class="kpi-card {% if commission_data.total_commission < 0 %}red{% else %}green{% endif %}" title="This is an estimate only. Actual commission may vary based on final adjustments, collections, and other factors.">
-        <div class="kpi-label">Est. Commission <span style="font-size:9px;opacity:0.6;font-weight:400;">*estimate only</span></div>
+        <div class="kpi-label">Est. Commission</div>
         <div class="kpi-value {% if commission_data.total_commission < 0 %}red-text{% else %}money{% endif %}">${{ "{:,.0f}".format(commission_data.total_commission) }}</div>
         <div class="kpi-sub">
             {% if commission_data.mayhem_met %}
@@ -605,6 +613,18 @@
         <div class="kpi-sub">
             <span class="goal-pct {{ 'met' if pct >= 100 else ('close' if pct >= 75 else 'behind') }}">{{ pct }}%</span>
             — ${{ "{:,.0f}".format(team_total / 1000) }}K invoiced
+        </div>
+    </div>
+    {% endif %}
+    {% if region_goal %}
+    {% set region_total = region_invoiced if region_invoiced is not none else 0 %}
+    {% set region_pct = (region_total / region_goal * 100)|round(1) if region_goal > 0 else 0 %}
+    <div class="kpi-card sky">
+        <div class="kpi-label">{{ region_name }} Goal</div>
+        <div class="kpi-value" style="color: #0EA5E9;">${{ "{:,.0f}".format(region_goal / 1000) }}K</div>
+        <div class="kpi-sub">
+            <span class="goal-pct {{ 'met' if region_pct >= 100 else ('close' if region_pct >= 75 else 'behind') }}">{{ region_pct }}%</span>
+            — ${{ "{:,.0f}".format(region_total / 1000) }}K invoiced
         </div>
     </div>
     {% endif %}
@@ -646,7 +666,7 @@
 {# ── Row 2: Cumulative MTD vs LY + Top 10 Customers ── #}
 <div class="chart-grid-2 fade-in stagger-4">
     <div class="chart-card">
-        <div class="chart-title">Cumulative MTD vs Same Month Last Year</div>
+        <div class="chart-title">Cumulative MTD vs Territory & Region Goal</div>
         <div class="chart-wrap cumulative">
             <canvas id="cumulativeChart"></canvas>
         </div>
@@ -820,6 +840,11 @@
     var topCustomers = {{ data.top_customers | tojson }};
     var lyYear = {{ selected_year - 1 }};
     var territoryGoal = {{ territory_goal|default(0, true) }};
+    var regionGoal = {{ region_goal|default(0, true) }};
+    var territoryName = '{{ territory_name|default("Territory", true) }}';
+    var regionName = '{{ region_name|default("Region", true) }}';
+    var territoryDaily = {{ territory_daily|default([], true)|tojson }};
+    var regionDaily = {{ region_daily|default([], true)|tojson }};
 
     /* ── Theme colors ── */
     function getColors() {
@@ -1104,7 +1129,7 @@
         });
     }
 
-    /* ── Cumulative MTD vs Last Year ── */
+    /* ── Cumulative MTD vs Territory & Region Goal ── */
     var cumulativeChart = null;
 
     function renderCumulative() {
@@ -1114,31 +1139,40 @@
 
         if (cumulativeChart) cumulativeChart.destroy();
 
-        /* Build cumulative arrays from daily sales */
-        var cumTY = [];
-        var runTY = 0;
-        for (var i = 0; i < dayData.length; i++) {
-            runTY += dayData[i].sales;
-            cumTY.push(Math.round(runTY));
+        /* Build cumulative arrays from territory daily invoiced */
+        var cumTerr = [];
+        var runTerr = 0;
+        if (territoryDaily && territoryDaily.length > 0) {
+            for (var i = 0; i < territoryDaily.length; i++) {
+                runTerr += territoryDaily[i];
+                cumTerr.push(Math.round(runTerr));
+            }
         }
 
-        var cumLY = [];
-        var runLY = 0;
-        for (var j = 0; j < lyDayData.length; j++) {
-            runLY += lyDayData[j].sales;
-            cumLY.push(Math.round(runLY));
+        /* Build cumulative arrays from region daily invoiced */
+        var cumRegion = [];
+        var runRegion = 0;
+        if (regionDaily && regionDaily.length > 0) {
+            for (var i = 0; i < regionDaily.length; i++) {
+                runRegion += regionDaily[i];
+                cumRegion.push(Math.round(runRegion));
+            }
         }
 
-        /* X-axis labels = day numbers (use the longer of the two) */
-        var maxDays = Math.max(dayData.length, lyDayData.length);
+        /* X-axis: days in month (at least 31 to show full month with goal lines) */
+        var dataLen = Math.max(cumTerr.length, cumRegion.length, dayData.length);
+        var maxDays = Math.max(dataLen, 31);
         var labels = [];
         for (var d = 1; d <= maxDays; d++) labels.push(d);
 
         /* Build datasets */
-        var datasets = [
-            {
-                label: '{{ selected_year }}',
-                data: cumTY,
+        var datasets = [];
+
+        /* Territory cumulative MTD line */
+        if (cumTerr.length > 0) {
+            datasets.push({
+                label: territoryName + ' MTD',
+                data: cumTerr,
                 borderColor: c.green,
                 backgroundColor: c.green + '18',
                 borderWidth: 2.5,
@@ -1147,29 +1181,51 @@
                 tension: 0.2,
                 fill: true,
                 datalabels: { display: false }
-            },
-            {
-                label: '' + lyYear,
-                data: cumLY,
-                borderColor: c.text,
-                borderDash: [6, 3],
-                borderWidth: 2,
-                pointRadius: 0,
+            });
+        }
+
+        /* Region cumulative MTD line */
+        if (cumRegion.length > 0) {
+            datasets.push({
+                label: regionName + ' MTD',
+                data: cumRegion,
+                borderColor: '#F59E0B',
+                backgroundColor: '#F59E0B' + '10',
+                borderWidth: 2.5,
+                pointRadius: 2,
+                pointBackgroundColor: '#F59E0B',
                 tension: 0.2,
                 fill: false,
                 datalabels: { display: false }
-            }
-        ];
+            });
+        }
 
-        /* Add goal line if territory goal exists */
+        /* Territory goal line */
         if (territoryGoal > 0) {
-            var goalLine = [];
-            for (var g = 0; g < maxDays; g++) goalLine.push(territoryGoal);
+            var terrGoalLine = [];
+            for (var g = 0; g < maxDays; g++) terrGoalLine.push(territoryGoal);
             datasets.push({
-                label: 'Goal (' + fmtShort(territoryGoal) + ')',
-                data: goalLine,
+                label: territoryName + ' Goal (' + fmtShort(territoryGoal) + ')',
+                data: terrGoalLine,
                 borderColor: '#8B5CF6',
                 borderDash: [4, 4],
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0,
+                fill: false,
+                datalabels: { display: false }
+            });
+        }
+
+        /* Region goal line */
+        if (regionGoal > 0) {
+            var regGoalLine = [];
+            for (var r = 0; r < maxDays; r++) regGoalLine.push(regionGoal);
+            datasets.push({
+                label: regionName + ' Goal (' + fmtShort(regionGoal) + ')',
+                data: regGoalLine,
+                borderColor: '#0EA5E9',
+                borderDash: [8, 4],
                 borderWidth: 2,
                 pointRadius: 0,
                 tension: 0,

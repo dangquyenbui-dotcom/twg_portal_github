@@ -563,6 +563,180 @@ def get_territory_invoiced(territory_name, year, month, region='US'):
     return result
 
 
+def get_region_invoiced(region_key, year, month, region='US'):
+    """
+    Get total invoiced amount for ALL territories in a region for a given month.
+    Used for region goal progress on the My Sales Tracker page.
+
+    Args:
+        region_key: Region key (e.g. 'WEST', 'SOUTHEAST', 'MIDWEST', 'NORTHEAST', 'CANADA')
+        year, month: Target period
+        region: 'US' or 'CA' (database selector)
+
+    Returns:
+        int (rounded amount) or None on failure
+    """
+    cache_key = f'tracker_region_total_{region}_{region_key}_{year}_{month:02d}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Collect ALL territory codes that belong to this region
+    from services.constants import TERRITORY_MAP_US, TERRITORY_MAP_CA, TERRITORY_TO_REGION
+    terr_map = TERRITORY_MAP_CA if region == 'CA' else TERRITORY_MAP_US
+
+    # Find all territory display names in this region
+    region_territories = [name for name, rkey in TERRITORY_TO_REGION.items() if rkey == region_key]
+    if not region_territories:
+        logger.warning(f"MyTracker: No territories found for region '{region_key}'")
+        return None
+
+    # Collect all DB codes for those territory names
+    codes = [code for code, name in terr_map.items() if name in region_territories]
+    if not codes:
+        logger.warning(f"MyTracker: No DB territory codes found for region '{region_key}' territories: {region_territories}")
+        return None
+
+    database = Config.DB_ORDERS_CA if region == 'CA' else Config.DB_ORDERS
+    table = 'artran' if _is_current_month(year, month) else 'arytrn'
+    _, last_day = monthrange(year, month)
+    start_date = f'{year}-{month:02d}-01'
+    end_date = f'{year}-{month:02d}-{last_day:02d}'
+
+    excluded = list(TRACKER_EXCLUDED_CUSTOMERS)
+    excl_ph = ','.join(['?'] * len(excluded))
+    terr_ph = ','.join(['?'] * len(codes))
+
+    query = f"""
+    SELECT SUM(tr.extprice) AS total_invoiced
+    FROM {database}.dbo.{table} tr WITH (NOLOCK)
+    WHERE tr.invdte BETWEEN ? AND ?
+      AND tr.currhist <> 'X'
+      AND tr.terr IN ({terr_ph})
+      AND tr.custno NOT IN ({excl_ph})
+    """
+    params = [start_date, end_date] + codes + excluded
+
+    result = None
+    try:
+        conn = get_connection(database)
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        if row and row[0] is not None:
+            result = _financial_round(float(row[0]))
+        else:
+            result = 0
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"MyTracker: Error fetching region total for {region_key} {region} {year}-{month:02d}: {e}")
+        return None
+
+    cache.set(cache_key, result, timeout=TERRITORY_TOTAL_CACHE_TTL)
+    logger.info(f"MyTracker: Region total for {region_key} {region} {year}-{month:02d}: ${result:,}")
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
+# Territory / Region daily invoiced — for cumulative chart
+# ─────────────────────────────────────────────────────────────
+
+def _daily_invoiced_by_codes(codes, year, month, region='US'):
+    """
+    Get daily invoiced totals for a set of territory DB codes.
+    Returns list of floats indexed by day (0=day1, 1=day2, ...).
+    """
+    database = Config.DB_ORDERS_CA if region == 'CA' else Config.DB_ORDERS
+    table = 'artran' if _is_current_month(year, month) else 'arytrn'
+    _, last_day = monthrange(year, month)
+    start_date = f'{year}-{month:02d}-01'
+    end_date = f'{year}-{month:02d}-{last_day:02d}'
+
+    excluded = list(TRACKER_EXCLUDED_CUSTOMERS)
+    excl_ph = ','.join(['?'] * len(excluded))
+    terr_ph = ','.join(['?'] * len(codes))
+
+    query = f"""
+    SELECT DAY(tr.invdte) AS inv_day, SUM(tr.extprice) AS daily_total
+    FROM {database}.dbo.{table} tr WITH (NOLOCK)
+    WHERE tr.invdte BETWEEN ? AND ?
+      AND tr.currhist <> 'X'
+      AND tr.terr IN ({terr_ph})
+      AND tr.custno NOT IN ({excl_ph})
+    GROUP BY DAY(tr.invdte)
+    ORDER BY DAY(tr.invdte)
+    """
+    params = [start_date, end_date] + codes + excluded
+
+    today = date.today()
+    max_day = today.day if _is_current_month(year, month) else last_day
+
+    daily = [0.0] * max_day
+    try:
+        conn = get_connection(database)
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        for row in cursor.fetchall():
+            d = int(row[0])
+            if 1 <= d <= max_day:
+                daily[d - 1] = round(float(row[1]), 2)
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"MyTracker: Error fetching daily invoiced: {e}")
+        return None
+
+    return daily
+
+
+def get_territory_daily_invoiced(territory_name, year, month, region='US'):
+    """
+    Get daily invoiced totals for all salesmen in a territory.
+    Used for cumulative MTD chart (team-level territory line).
+    Returns list of daily amounts or None.
+    """
+    cache_key = f'tracker_terr_daily_{region}_{territory_name}_{year}_{month:02d}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    from services.constants import TERRITORY_MAP_US, TERRITORY_MAP_CA
+    terr_map = TERRITORY_MAP_CA if region == 'CA' else TERRITORY_MAP_US
+    codes = [code for code, name in terr_map.items() if name == territory_name]
+    if not codes:
+        return None
+
+    result = _daily_invoiced_by_codes(codes, year, month, region)
+    if result is not None:
+        cache.set(cache_key, result, timeout=TERRITORY_TOTAL_CACHE_TTL)
+    return result
+
+
+def get_region_daily_invoiced(region_key, year, month, region='US'):
+    """
+    Get daily invoiced totals for all territories in a region.
+    Used for cumulative MTD chart (team-level region line).
+    Returns list of daily amounts or None.
+    """
+    cache_key = f'tracker_region_daily_{region}_{region_key}_{year}_{month:02d}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    from services.constants import TERRITORY_MAP_US, TERRITORY_MAP_CA, TERRITORY_TO_REGION
+    terr_map = TERRITORY_MAP_CA if region == 'CA' else TERRITORY_MAP_US
+    region_territories = [name for name, rkey in TERRITORY_TO_REGION.items() if rkey == region_key]
+    codes = [code for code, name in terr_map.items() if name in region_territories]
+    if not codes:
+        return None
+
+    result = _daily_invoiced_by_codes(codes, year, month, region)
+    if result is not None:
+        cache.set(cache_key, result, timeout=TERRITORY_TOTAL_CACHE_TTL)
+    return result
+
+
 # ─────────────────────────────────────────────────────────────
 # Win-back opportunities — lapsed customers from last year
 # ─────────────────────────────────────────────────────────────

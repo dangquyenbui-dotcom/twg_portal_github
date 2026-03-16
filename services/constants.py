@@ -60,6 +60,25 @@ GOAL_TERRITORY_MAP = {
     'TOR':        'Toronto',
 }
 
+# ── Portal territory display name → region key ──
+# Used to look up the region goal for a salesman's territory.
+# Derived from the spreadsheet grouping (see screenshot of Feb-26 goals).
+TERRITORY_TO_REGION = {
+    # WEST
+    'Denver': 'WEST', 'LA': 'WEST', 'Seattle': 'WEST',
+    # SOUTHEAST
+    'Atlanta': 'SOUTHEAST', 'Charlotte': 'SOUTHEAST',
+    'Jacksonville': 'SOUTHEAST', 'Nashville': 'SOUTHEAST',
+    # MIDWEST
+    'Dallas': 'MIDWEST', 'Houston': 'MIDWEST',
+    'Kansas City': 'MIDWEST', 'San Antonio': 'MIDWEST',
+    # NORTHEAST
+    'Columbus': 'NORTHEAST', 'Indianapolis': 'NORTHEAST',
+    'Levittown,PA': 'NORTHEAST',
+    # Canada
+    'Vancouver': 'CANADA', 'Toronto': 'CANADA', 'Montreal': 'CANADA',
+}
+
 # Region subtotals in the spreadsheet — stored separately, not matched to individual territories
 GOAL_REGION_MAP = {
     'WEST':                'WEST',
