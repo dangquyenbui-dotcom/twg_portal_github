@@ -439,11 +439,14 @@
 
 @media (max-width: 768px) {
     .tracker-header { flex-direction: column; align-items: flex-start; }
-    .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .kpi-row .kpi-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
     .chart-grid { grid-template-columns: 1fr; }
     .chart-grid-2 { grid-template-columns: 1fr; }
-    .kpi-value { font-size: 22px; }
+    .kpi-card { padding: 14px; }
+    .kpi-value { font-size: 26px; }
+    .kpi-label { font-size: 10px; }
+    .kpi-sub { font-size: 10px; }
     .tracker-updated { font-size: 12px; }
 }
 
@@ -458,9 +461,9 @@
     .filter-select { min-width: 100%; }
     .filter-label { font-size: 10px; }
     .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    .kpi-card { padding: 12px; }
+    .kpi-card { padding: 12px 14px; }
     .kpi-label { font-size: 9px; margin-bottom: 4px; }
-    .kpi-value { font-size: 20px; }
+    .kpi-value { font-size: 24px; }
     .kpi-sub { font-size: 10px; }
     .chart-card { padding: 16px; }
     .chart-title { font-size: 13px; margin-bottom: 12px; }
