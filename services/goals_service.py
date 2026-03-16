@@ -195,8 +195,10 @@ def _parse_goals_sheet(ws, multiplier):
     name_col = _find_name_column(ws, header_row)
 
     # Step 3: Read data rows
-    territories = {}  # portal_display_name → {month: {actual, le, budget}}
-    regions = {}      # region_key → {month: {actual, le, budget}}
+    # Keyed by (year, month) to avoid cross-year collisions
+    # (e.g. Mar-25LE and Mar-26LE are different periods)
+    territories = {}  # portal_display_name → {(year,month): {actual, le, budget}}
+    regions = {}      # region_key → {(year,month): {actual, le, budget}}
 
     for row_idx in range(header_row + 1, ws.max_row + 1):
         raw_name = ws.cell(row=row_idx, column=name_col).value
@@ -226,9 +228,10 @@ def _parse_goals_sheet(ws, multiplier):
             except (ValueError, TypeError):
                 continue
 
-            if month_num not in monthly:
-                monthly[month_num] = {'actual': None, 'le': None, 'budget': None}
-            monthly[month_num][val_type] = num_val
+            ym_key = (year_full, month_num)
+            if ym_key not in monthly:
+                monthly[ym_key] = {'actual': None, 'le': None, 'budget': None}
+            monthly[ym_key][val_type] = num_val
 
         if portal_name:
             # Individual territory — merge with existing if same display name (e.g., LA + LA-CORP)
@@ -273,17 +276,18 @@ def _merge_monthly(existing, new):
     """
     Merge monthly goal data, adding values for duplicate territories
     (e.g., LA + LA-CORP both map to portal 'LA').
+    Keys are (year, month) tuples.
     """
-    for month_num, vals in new.items():
-        if month_num not in existing:
-            existing[month_num] = vals
+    for ym_key, vals in new.items():
+        if ym_key not in existing:
+            existing[ym_key] = vals
         else:
             for key in ('actual', 'le', 'budget'):
                 if vals.get(key) is not None:
-                    if existing[month_num].get(key) is not None:
-                        existing[month_num][key] += vals[key]
+                    if existing[ym_key].get(key) is not None:
+                        existing[ym_key][key] += vals[key]
                     else:
-                        existing[month_num][key] = vals[key]
+                        existing[ym_key][key] = vals[key]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -324,7 +328,7 @@ def get_territory_goal(location, year, month):
     if not terr_data:
         return None
 
-    month_data = terr_data.get(month)
+    month_data = terr_data.get((year, month))
     if not month_data:
         return None
 
@@ -351,7 +355,7 @@ def get_region_goal(region_key, year, month):
     if not region_data:
         return None
 
-    month_data = region_data.get(month)
+    month_data = region_data.get((year, month))
     if not month_data:
         return None
 

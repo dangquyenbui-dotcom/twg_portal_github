@@ -715,7 +715,7 @@ Territory codes are mapped to display names in `services/constants.py`:
 
 **My Sales Tracker Filters (SQL WHERE):** `salesmn = ?`, `invdte BETWEEN ? AND ?`, `currhist <> 'X'`. No `artype` filter — credit memos (artype='C') are included for accurate net sales and margin analysis.
 
-### Scheduler Strategy (Six Independent Jobs)
+### Scheduler Strategy (Seven Independent Jobs)
 
 | Job ID | Function | Interval | What It Refreshes | Cache TTL | Run on Startup |
 |---|---|---|---|---|---|
@@ -724,6 +724,7 @@ Territory codes are mapped to display names in `services/constants.py`:
 | `bookings_summary_refresh` | `refresh_bookings_summary_scheduled()` | 30 min | MTD/QTD/YTD from frozen files + live current month, YoY from dashboard files, + dashboard cache for current year | 2100s (35 min) | Yes |
 | `shipments_summary_refresh` | `refresh_shipments_summary_scheduled()` | 30 min | MTD/QTD/YTD from frozen files + live current month, YoY from shipments dashboard files | 2100s (35 min) | Yes |
 | `dashboard_current_refresh` | `refresh_dashboard_current_month()` | 60 min | Dashboard current month only (sotran, US + CA) | 3900s (65 min) | No* |
+| `goals_refresh` | `refresh_goals_cache()` | Daily at 2:00 AM | Territory stretch goals from SharePoint Excel file | 86400s (24 hr) | Yes |
 
 *Dashboard current month is also populated by the Bookings Summary refresh (as a side effect of the YTD assembly), so it's usually already warm when the dedicated 60-min job runs.
 
@@ -792,6 +793,12 @@ The tracker uses **on-demand caching** — no APScheduler job. SQL is queried on
 | `dash_hist_{region}_{year}` | `dict` | 24 hr | Historical year summary (also populated by Bookings Summary for current year) |
 | `dash_current_{region}` | `dict` | 65 min | Current month summary (also populated by Bookings Summary) |
 | `dashboard_last_updated` | `datetime` | 65 min | Last current-month refresh timestamp |
+
+**Goals cache keys (defined in `goals_service.py`):**
+
+| Key | Type | TTL | Description |
+|---|---|---|---|
+| `goals_data` | `dict` | 24 hr | Parsed territory stretch goals from SharePoint. Contains `territories` (keyed by portal display name → `{(year,month): {actual, le, budget}}`), `regions`, `last_updated`, `file_name`. |
 
 **Cache miss behavior:** If a route reads from cache and finds nothing, it triggers a synchronous fetch as a fallback. This ensures the first request after a cold start still returns data (with a brief delay).
 
@@ -917,11 +924,11 @@ The shipments page is a **single consolidated view** combining today's data with
 - **Region selector** — US / CA with country flag image from flagcdn.com CDN
 - **Salesman selector** (Admin only) — Dropdown of all salesmen with shipments in the selected month
 
-**KPI cards (4):**
+**KPI cards (4 + optional goal):**
 - Total Sales (with margin amount and margin %)
 - Total Margin (standalone)
-- Invoices (count of distinct invoice numbers)
-- Units (total quantity shipped)
+- Margin %
+- Territory Goal (purple card, shown when goal data exists) — displays the monthly stretch goal for the salesman's primary territory, with progress percentage and invoiced amount. Progress color: green (met, ≥100%), amber (close, ≥75%), red (behind, <75%).
 - Negative values display in red with red card border (handles credit memo months)
 
 **Charts (4, all Chart.js with chartjs-plugin-datalabels):**
@@ -1075,6 +1082,27 @@ All monetary values use `_financial_round()` instead of `math.ceil()`. This roun
 ### Excluded Customers
 
 The tracker uses `TRACKER_EXCLUDED_CUSTOMERS` (only `TEST123`) instead of `BOOKINGS_EXCLUDED_CUSTOMERS` (7 entries including warehouse codes). Warehouse customers like W1VAN and W1TOR are legitimate shipment destinations for salesmen tracking.
+
+### Territory Goals (Stretch Goals from SharePoint)
+
+**Data source:** SharePoint Excel file (`GOALS_FILE_NAME` env var, e.g. `TWG - April 2025 LE.xlsx`), sheet `Sales Stretch Goal.v2`.
+
+**Spreadsheet format:** Column headers follow the pattern `MMM-YYX` where `MMM` is the 3-letter month, `YY` is the 2-digit year, and `X` is the type suffix: `A` (Actual), `LE` (Latest Estimate), or `B` (Budget/Stretch Goal). Territory names are in column B (e.g., LA, SEAWA, DEN, LA - CORP). The spreadsheet may contain columns spanning multiple years (e.g., both `Mar-25LE` and `Mar-26LE`).
+
+**Parsing (`goals_service.py`):**
+1. Scans rows 1–14 to find the header row (first row with ≥3 month-pattern columns)
+2. Builds a column map: `{col_idx: (month, year, type)}`
+3. Reads each territory row, multiplies values by `GOAL_MULTIPLIER` (default 1000, since spreadsheet values are in thousands), applies `math.ceil()`
+4. Stores data keyed by `(year, month)` tuples to prevent cross-year collisions (e.g., `Mar-25LE` data from LA-CORP contaminating `Mar-26LE` for LA)
+5. Territories sharing a portal display name (e.g., `LA` + `LA - CORP` both map to `'LA'`) are merged by adding their values
+
+**Goal priority:** Budget → LE → Actual (first available wins).
+
+**Territory mapping:** `GOAL_TERRITORY_MAP` in `constants.py` maps spreadsheet row names to portal display names. `GOAL_REGION_MAP` maps subtotal rows (WEST, MIDWEST, etc.) to region keys.
+
+**Refresh schedule:** Daily at 2:00 AM via APScheduler + on startup. Can be manually triggered from Admin → Dashboard Data → "Refresh Goals from SharePoint". The admin refresh shows a preview table of all parsed territory goal values for the current month.
+
+**Important:** The file is read with openpyxl `data_only=True`, which reads cached formula values from the .xlsx file — not live formula results. If someone updates formula inputs in the spreadsheet, they must open the file in desktop Excel, press Ctrl+Alt+F9 to force recalculation, then save and re-upload for the portal to pick up the new values.
 
 ---
 

@@ -301,6 +301,7 @@
         <button class="data-type-tab active" onclick="switchDataType('bookings')">Bookings</button>
         <button class="data-type-tab" onclick="switchDataType('shipments')">Shipments</button>
         <button class="data-type-tab" onclick="switchDataType('health')">System Health</button>
+        <button class="data-type-tab" onclick="switchDataType('commission')">Commission Rates</button>
     </div>
 
     <!-- ════════════ BOOKINGS PANEL ════════════ -->
@@ -574,6 +575,9 @@
 
             <!-- SharePoint result card (hidden by default) -->
             <div class="sp-result" id="sp-result"></div>
+
+            <!-- Goals preview card (hidden by default) -->
+            <div class="sp-result" id="goals-preview"></div>
         </div>
 
         <!-- Configuration -->
@@ -610,6 +614,60 @@
         </div>
     </div>
 </div>
+
+<!-- ════════════ COMMISSION RATES PANEL ════════════ -->
+<div class="data-type-panel" id="panel-commission">
+    <div class="info-box">
+        <strong>Commission rates</strong> control the estimated commission shown on each salesman's My Sales Tracker page.
+        Salesmen without a configured rate use the default of <strong>{{ commission_default_rate }}%</strong>.
+        The Mayhem Multiplier (25% bonus) is applied automatically when a territory meets its stretch goal.
+    </div>
+
+    <!-- Add/Edit form -->
+    <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:20px;flex-wrap:wrap;">
+        <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);display:block;margin-bottom:4px;">Salesman Code</label>
+            <input type="text" id="comm-salesman" placeholder="e.g. MARY" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-card);color:var(--text-primary);font-size:14px;width:140px;text-transform:uppercase;">
+        </div>
+        <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);display:block;margin-bottom:4px;">Rate (%)</label>
+            <input type="number" id="comm-rate" placeholder="{{ commission_default_rate }}" step="0.01" min="0" max="100" style="padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-card);color:var(--text-primary);font-size:14px;width:100px;">
+        </div>
+        <button class="btn-health goals" onclick="saveCommissionRate()" style="padding:8px 16px;">Save Rate</button>
+    </div>
+
+    <!-- Rates table -->
+    <table style="width:100%;border-collapse:collapse;font-size:13px;" id="commission-table">
+        <thead>
+            <tr style="border-bottom:2px solid var(--border);color:var(--text-muted);text-transform:uppercase;font-size:11px;letter-spacing:0.5px;">
+                <th style="text-align:left;padding:8px;">Salesman</th>
+                <th style="text-align:right;padding:8px;">Rate (%)</th>
+                <th style="text-align:center;padding:8px;width:80px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for code, rate in commission_rates.items()|sort %}
+            <tr style="border-bottom:1px solid var(--border);" data-salesman="{{ code }}">
+                <td style="padding:8px;font-weight:600;">{{ code }}</td>
+                <td style="text-align:right;padding:8px;font-family:var(--font-mono);">{{ (rate * 100)|round(2) }}%</td>
+                <td style="text-align:center;padding:8px;">
+                    <button onclick="editCommissionRate('{{ code }}', {{ (rate * 100)|round(2) }})" style="background:none;border:none;color:var(--accent-blue);cursor:pointer;font-size:12px;padding:2px 6px;">Edit</button>
+                    <button onclick="deleteCommissionRate('{{ code }}')" style="background:none;border:none;color:var(--accent-red);cursor:pointer;font-size:12px;padding:2px 6px;">Delete</button>
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not commission_rates %}
+            <tr id="comm-empty-row">
+                <td colspan="3" style="padding:16px;text-align:center;color:var(--text-muted);">No custom rates configured. All salesmen use the default {{ commission_default_rate }}% rate.</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+    {% if commission_updated_at %}
+    <div style="margin-top:12px;font-size:11px;color:var(--text-muted);">Last updated: {{ commission_updated_at }}</div>
+    {% endif %}
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -935,6 +993,9 @@ function refreshGoals(btn) {
     btn.textContent = 'Refreshing...';
     showToast('Refreshing goals from SharePoint...', 'running');
 
+    var previewDiv = document.getElementById('goals-preview');
+    previewDiv.className = 'sp-result';
+
     fetch('/admin/dashboard-data/refresh-goals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -945,6 +1006,38 @@ function refreshGoals(btn) {
         btn.textContent = orig;
         if (data.success) {
             showToast('Goals refreshed! ' + (data.territories || 0) + ' territories loaded.', 'success');
+
+            // Build preview table of parsed goal values
+            if (data.preview) {
+                var html = '<strong>Parsed Goal Values — ' + (data.month || '') + '</strong>';
+                html += '<div style="color:var(--text-muted);margin:4px 0 8px;font-size:11px;">';
+                html += '⚠️ These are cached formula values from the .xlsx file. If they don\'t match what you see in Excel, ';
+                html += 'open the file in desktop Excel → Ctrl+Alt+F9 to recalculate → Save → re-upload to SharePoint, then refresh again.';
+                html += '</div>';
+                html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+                html += '<tr style="border-bottom:1px solid var(--border);color:var(--text-muted);">';
+                html += '<th style="text-align:left;padding:4px 8px;">Territory</th>';
+                html += '<th style="text-align:right;padding:4px 8px;">Actual</th>';
+                html += '<th style="text-align:right;padding:4px 8px;">LE</th>';
+                html += '<th style="text-align:right;padding:4px 8px;">Budget</th>';
+                html += '<th style="text-align:right;padding:4px 8px;">Goal (used)</th>';
+                html += '</tr>';
+                var names = Object.keys(data.preview).sort();
+                for (var i = 0; i < names.length; i++) {
+                    var t = names[i], v = data.preview[t];
+                    var fmt = function(n) { return n != null ? '$' + (n/1000).toLocaleString(undefined, {maximumFractionDigits:0}) + 'K' : '—'; };
+                    html += '<tr style="border-bottom:1px solid var(--border);">';
+                    html += '<td style="padding:4px 8px;font-weight:600;">' + t + '</td>';
+                    html += '<td style="text-align:right;padding:4px 8px;">' + fmt(v.actual) + '</td>';
+                    html += '<td style="text-align:right;padding:4px 8px;">' + fmt(v.le) + '</td>';
+                    html += '<td style="text-align:right;padding:4px 8px;">' + fmt(v.budget) + '</td>';
+                    html += '<td style="text-align:right;padding:4px 8px;color:#8B5CF6;font-weight:600;">' + fmt(v.goal) + '</td>';
+                    html += '</tr>';
+                }
+                html += '</table>';
+                previewDiv.innerHTML = html;
+                previewDiv.className = 'sp-result show';
+            }
         } else {
             showToast('Goals refresh failed: ' + (data.error || 'Unknown error'), 'error');
         }
@@ -956,15 +1049,93 @@ function refreshGoals(btn) {
     });
 }
 
+/* ── Commission rate management ── */
+function saveCommissionRate() {
+    var salesman = document.getElementById('comm-salesman').value.trim().toUpperCase();
+    var rate = parseFloat(document.getElementById('comm-rate').value);
+    if (!salesman) { showToast('Enter a salesman code', 'error'); return; }
+    if (isNaN(rate) || rate < 0 || rate > 100) { showToast('Rate must be 0-100', 'error'); return; }
+
+    fetch('/admin/commission-rates/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ salesman: salesman, rate: rate }),
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (data.success) {
+            showToast('Saved ' + salesman + ' = ' + rate + '%', 'success');
+            // Update table in-place
+            var existing = document.querySelector('tr[data-salesman="' + salesman + '"]');
+            var emptyRow = document.getElementById('comm-empty-row');
+            if (emptyRow) emptyRow.remove();
+            if (existing) {
+                existing.querySelector('td:nth-child(2)').textContent = rate + '%';
+            } else {
+                var tbody = document.getElementById('commission-table').querySelector('tbody');
+                var tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid var(--border)';
+                tr.setAttribute('data-salesman', salesman);
+                tr.innerHTML = '<td style="padding:8px;font-weight:600;">' + salesman + '</td>' +
+                    '<td style="text-align:right;padding:8px;font-family:var(--font-mono);">' + rate + '%</td>' +
+                    '<td style="text-align:center;padding:8px;">' +
+                    '<button onclick="editCommissionRate(\'' + salesman + '\',' + rate + ')" style="background:none;border:none;color:var(--accent-blue);cursor:pointer;font-size:12px;padding:2px 6px;">Edit</button>' +
+                    '<button onclick="deleteCommissionRate(\'' + salesman + '\')" style="background:none;border:none;color:var(--accent-red);cursor:pointer;font-size:12px;padding:2px 6px;">Delete</button>' +
+                    '</td>';
+                tbody.appendChild(tr);
+            }
+            document.getElementById('comm-salesman').value = '';
+            document.getElementById('comm-rate').value = '';
+        } else {
+            showToast('Error: ' + (data.error || 'Unknown'), 'error');
+        }
+    })
+    .catch(function(err) { showToast('Network error: ' + err.message, 'error'); });
+}
+
+function editCommissionRate(salesman, rate) {
+    document.getElementById('comm-salesman').value = salesman;
+    document.getElementById('comm-rate').value = rate;
+    document.getElementById('comm-rate').focus();
+}
+
+function deleteCommissionRate(salesman) {
+    if (!confirm('Remove custom rate for ' + salesman + '? They will use the default rate.')) return;
+
+    fetch('/admin/commission-rates/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ salesman: salesman }),
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (data.success) {
+            showToast('Deleted rate for ' + salesman, 'success');
+            var row = document.querySelector('tr[data-salesman="' + salesman + '"]');
+            if (row) row.remove();
+            // Show empty message if no rows left
+            var tbody = document.getElementById('commission-table').querySelector('tbody');
+            if (tbody.querySelectorAll('tr[data-salesman]').length === 0) {
+                var tr = document.createElement('tr');
+                tr.id = 'comm-empty-row';
+                tr.innerHTML = '<td colspan="3" style="padding:16px;text-align:center;color:var(--text-muted);">No custom rates configured. All salesmen use the default rate.</td>';
+                tbody.appendChild(tr);
+            }
+        } else {
+            showToast('Error: ' + (data.error || 'Unknown'), 'error');
+        }
+    })
+    .catch(function(err) { showToast('Network error: ' + err.message, 'error'); });
+}
+
 /* ── Preserve active tab on reload ── */
 (function() {
     var hash = window.location.hash.replace('#', '');
-    if (hash === 'shipments' || hash === 'health') {
+    var validTabs = {'shipments': 'Shipments', 'health': 'System Health', 'commission': 'Commission Rates'};
+    if (validTabs[hash]) {
         document.querySelectorAll('.data-type-tab').forEach(function(tab) {
             tab.classList.remove('active');
-            var t = tab.textContent.trim();
-            if (hash === 'shipments' && t === 'Shipments') tab.classList.add('active');
-            if (hash === 'health' && t === 'System Health') tab.classList.add('active');
+            if (tab.textContent.trim() === validTabs[hash]) tab.classList.add('active');
         });
         document.querySelectorAll('.data-type-panel').forEach(function(panel) {
             panel.classList.remove('active');

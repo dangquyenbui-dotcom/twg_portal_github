@@ -489,6 +489,81 @@ def get_leaderboard_data(year, month, region='US'):
 
 
 # ─────────────────────────────────────────────────────────────
+# Territory-wide invoiced total (for goal progress)
+# ─────────────────────────────────────────────────────────────
+
+TERRITORY_TOTAL_CACHE_TTL = 900  # 15 minutes
+
+def get_territory_invoiced(territory_name, year, month, region='US'):
+    """
+    Get total invoiced amount for ALL salesmen in a territory for a given month.
+    Used for territory goal progress (team effort, not individual).
+
+    Args:
+        territory_name: Portal display name (e.g. 'LA', 'Seattle')
+        year, month: Target period
+        region: 'US' or 'CA'
+
+    Returns:
+        int (rounded amount) or None on failure
+    """
+    cache_key = f'tracker_terr_total_{region}_{territory_name}_{year}_{month:02d}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Build reverse map: territory display name → list of DB territory codes
+    from services.constants import TERRITORY_MAP_US, TERRITORY_MAP_CA
+    terr_map = TERRITORY_MAP_CA if region == 'CA' else TERRITORY_MAP_US
+    codes = [code for code, name in terr_map.items() if name == territory_name]
+
+    if not codes:
+        logger.warning(f"MyTracker: No territory codes found for '{territory_name}' in {region}")
+        return None
+
+    database = Config.DB_ORDERS_CA if region == 'CA' else Config.DB_ORDERS
+    table = 'artran' if _is_current_month(year, month) else 'arytrn'
+    _, last_day = monthrange(year, month)
+    start_date = f'{year}-{month:02d}-01'
+    end_date = f'{year}-{month:02d}-{last_day:02d}'
+
+    # Build excluded-customers and territory-codes placeholders
+    excluded = list(TRACKER_EXCLUDED_CUSTOMERS)
+    excl_ph = ','.join(['?'] * len(excluded))
+    terr_ph = ','.join(['?'] * len(codes))
+
+    query = f"""
+    SELECT SUM(tr.extprice) AS total_invoiced
+    FROM {database}.dbo.{table} tr WITH (NOLOCK)
+    WHERE tr.invdte BETWEEN ? AND ?
+      AND tr.currhist <> 'X'
+      AND tr.terr IN ({terr_ph})
+      AND tr.custno NOT IN ({excl_ph})
+    """
+    params = [start_date, end_date] + codes + excluded
+
+    result = None
+    try:
+        conn = get_connection(database)
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        if row and row[0] is not None:
+            result = _financial_round(float(row[0]))
+        else:
+            result = 0
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"MyTracker: Error fetching territory total for {territory_name} {region} {year}-{month:02d}: {e}")
+        return None
+
+    cache.set(cache_key, result, timeout=TERRITORY_TOTAL_CACHE_TTL)
+    logger.info(f"MyTracker: Territory total for {territory_name} {region} {year}-{month:02d}: ${result:,}")
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
 # Win-back opportunities — lapsed customers from last year
 # ─────────────────────────────────────────────────────────────
 

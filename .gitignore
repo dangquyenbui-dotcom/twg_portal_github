@@ -23,3 +23,4 @@ shipments_summary_data/
 .vscode/
 .idea/
 .DS_Store
+.gstack/

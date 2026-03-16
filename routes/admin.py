@@ -161,12 +161,18 @@ def dashboard_data():
     shipments_years = _group_statuses_by_year(get_shipments_frozen_status())
     health_summary = get_health_summary()
 
+    from services.commission_service import get_all_commission_rates, DEFAULT_COMMISSION_RATE
+    commission_data = get_all_commission_rates()
+
     return render_template(
         'admin/dashboard_data.html',
         user=session["user"],
         bookings_years=bookings_years,
         shipments_years=shipments_years,
         health_summary=health_summary,
+        commission_rates=commission_data.get('rates', {}),
+        commission_default_rate=DEFAULT_COMMISSION_RATE * 100,
+        commission_updated_at=commission_data.get('updated_at'),
     )
 
 
@@ -352,8 +358,80 @@ def refresh_goals():
         if success:
             data = get_goals_from_cache()
             terr_count = len(data.get('territories', {})) if data else 0
-            return jsonify({'success': True, 'territories': terr_count})
+
+            # Build a summary of current-month goal values for verification
+            from datetime import date
+            today = date.today()
+            ym_key = (today.year, today.month)
+            preview = {}
+            for name, months in data.get('territories', {}).items():
+                m = months.get(ym_key)
+                if m:
+                    goal = m.get('budget') or m.get('le') or m.get('actual')
+                    preview[name] = {
+                        'actual': m.get('actual'),
+                        'le': m.get('le'),
+                        'budget': m.get('budget'),
+                        'goal': goal,
+                    }
+
+            return jsonify({
+                'success': True,
+                'territories': terr_count,
+                'month': today.strftime('%b %Y'),
+                'preview': preview,
+            })
         else:
             return jsonify({'success': False, 'error': 'Refresh returned False — check logs for details.'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+# ─────────────────────────────────────────────────────────────
+# Commission rate management
+# ─────────────────────────────────────────────────────────────
+
+@admin_bp.route('/commission-rates', methods=['GET'])
+@require_role('Admin')
+def commission_rates_list():
+    """AJAX: Return all commission rates as JSON."""
+    from services.commission_service import get_all_commission_rates, DEFAULT_COMMISSION_RATE
+    data = get_all_commission_rates()
+    return jsonify({
+        'rates': data.get('rates', {}),
+        'default_rate': DEFAULT_COMMISSION_RATE * 100,
+        'updated_at': data.get('updated_at'),
+    })
+
+
+@admin_bp.route('/commission-rates/save', methods=['POST'])
+@require_role('Admin')
+def commission_rates_save():
+    """AJAX: Save a commission rate for a salesman."""
+    try:
+        from services.commission_service import save_commission_rate
+        body = request.get_json(force=True)
+        salesman = body.get('salesman', '').strip().upper()
+        rate_pct = float(body.get('rate', 0))
+        if not salesman:
+            return jsonify({'success': False, 'error': 'Salesman code is required'})
+        save_commission_rate(salesman, rate_pct)
+        return jsonify({'success': True, 'salesman': salesman, 'rate': rate_pct})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@admin_bp.route('/commission-rates/delete', methods=['POST'])
+@require_role('Admin')
+def commission_rates_delete():
+    """AJAX: Delete a salesman's commission rate (reverts to default)."""
+    try:
+        from services.commission_service import delete_commission_rate
+        body = request.get_json(force=True)
+        salesman = body.get('salesman', '').strip().upper()
+        if not salesman:
+            return jsonify({'success': False, 'error': 'Salesman code is required'})
+        deleted = delete_commission_rate(salesman)
+        return jsonify({'success': True, 'deleted': deleted})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})

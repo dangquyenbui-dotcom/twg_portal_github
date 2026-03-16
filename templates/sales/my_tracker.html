@@ -433,7 +433,8 @@
 /* ── Responsive ── */
 @media (max-width: 768px) {
     .tracker-header { flex-direction: column; align-items: flex-start; }
-    .kpi-row { grid-template-columns: 1fr; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .kpi-row .kpi-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
     .chart-grid { grid-template-columns: 1fr; }
     .chart-grid-2 { grid-template-columns: 1fr; }
     .kpi-value { font-size: 26px; }
@@ -450,10 +451,11 @@
     .filter-row { flex-direction: column; align-items: stretch; }
     .filter-select { min-width: 100%; }
     .filter-label { font-size: 10px; }
-    .kpi-row { gap: 10px; }
-    .kpi-card { padding: 14px; }
-    .kpi-label { font-size: 10px; }
-    .kpi-value { font-size: 22px; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .kpi-card { padding: 12px; }
+    .kpi-label { font-size: 9px; margin-bottom: 4px; }
+    .kpi-value { font-size: 20px; }
+    .kpi-sub { font-size: 10px; }
     .chart-card { padding: 16px; }
     .chart-title { font-size: 13px; margin-bottom: 12px; }
     .chart-wrap.donut, .chart-wrap.combo,
@@ -577,14 +579,32 @@
         <div class="kpi-label">Margin %</div>
         <div class="kpi-value {% if data.margin_pct < 0 %}red-text{% else %}amber-text{% endif %}">{{ data.margin_pct }}%</div>
     </div>
+    {% if commission_data %}
+    <div class="kpi-card {% if commission_data.total_commission < 0 %}red{% else %}green{% endif %}" title="This is an estimate only. Actual commission may vary based on final adjustments, collections, and other factors.">
+        <div class="kpi-label">Est. Commission <span style="font-size:9px;opacity:0.6;font-weight:400;">*estimate only</span></div>
+        <div class="kpi-value {% if commission_data.total_commission < 0 %}red-text{% else %}money{% endif %}">${{ "{:,.0f}".format(commission_data.total_commission) }}</div>
+        <div class="kpi-sub">
+            {% if commission_data.mayhem_met %}
+                <span class="goal-pct met">Incl. Mayhem +25%</span>
+            {% elif commission_data.mayhem_eligible and commission_data.mayhem_projected %}
+                <span class="goal-pct close">Mayhem on pace</span>
+            {% elif commission_data.mayhem_eligible %}
+                <span class="goal-pct behind">Mayhem not met</span>
+            {% else %}
+                {{ (commission_data.payout_rate * 100)|round(2) }}% of margin
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
     {% if territory_goal %}
-    {% set pct = (data.total_sales / territory_goal * 100)|round(1) if territory_goal > 0 else 0 %}
+    {% set team_total = territory_invoiced if territory_invoiced is not none else data.total_sales %}
+    {% set pct = (team_total / territory_goal * 100)|round(1) if territory_goal > 0 else 0 %}
     <div class="kpi-card purple">
         <div class="kpi-label">{{ territory_name }} Goal</div>
         <div class="kpi-value" style="color: #8B5CF6;">${{ "{:,.0f}".format(territory_goal / 1000) }}K</div>
         <div class="kpi-sub">
             <span class="goal-pct {{ 'met' if pct >= 100 else ('close' if pct >= 75 else 'behind') }}">{{ pct }}%</span>
-            — ${{ "{:,.0f}".format(data.total_sales / 1000) }}K invoiced
+            — ${{ "{:,.0f}".format(team_total / 1000) }}K invoiced
         </div>
     </div>
     {% endif %}
@@ -1146,7 +1166,7 @@
             var goalLine = [];
             for (var g = 0; g < maxDays; g++) goalLine.push(territoryGoal);
             datasets.push({
-                label: 'Goal ($' + fmtShort(territoryGoal) + ')',
+                label: 'Goal (' + fmtShort(territoryGoal) + ')',
                 data: goalLine,
                 borderColor: '#8B5CF6',
                 borderDash: [4, 4],

@@ -762,6 +762,7 @@ def my_tracker():
     # Territory goal for this salesman's primary territory
     territory_goal = None
     territory_name = None
+    territory_invoiced = None
     if data and data.get('primary_territory'):
         territory_name = data['primary_territory']
         try:
@@ -770,6 +771,30 @@ def my_tracker():
             territory_goal = goal_info.get('goal') if goal_info else None
         except Exception:
             pass  # Goals are non-critical
+        if territory_goal:
+            try:
+                from services.my_tracker_service import get_territory_invoiced
+                territory_invoiced = get_territory_invoiced(
+                    territory_name, selected_year, selected_month, region=selected_region
+                )
+            except Exception:
+                pass  # Territory total is non-critical
+
+    # Estimated commission
+    commission_data = None
+    if data and data.get('total_margin') is not None and selected_salesman:
+        try:
+            from services.commission_service import calculate_commission
+            commission_data = calculate_commission(
+                total_margin=data['total_margin'],
+                salesman_code=selected_salesman,
+                territory_invoiced=territory_invoiced,
+                territory_goal=territory_goal,
+                year=selected_year,
+                month=selected_month,
+            )
+        except Exception:
+            pass  # Commission is non-critical
 
     return render_template(
         'sales/my_tracker.html',
@@ -794,6 +819,8 @@ def my_tracker():
         winback_customers=winback_customers,
         territory_goal=territory_goal,
         territory_name=territory_name,
+        territory_invoiced=territory_invoiced,
+        commission_data=commission_data,
     )
 
 
