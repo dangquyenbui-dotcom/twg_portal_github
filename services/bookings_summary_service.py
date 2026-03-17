@@ -1181,7 +1181,7 @@ def get_mtd_by_region(cad_rate=None):
     us_mtd = cache.get(_cache_key('mtd_us'))
     ca_mtd = cache.get(_cache_key('mtd_ca'))
 
-    if us_mtd is None and ca_mtd is None:
+    if us_mtd is None or ca_mtd is None:
         # Trigger a full refresh to populate per-region cache
         refresh_bookings_summary(cad_rate)
         us_mtd = cache.get(_cache_key('mtd_us'))
