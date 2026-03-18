@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "twg-portal",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "C:/twg_portal_github/venv/Scripts/python.exe",
       "runtimeArgs": ["app.py"],
       "port": 5000
     }

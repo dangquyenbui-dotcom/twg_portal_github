@@ -302,6 +302,7 @@
         <button class="data-type-tab" onclick="switchDataType('shipments')">Shipments</button>
         <button class="data-type-tab" onclick="switchDataType('health')">System Health</button>
         <button class="data-type-tab" onclick="switchDataType('commission')">Commission Rates</button>
+        <button class="data-type-tab" onclick="switchDataType('sessions')">Active Sessions</button>
     </div>
 
     <!-- ════════════ BOOKINGS PANEL ════════════ -->
@@ -666,6 +667,66 @@
     {% if commission_updated_at %}
     <div style="margin-top:12px;font-size:11px;color:var(--text-muted);">Last updated: {{ commission_updated_at }}</div>
     {% endif %}
+</div>
+
+<!-- ════════════ ACTIVE SESSIONS PANEL ════════════ -->
+<div class="data-type-panel" id="panel-sessions">
+    <div class="info-box">
+        <strong>Active Sessions</strong> shows users currently signed in to the portal.
+        <span style="display:inline-block;width:8px;height:8px;background:#22c55e;border-radius:50%;margin:0 2px;vertical-align:middle;"></span> = active in last 30 min.
+        Sessions older than 24 hours are automatically removed.
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-size:13px;color:var(--text-muted);">
+            {{ active_sessions|length }} session{{ 's' if active_sessions|length != 1 else '' }} tracked
+            &mdash; {{ active_sessions|selectattr('is_active')|list|length }} active now
+        </span>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;font-size:13px;" id="sessions-table">
+        <thead>
+            <tr style="border-bottom:2px solid var(--border);color:var(--text-muted);text-transform:uppercase;font-size:11px;letter-spacing:0.5px;">
+                <th style="text-align:center;padding:8px;width:50px;"></th>
+                <th style="text-align:left;padding:8px;">Name</th>
+                <th style="text-align:left;padding:8px;">Email</th>
+                <th style="text-align:left;padding:8px;">Roles</th>
+                <th style="text-align:left;padding:8px;">IP Address</th>
+                <th style="text-align:left;padding:8px;">Browser</th>
+                <th style="text-align:left;padding:8px;">Login Time</th>
+                <th style="text-align:left;padding:8px;">Last Seen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in active_sessions %}
+            <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:8px;text-align:center;">
+                    {% if s.is_active %}
+                    <span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:50%;box-shadow:0 0 6px rgba(34,197,94,0.4);" title="Active"></span>
+                    {% else %}
+                    <span style="display:inline-block;width:10px;height:10px;background:var(--text-muted);border-radius:50%;opacity:0.3;" title="Idle"></span>
+                    {% endif %}
+                </td>
+                <td style="padding:8px;font-weight:600;">{{ s.name }}</td>
+                <td style="padding:8px;">{{ s.email }}</td>
+                <td style="padding:8px;font-size:11px;">
+                    {% for role in s.roles %}
+                    <span style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;padding:1px 6px;margin:1px;display:inline-block;font-size:10px;">{{ role }}</span>
+                    {% endfor %}
+                </td>
+                <td style="padding:8px;font-family:var(--font-mono);font-size:12px;">{{ s.ip_address }}</td>
+                <td style="padding:8px;font-size:12px;" title="{{ s.user_agent }}">{{ s.user_agent_short }}</td>
+                <td style="padding:8px;font-size:12px;white-space:nowrap;">{{ s.login_time_fmt }}</td>
+                <td style="padding:8px;font-size:12px;white-space:nowrap;{% if s.is_active %}color:#22c55e;font-weight:600;{% endif %}">{{ s.last_activity_fmt }}</td>
+            </tr>
+            {% endfor %}
+            {% if not active_sessions %}
+            <tr>
+                <td colspan="8" style="padding:24px;text-align:center;color:var(--text-muted);">No active sessions.</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
 </div>
 
 {% endblock %}
@@ -1131,7 +1192,7 @@ function deleteCommissionRate(salesman) {
 /* ── Preserve active tab on reload ── */
 (function() {
     var hash = window.location.hash.replace('#', '');
-    var validTabs = {'shipments': 'Shipments', 'health': 'System Health', 'commission': 'Commission Rates'};
+    var validTabs = {'shipments': 'Shipments', 'health': 'System Health', 'commission': 'Commission Rates', 'sessions': 'Active Sessions'};
     if (validTabs[hash]) {
         document.querySelectorAll('.data-type-tab').forEach(function(tab) {
             tab.classList.remove('active');

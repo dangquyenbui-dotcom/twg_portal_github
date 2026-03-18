@@ -164,6 +164,9 @@ def dashboard_data():
     from services.commission_service import get_all_commission_rates, DEFAULT_COMMISSION_RATE
     commission_data = get_all_commission_rates()
 
+    from services.session_tracker import get_active_sessions_for_display
+    active_sessions = get_active_sessions_for_display()
+
     return render_template(
         'admin/dashboard_data.html',
         user=session["user"],
@@ -173,6 +176,7 @@ def dashboard_data():
         commission_rates=commission_data.get('rates', {}),
         commission_default_rate=DEFAULT_COMMISSION_RATE * 100,
         commission_updated_at=commission_data.get('updated_at'),
+        active_sessions=active_sessions,
     )
 
 

@@ -188,6 +188,18 @@ def create_app():
         )
         logger.info("Scheduled 'goals_refresh' at 2:00 AM daily")
 
+    # ── Session cleanup (hourly) ──
+    from services.session_tracker import cleanup_stale_sessions
+    if not scheduler.get_job('session_cleanup'):
+        scheduler.add_job(
+            id='session_cleanup',
+            func=cleanup_stale_sessions,
+            trigger='interval',
+            seconds=3600,
+            misfire_grace_time=300,
+        )
+        logger.info("Scheduled 'session_cleanup' every hour")
+
     with app.app_context():
         logger.info("Running initial startup refresh (all data + dashboard current year)...")
         refresh_all_on_startup()
@@ -208,6 +220,14 @@ def create_app():
     app.register_blueprint(main_bp)
     app.register_blueprint(sales_bp)
     app.register_blueprint(admin_bp)
+
+    # --- Track user activity for admin session visibility ---
+    @app.before_request
+    def _track_session_activity():
+        user = session.get("user")
+        if user and user.get("oid"):
+            from services.session_tracker import update_activity
+            update_activity(user["oid"])
 
     # --- PWA: Safari probes these root paths for the home screen icon ---
     @app.route('/apple-touch-icon.png')
@@ -288,6 +308,21 @@ def create_app():
                 f"| groups: {len(group_ids)} "
                 f"| roles: {roles}"
             )
+
+            # ── Track session for admin visibility ──
+            from services.session_tracker import record_login
+            ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+            if ',' in ip:
+                ip = ip.split(',')[0].strip()
+            record_login(
+                oid=session["user"]["oid"],
+                name=session["user"]["name"],
+                email=session["user"]["email"],
+                roles=session["user"]["roles"],
+                ip_address=ip,
+                user_agent=request.headers.get('User-Agent', 'unknown'),
+            )
+
             return redirect(url_for("main.index"))
 
         except Exception as e:
@@ -296,6 +331,10 @@ def create_app():
 
     @app.route("/logout")
     def logout():
+        user = session.get("user")
+        if user and user.get("oid"):
+            from services.session_tracker import record_logout
+            record_logout(user["oid"])
         post_logout_uri = request.url_root.rstrip('/') + '/login_page'
         session.clear()
         return redirect(
