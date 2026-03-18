@@ -221,13 +221,37 @@ def create_app():
     app.register_blueprint(sales_bp)
     app.register_blueprint(admin_bp)
 
-    # --- Track user activity for admin session visibility ---
+    # --- Track user activity + single-session enforcement ---
     @app.before_request
     def _track_session_activity():
+        # Skip for static files, login, auth, logout routes
+        if request.path.startswith('/static') or request.path.startswith('/login') \
+                or request.path.startswith('/auth') or request.path.startswith('/logout') \
+                or request.path.startswith('/apple-touch-icon'):
+            return
+
         user = session.get("user")
-        if user and user.get("oid"):
-            from services.session_tracker import update_activity
-            update_activity(user["oid"])
+        if not user or not user.get("oid"):
+            return
+
+        # Single-session enforcement: check if this session was kicked out
+        from services.session_tracker import check_session_token, update_activity
+        token = user.get("session_token")
+        if token and not check_session_token(user["oid"], token):
+            session.clear()
+            return redirect(url_for('main.login_page', kicked=1))
+
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+        if ',' in ip:
+            ip = ip.split(',')[0].strip()
+        update_activity(
+            oid=user["oid"],
+            name=user.get("name"),
+            email=user.get("email"),
+            roles=user.get("roles"),
+            ip_address=ip,
+            user_agent=request.headers.get('User-Agent', 'unknown'),
+        )
 
     # --- PWA: Safari probes these root paths for the home screen icon ---
     @app.route('/apple-touch-icon.png')
@@ -293,7 +317,7 @@ def create_app():
             if access_token:
                 salesman_code = _fetch_employee_id(access_token)
 
-            session["user"] = {
+            user_data = {
                 "name": user_claims.get("name"),
                 "email": user_claims.get("preferred_username"),
                 "oid": user_claims.get("oid"),
@@ -304,24 +328,34 @@ def create_app():
             }
             session.pop("flow", None)
             logger.info(
-                f"User authenticated: {session['user'].get('email')} "
+                f"User authenticated: {user_data.get('email')} "
                 f"| groups: {len(group_ids)} "
                 f"| roles: {roles}"
             )
 
-            # ── Track session for admin visibility ──
-            from services.session_tracker import record_login
+            # ── Single-session check ──
+            from services.session_tracker import record_login, has_existing_session
+            existing = has_existing_session(user_data["oid"])
+            if existing:
+                # Store pending login, show confirmation page
+                session["pending_login"] = user_data
+                session["existing_session_info"] = existing
+                return redirect(url_for("confirm_session"))
+
+            # ── No existing session — proceed normally ──
             ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
             if ',' in ip:
                 ip = ip.split(',')[0].strip()
-            record_login(
-                oid=session["user"]["oid"],
-                name=session["user"]["name"],
-                email=session["user"]["email"],
-                roles=session["user"]["roles"],
+            token = record_login(
+                oid=user_data["oid"],
+                name=user_data["name"],
+                email=user_data["email"],
+                roles=user_data["roles"],
                 ip_address=ip,
                 user_agent=request.headers.get('User-Agent', 'unknown'),
             )
+            user_data["session_token"] = token
+            session["user"] = user_data
 
             return redirect(url_for("main.index"))
 
@@ -341,6 +375,46 @@ def create_app():
             f"{Config.AUTHORITY}/oauth2/v2.0/logout"
             f"?post_logout_redirect_uri={post_logout_uri}"
         )
+
+    # --- Single-session confirmation page ---
+    @app.route("/auth/confirm-session")
+    def confirm_session():
+        pending = session.get("pending_login")
+        existing = session.get("existing_session_info")
+        if not pending:
+            return redirect(url_for("main.login_page"))
+        return render_template("auth/confirm_session.html",
+                               pending=pending, existing=existing)
+
+    @app.route("/auth/confirm-session", methods=["POST"])
+    def confirm_session_post():
+        pending = session.get("pending_login")
+        if not pending:
+            return redirect(url_for("main.login_page"))
+
+        action = request.form.get("action")
+        if action == "continue":
+            from services.session_tracker import record_login
+            ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+            if ',' in ip:
+                ip = ip.split(',')[0].strip()
+            token = record_login(
+                oid=pending["oid"],
+                name=pending["name"],
+                email=pending["email"],
+                roles=pending["roles"],
+                ip_address=ip,
+                user_agent=request.headers.get('User-Agent', 'unknown'),
+            )
+            pending["session_token"] = token
+            session["user"] = pending
+            session.pop("pending_login", None)
+            session.pop("existing_session_info", None)
+            return redirect(url_for("main.index"))
+        else:
+            # Cancelled — clear pending and go to login
+            session.clear()
+            return redirect(url_for("main.login_page"))
 
     return app
 

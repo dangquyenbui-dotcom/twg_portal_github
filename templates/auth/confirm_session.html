@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Session - TWG Portal</title>
+
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='logo/apple-touch-icon.png') }}">
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='logo/icon-192x192.png') }}">
+    <meta name="theme-color" content="#111827">
+
+    <script>
+        (function() {
+            var saved = localStorage.getItem('twg-theme');
+            if (saved === 'dark' || saved === 'light') {
+                document.documentElement.setAttribute('data-theme', saved);
+            }
+        })();
+    </script>
+
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root, [data-theme="light"] {
+            --login-bg: #F0F2F7;
+            --card-bg: #FFFFFF;
+            --card-border: #E2E5EF;
+            --card-shadow: 0 4px 24px rgba(0,0,0,0.06), 0 0 0 1px rgba(37,99,235,0.04);
+            --title-color: #111827;
+            --subtitle-color: #6B7280;
+            --btn-bg: #2563EB;
+            --btn-hover-bg: #1D4ED8;
+            --btn-shadow: 0 6px 24px rgba(37,99,235,0.3);
+            --cancel-bg: transparent;
+            --cancel-color: #6B7280;
+            --cancel-hover: #F3F4F6;
+            --info-bg: rgba(245,158,11,0.06);
+            --info-border: rgba(245,158,11,0.15);
+            --info-text: #92400E;
+            --detail-bg: #F9FAFB;
+            --detail-border: #E5E7EB;
+            --detail-text: #374151;
+            --detail-label: #9CA3AF;
+            --accent-line: linear-gradient(90deg, #F59E0B, #EF4444, #F59E0B);
+            --footer-color: #D1D5DB;
+            --gradient-a: rgba(245,158,11,0.04);
+            --gradient-b: rgba(239,68,68,0.03);
+            --gradient-c: rgba(37,99,235,0.03);
+        }
+
+        [data-theme="dark"] {
+            --login-bg: #000000;
+            --card-bg: #111111;
+            --card-border: #1F1F1F;
+            --card-shadow: 0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(245,158,11,0.05);
+            --title-color: #F1F3F8;
+            --subtitle-color: #5C6584;
+            --btn-bg: #3B82F6;
+            --btn-hover-bg: #2563EB;
+            --btn-shadow: 0 6px 24px rgba(59,130,246,0.35);
+            --cancel-bg: transparent;
+            --cancel-color: #5C6584;
+            --cancel-hover: #1A1A1A;
+            --info-bg: rgba(245,158,11,0.08);
+            --info-border: rgba(245,158,11,0.15);
+            --info-text: #FBBF24;
+            --detail-bg: #0A0A0A;
+            --detail-border: #1F1F1F;
+            --detail-text: #D1D5DB;
+            --detail-label: #5C6584;
+            --accent-line: linear-gradient(90deg, #F59E0B, #EF4444, #F59E0B);
+            --footer-color: #1F1F1F;
+            --gradient-a: rgba(245,158,11,0.06);
+            --gradient-b: rgba(239,68,68,0.05);
+            --gradient-c: rgba(59,130,246,0.04);
+        }
+
+        body {
+            font-family: 'DM Sans', -apple-system, sans-serif;
+            background: var(--login-bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+            overflow: hidden;
+            transition: background-color 0.25s ease;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background:
+                radial-gradient(ellipse at 20% 50%, var(--gradient-a) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, var(--gradient-b) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, var(--gradient-c) 0%, transparent 50%);
+            animation: bgDrift 20s ease-in-out infinite alternate;
+            z-index: 0;
+        }
+
+        @keyframes bgDrift {
+            0%   { transform: translate(0, 0) rotate(0deg); }
+            100% { transform: translate(-30px, -20px) rotate(3deg); }
+        }
+
+        .wrapper {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 32px;
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .logo img {
+            height: 72px;
+            width: auto;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 12px rgba(59,130,246,0.15));
+        }
+
+        [data-theme="dark"] .logo img {
+            filter: brightness(1.1) drop-shadow(0 2px 12px rgba(59,130,246,0.15));
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            padding: 36px 36px 32px;
+            border-radius: 20px;
+            text-align: center;
+            width: 420px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--card-shadow);
+            transition: background-color 0.25s ease, border-color 0.25s ease;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: var(--accent-line);
+            background-size: 200% 100%;
+            animation: shimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--title-color);
+            margin-bottom: 6px;
+        }
+
+        .card-subtitle {
+            color: var(--subtitle-color);
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .info-box {
+            background: var(--info-bg);
+            border: 1px solid var(--info-border);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            text-align: left;
+            font-size: 13px;
+            color: var(--info-text);
+            line-height: 1.5;
+        }
+
+        .session-detail {
+            background: var(--detail-bg);
+            border: 1px solid var(--detail-border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 24px;
+            text-align: left;
+        }
+
+        .session-detail .row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+        }
+
+        .session-detail .label {
+            font-size: 12px;
+            color: var(--detail-label);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }
+
+        .session-detail .value {
+            font-size: 13px;
+            color: var(--detail-text);
+            font-weight: 600;
+        }
+
+        .btn-continue {
+            background: var(--btn-bg);
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'DM Sans', sans-serif;
+            cursor: pointer;
+            width: 100%;
+            border-radius: 12px;
+            transition: all 0.2s;
+            margin-bottom: 10px;
+        }
+
+        .btn-continue:hover {
+            background: var(--btn-hover-bg);
+            transform: translateY(-2px);
+            box-shadow: var(--btn-shadow);
+        }
+
+        .btn-cancel {
+            background: var(--cancel-bg);
+            color: var(--cancel-color);
+            border: none;
+            padding: 12px 24px;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: 'DM Sans', sans-serif;
+            cursor: pointer;
+            width: 100%;
+            border-radius: 12px;
+            transition: all 0.2s;
+        }
+
+        .btn-cancel:hover {
+            background: var(--cancel-hover);
+        }
+
+        .footer {
+            font-size: 11px;
+            color: var(--footer-color);
+            text-align: center;
+        }
+
+        @media (max-width: 460px) {
+            .card {
+                width: calc(100vw - 32px);
+                padding: 28px 20px 24px;
+            }
+            .logo img { height: 56px; }
+            .card-title { font-size: 18px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="logo">
+            <img src="{{ url_for('static', filename='logo/TWG.png') }}" alt="The Wheel Group">
+        </div>
+
+        <div class="card">
+            <div class="card-title">Active Session Detected</div>
+            <div class="card-subtitle">You're already signed in on another device</div>
+
+            <div class="info-box">
+                Continuing will sign you out of the other session. Only one active session is allowed at a time.
+            </div>
+
+            {% if existing %}
+            <div class="session-detail">
+                <div class="row">
+                    <span class="label">Device</span>
+                    <span class="value">{{ existing.user_agent_short }}</span>
+                </div>
+                <div class="row">
+                    <span class="label">IP Address</span>
+                    <span class="value">{{ existing.ip_address }}</span>
+                </div>
+                <div class="row">
+                    <span class="label">Last Active</span>
+                    <span class="value">{{ existing.last_activity_fmt }}</span>
+                </div>
+            </div>
+            {% endif %}
+
+            <form method="POST" action="{{ url_for('confirm_session_post') }}">
+                <button type="submit" name="action" value="continue" class="btn-continue">
+                    Continue &amp; Sign Out Other Session
+                </button>
+                <button type="submit" name="action" value="cancel" class="btn-cancel">
+                    Cancel
+                </button>
+            </form>
+        </div>
+
+        <div class="footer">&copy; 2026 The Wheel Group &middot; Internal Use Only</div>
+    </div>
+</body>
+</html>

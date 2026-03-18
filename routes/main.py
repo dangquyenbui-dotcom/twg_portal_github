@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, session, redirect, url_for
+from flask import Blueprint, render_template, session, redirect, url_for, request
 
 main_bp = Blueprint('main', __name__)
 
@@ -14,4 +14,7 @@ def index():
 def login_page():
     if session.get("user"):
         return redirect(url_for('main.index'))
-    return render_template('login.html')
+    error = None
+    if request.args.get('kicked'):
+        error = 'You were signed out because you signed in on another device.'
+    return render_template('login.html', error=error)

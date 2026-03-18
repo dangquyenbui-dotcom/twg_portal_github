@@ -15,6 +15,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta
 
 from extensions import cache
@@ -76,10 +77,11 @@ def _get_sessions():
 # ═══════════════════════════════════════════════════════════════
 
 def record_login(oid, name, email, roles, ip_address, user_agent):
-    """Record or update a user's session on login."""
+    """Record or update a user's session on login. Returns session_token for single-session enforcement."""
     if not oid:
-        return
+        return None
     now = datetime.now().isoformat()
+    token = str(uuid.uuid4())
     with _lock:
         data = _load_sessions_file()
         data['sessions'][oid] = {
@@ -91,15 +93,55 @@ def record_login(oid, name, email, roles, ip_address, user_agent):
             'user_agent': user_agent or 'Unknown',
             'login_time': now,
             'last_activity': now,
+            'session_token': token,
         }
         _save_sessions_file(data)
         _last_flush[oid] = time.time()
         _activity_cache[oid] = now
     logger.info(f"SessionTracker: Login recorded for {email} from {ip_address}")
+    return token
 
 
-def update_activity(oid):
-    """Update last_activity for a user. Throttled to reduce disk I/O."""
+def has_existing_session(oid):
+    """Check if a user already has an active session. Returns session info dict or None.
+    Only returns existing session if it has a session_token (enforced session)
+    and was active within ACTIVE_THRESHOLD_MINUTES (truly active, not just <24h)."""
+    if not oid:
+        return None
+    data = _get_sessions()
+    session_data = data.get('sessions', {}).get(oid)
+    if not session_data:
+        return None
+    # Skip sessions without a token (legacy/auto-registered — can't be kicked)
+    if not session_data.get('session_token'):
+        return None
+    # Only flag if session was active recently (not stale re-login from same device)
+    last_dt = _parse_dt(session_data.get('last_activity', ''))
+    if datetime.now() - last_dt > timedelta(minutes=ACTIVE_THRESHOLD_MINUTES):
+        return None
+    return {
+        'user_agent_short': _parse_user_agent(session_data.get('user_agent', '')),
+        'ip_address': session_data.get('ip_address', 'Unknown'),
+        'last_activity_fmt': _format_relative(last_dt, datetime.now()),
+    }
+
+
+def check_session_token(oid, token):
+    """Check if a session token matches. Returns True if valid, False if kicked out."""
+    if not oid or not token:
+        return True  # No token to check (legacy session)
+    data = _get_sessions()
+    session_data = data.get('sessions', {}).get(oid)
+    if not session_data:
+        return True  # No tracked session, allow
+    stored_token = session_data.get('session_token')
+    if not stored_token:
+        return True  # Old session without token, allow
+    return stored_token == token
+
+
+def update_activity(oid, name=None, email=None, roles=None, ip_address=None, user_agent=None):
+    """Update last_activity for a user. Auto-registers if not yet tracked. Throttled to reduce disk I/O."""
     if not oid:
         return
     now_ts = time.time()
@@ -111,14 +153,35 @@ def update_activity(oid):
     # Only flush to disk if enough time has passed
     last = _last_flush.get(oid, 0)
     if now_ts - last < ACTIVITY_FLUSH_INTERVAL:
-        return
+        # But force flush if this is an unknown session (auto-register)
+        data = _get_sessions()
+        if oid in data.get('sessions', {}):
+            return
 
     with _lock:
         data = _load_sessions_file()
         if oid in data['sessions']:
             data['sessions'][oid]['last_activity'] = now_iso
-            _save_sessions_file(data)
-            _last_flush[oid] = now_ts
+            # Update IP and user agent in case they changed
+            if ip_address:
+                data['sessions'][oid]['ip_address'] = ip_address
+            if user_agent:
+                data['sessions'][oid]['user_agent'] = user_agent
+        else:
+            # Auto-register: user was logged in before tracking started
+            data['sessions'][oid] = {
+                'oid': oid,
+                'name': name or 'Unknown',
+                'email': email or 'Unknown',
+                'roles': roles or [],
+                'ip_address': ip_address or 'Unknown',
+                'user_agent': user_agent or 'Unknown',
+                'login_time': now_iso,
+                'last_activity': now_iso,
+            }
+            logger.info(f"SessionTracker: Auto-registered session for {email}")
+        _save_sessions_file(data)
+        _last_flush[oid] = now_ts
 
 
 def record_logout(oid):
