@@ -78,7 +78,7 @@ The application follows a **Decoupled Caching Architecture** with a **multi-tier
                                             └──────────┬─────────────────────────────────────┘
                                                        │
                                     ┌──────────────────┴──────────────────────────┐
-                                    │              APScheduler (6 jobs)            │
+                                    │              APScheduler (8 jobs)            │
                                     │   ┌──────────────┐ ┌────────────────┐       │
                                     │   │ Bookings +   │ │ Open Orders    │       │
                                     │   │ Shipments    │ │ 60 min         │       │
@@ -110,12 +110,15 @@ The application follows a **Decoupled Caching Architecture** with a **multi-tier
 
 **How it works:**
 
-1. **Background Workers (APScheduler)** — Six independent scheduled jobs (plus on-demand tracker caching):
+1. **Background Workers (APScheduler)** — Eight independent scheduled jobs (plus on-demand tracker caching):
    - **Bookings + Shipments refresh** — Every **10 minutes**. Queries today's bookings from sotran and today's shipments from artran for both US (PRO05) and Canada (PRO06), fetches the live CAD→USD exchange rate, and caches all results. Also runs once immediately on app startup.
    - **Open orders refresh** — Every **60 minutes**. Queries all currently open sales order lines from sotran.
    - **Bookings Summary refresh** — Every **30 minutes**. Reads monthly frozen files from disk for completed months, queries only the current month from sotran (2 SQL queries total: US + CA), assembles MTD/QTD/YTD horizons with year-over-year comparison from dashboard yearly files, and populates the Executive Dashboard cache as a side effect.
    - **Shipments Summary refresh** — Every **30 minutes**. Mirrors the bookings summary architecture but reads from artran/arytrn. Uses its own monthly frozen files in `shipments_summary_data/` and yearly files in `shipments_dashboard_data/` for YoY comparison.
    - **Dashboard current month refresh** — Every **60 minutes**. Queries current month from sotran for the executive dashboard. (Also fed by the Bookings Summary refresh, so the dashboard is often already warm.)
+   - **Goals refresh** — Daily at **2:00 AM**. Downloads territory stretch goals from SharePoint Excel file.
+   - **Daily health summary** — Daily at **7:00 AM**. Emails system health report to admin.
+   - **Session cleanup** — Every **60 minutes**. Removes stale user sessions older than 24 hours from `active_sessions.json`.
 2. **Frozen Data Files** — Four directories of offline storage:
    - **Bookings yearly files** (`bookings_dashboard_data/*.json.gz`) — For the executive dashboard. Completed years of data are downloaded by an admin via the admin page. Loads in <1ms — zero SQL, zero network.
    - **Bookings monthly files** (`bookings_summary_data/*.json.gz`) — For the bookings summary. Completed months in the current year are auto-frozen when a new month starts. No admin action needed. Also loads in <1ms.
@@ -138,7 +141,7 @@ The application follows a **Decoupled Caching Architecture** with a **multi-tier
 | **Database**     | Microsoft SQL Server (US: PRO05, Canada: PRO06), pyodbc. Bookings: sotran (current month) + soytrn (historical). Shipments: artran (current month) + arytrn (historical). Tracker: artran/arytrn per-salesman with margin analysis |
 | **Caching**      | Flask-Caching (FileSystemCache), persisted to `cache-data/` directory |
 | **Frozen Data**  | Bookings yearly: `bookings_dashboard_data/`, monthly: `bookings_summary_data/`. Shipments yearly: `shipments_dashboard_data/`, monthly: `shipments_summary_data/`. All gzip-compressed JSON, portable across servers. |
-| **Scheduler**    | Flask-APScheduler (background data refresh), 6 independent jobs |
+| **Scheduler**    | Flask-APScheduler (background data refresh + maintenance), 8 independent jobs |
 | **Exchange Rate**| frankfurter.app (primary), open.er-api.com (fallback), 0.72 hardcoded fallback |
 | **Frontend**     | Jinja2 templates, vanilla CSS/JS, CSS custom properties for theming |
 | **Charts**       | Chart.js 4.4 + chartjs-plugin-datalabels (loaded from cdnjs.cloudflare.com CDN) — executive dashboard + My Sales Tracker |
@@ -159,9 +162,11 @@ The application follows a **Decoupled Caching Architecture** with a **multi-tier
 twg_portal/
 │
 ├── app.py                    # Application factory, SSO routes (/login, /auth/redirect, /logout),
+│                             #   single-session confirmation (/auth/confirm-session),
 │                             #   HTTPS redirect URI builder (_build_redirect_uri),
 │                             #   role resolver (_resolve_roles_from_groups),
-│                             #   scheduler init (6 jobs), startup data refresh,
+│                             #   before_request hook (activity tracking + session token check),
+│                             #   scheduler init (8 jobs), startup data refresh,
 │                             #   PWA apple-touch-icon routes
 │
 ├── config.py                 # All configuration: auth, DB, cache, scheduler intervals,
@@ -192,7 +197,8 @@ twg_portal/
 ├── routes/
 │   ├── __init__.py
 │   ├── main.py               # Home page (/) — department hub with role-aware card visibility,
-│   │                         #   login page (/login_page) with session check redirect
+│   │                         #   login page (/login_page) with session check redirect,
+│   │                         #   kicked-session error message (?kicked=1 parameter)
 │   │
 │   ├── sales.py              # Sales blueprint (/sales/*):
 │   │                         #   - Sales home (/sales) — report menu cards
@@ -213,11 +219,13 @@ twg_portal/
 │   │                         #   - _build_region_data() helper for CAD→USD conversion
 │   │
 │   └── admin.py              # Admin blueprint (/admin/*):
-│                              #   - Dashboard data page (/admin/dashboard-data) — tabbed: Bookings | Shipments
+│                              #   - Dashboard data page (/admin/dashboard-data) — tabbed:
+│                              #     Bookings | Shipments | System Health | Commission Rates | Active Sessions
 │                              #   - Download single region (POST /admin/dashboard-data/download) — background task
 │                              #   - Download both US+CA (POST /admin/dashboard-data/download-both) — background task
 │                              #   - Task status polling (GET /admin/dashboard-data/task-status/<id>)
 │                              #   - Delete frozen file (POST /admin/dashboard-data/delete) — AJAX
+│                              #   - Commission rates CRUD (GET/POST /admin/commission-rates/*)
 │                              #   All routes require Admin role. Downloads run in background threads
 │                              #   with progress polling to avoid HTTP timeouts on long SQL queries.
 │
@@ -230,7 +238,8 @@ twg_portal/
 │   │                         #   PRODUCT_LINE_MAP (50+ plinid → 8 categories),
 │   │                         #   map_territory(), resolve_territory_code(), map_product_line()
 │   │
-│   ├── db_connection.py      # pyodbc connection factory with 30s timeout
+│   ├── db_connection.py      # pyodbc connection factory with 30s timeout,
+│   │                         #   sets READ UNCOMMITTED isolation level on every connection
 │   │
 │   ├── bookings_service.py   # Daily bookings data layer: snapshot + raw export queries,
 │   │                         #   Python aggregation into 3 rankings (territory, salesman, customer)
@@ -305,6 +314,27 @@ twg_portal/
 │   │                         #   - _financial_round() — rounds away from zero (handles credit memos)
 │   │                         #   - On-demand SQL: queries only when user visits, no scheduler job
 │   │
+│   ├── commission_service.py  # Commission rate management: per-salesman payout rates stored in
+│   │                         #   commission_rates.json, cached via Flask-Caching (1hr TTL).
+│   │                         #   calculate_commission() — base + Mayhem Multiplier (25% bonus if
+│   │                         #   territory meets goal). Mayhem pacing projection for current month.
+│   │
+│   ├── session_tracker.py    # Active session tracking: who is signed in, from where, when.
+│   │                         #   Stores sessions in active_sessions.json keyed by Entra oid.
+│   │                         #   Single-session enforcement via session_token (uuid4).
+│   │                         #   record_login(), update_activity() (throttled 60s disk writes),
+│   │                         #   record_logout(), check_session_token(), has_existing_session(),
+│   │                         #   cleanup_stale_sessions() (>24h). Thread-safe with threading.Lock.
+│   │
+│   ├── goals_service.py      # Territory stretch goals from SharePoint Excel file.
+│   │                         #   Parses MMM-YYTYPE columns, (year,month) tuple keys,
+│   │                         #   territory merging (LA + LA-CORP → LA), region aggregation.
+│   │                         #   Priority: Budget → LE → Actual.
+│   │
+│   ├── health_monitor.py     # System health monitoring: tracks status of all scheduled refresh
+│   │                         #   jobs with last success/failure timestamps. Powers the System Health
+│   │                         #   tab and daily health summary email.
+│   │
 │   ├── dashboard_service.py  # Legacy dashboard aggregation service (retained for reference —
 │   │                         #   replaced by bookings_dashboard_data_service.py). NOT used by active routes.
 │   │
@@ -359,10 +389,17 @@ twg_portal/
 │   │   │                     #   responsive mobile layout (480px/768px breakpoints)
 │   │   └── dashboard.html    # Executive Dashboard: Chart.js, year selector, KPIs, top 50 customers
 │   │
+│   ├── auth/
+│   │   └── confirm_session.html # Single-session confirmation page: shown when user signs in
+│   │                            #   on a 2nd device. Shows existing session device/IP/last seen.
+│   │                            #   Buttons: "Continue & Sign Out Other" / "Cancel"
+│   │
 │   └── admin/
-│       └── dashboard_data.html  # Admin: tabbed Bookings | Shipments, download/delete yearly
+│       └── dashboard_data.html  # Admin: tabbed Bookings | Shipments | System Health |
+│                                #   Commission Rates | Active Sessions. Download/delete yearly
 │                                #   frozen files, background task polling with progress toast,
-│                                #   hash-based tab persistence
+│                                #   hash-based tab persistence, commission rate CRUD,
+│                                #   active sessions table with online status indicators
 │
 ├── bookings_dashboard_data/  # Bookings yearly frozen gzip JSON (gitignored, portable, admin-managed)
 │   ├── us_2025.json.gz       # Full year pre-aggregated summary + raw rows
@@ -418,13 +455,25 @@ User clicks "Sign in with Microsoft"
   ├── Extract id_token_claims (name, email, oid, tid, groups)
   ├── _resolve_roles_from_groups():
   │   └── Map Security Group Object IDs → internal role names via GROUP_ROLE_MAP
-  ├── Store in session: name, email, oid, tid, groups (raw IDs), roles (resolved names)
+  ├── Check has_existing_session(oid):
+  │   ├── If active session exists → redirect to /auth/confirm-session
+  │   │   └── User confirms → kick old session, create new token
+  │   └── If no active session → proceed
+  ├── record_login() → generate session_token (uuid4)
+  ├── Store in session: name, email, oid, tid, groups, roles, session_token
   ├── Log: user email, group count, resolved roles
   ├── Clear flow from session
   └── Redirect to home page (/)
         │
         ▼
+  Every request (before_request hook):
+  ├── check_session_token(oid, token) → if mismatch, session was kicked
+  │   └── Kicked → clear session → redirect to /login_page?kicked=1
+  └── update_activity(oid) → track last activity time
+        │
+        ▼
   GET /logout
+  ├── record_logout(oid) → remove from active_sessions.json
   ├── Clear Flask session
   └── Redirect to Microsoft logout endpoint with post_logout_redirect_uri → /login_page
 ```
@@ -436,8 +485,10 @@ User clicks "Sign in with Microsoft"
 - **Redirect URI override:** An optional `REDIRECT_URI_OVERRIDE` environment variable allows hardcoding the full redirect URI for environments where dynamic building doesn't match Azure's registered URI.
 - **Environment loading:** The `.env` file loader has a fallback from `.env` to `_env` for Windows environments where `.env` filenames can be problematic.
 - **Config validation:** Runs at startup via `Config.validate()` and raises `SystemExit` with clear error messages if required values (`CLIENT_ID`, `CLIENT_SECRET`, `AUTHORITY`) are missing. Also builds the GROUP_ROLE_MAP and warns if no groups are configured.
-- **Session contents:** User session stores `name`, `email`, `oid` (Azure object ID), `tid` (tenant ID), `groups` (raw Entra group Object IDs as list), and `roles` (resolved internal role names as list).
-- **Login page:** Standalone template (does not extend `base.html`) with its own theme toggle support, animated background, and security badge.
+- **Session contents:** User session stores `name`, `email`, `oid` (Azure object ID), `tid` (tenant ID), `groups` (raw Entra group Object IDs as list), `roles` (resolved internal role names as list), `salesman_code` (from Microsoft Graph `employeeId`), and `session_token` (uuid4 for single-session enforcement).
+- **Single-session enforcement:** Only one active session per user is allowed. When a user signs in on a second device, they see a confirmation page showing the existing session's device, IP, and last activity. If they continue, the old session is invalidated via token mismatch — the old device is redirected to login with a friendly message on next request.
+- **Session tracking:** All active sessions are tracked in `active_sessions.json` with name, email, roles, IP address, browser/device, login time, and last activity. Viewable in Admin → Dashboard Data → Active Sessions tab. Sessions auto-register on first request if not yet tracked (handles users who were logged in before the feature was deployed). Last activity updates are throttled to disk writes every 60 seconds per user to minimize I/O.
+- **Login page:** Standalone template (does not extend `base.html`) with its own theme toggle support, animated background, and security badge. Shows error message when user is kicked from another device (`?kicked=1` parameter).
 
 **Required Azure App Registration settings:**
 
@@ -647,8 +698,11 @@ Driver:   ODBC Driver 18 for SQL Server
 Server:   twg-sql-01.thewheelgroup.com
 Database: PRO05 (US) / PRO06 (Canada)
 Auth:     SQL Server authentication (UID/PWD from .env)
-Options:  TrustServerCertificate=yes, Timeout=30s
-Locking:  All queries use WITH (NOLOCK) to avoid blocking ERP transactions
+Options:  TrustServerCertificate=yes, Encrypt=yes, Timeout=30s
+Locking:  Two layers of protection:
+          1. Connection-level: SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED (in db_connection.py)
+          2. Query-level: WITH (NOLOCK) on every table in every query
+          All queries are SELECT-only — no INSERT/UPDATE/DELETE operations
 ```
 
 ### Query Strategy
@@ -715,16 +769,18 @@ Territory codes are mapped to display names in `services/constants.py`:
 
 **My Sales Tracker Filters (SQL WHERE):** `salesmn = ?`, `invdte BETWEEN ? AND ?`, `currhist <> 'X'`. No `artype` filter — credit memos (artype='C') are included for accurate net sales and margin analysis.
 
-### Scheduler Strategy (Seven Independent Jobs)
+### Scheduler Strategy (Eight Independent Jobs)
 
-| Job ID | Function | Interval | What It Refreshes | Cache TTL | Run on Startup |
-|---|---|---|---|---|---|
-| `bookings_refresh` | `refresh_bookings_and_rate()` | 10 min | Bookings snapshots + raw (US + CA), Shipments snapshots + raw (US + CA), CAD→USD exchange rate | 900s (15 min) | Yes |
-| `open_orders_refresh` | `refresh_open_orders_scheduled()` | 60 min | Open orders snapshots + raw (US + CA) | 3900s (65 min) | Yes |
-| `bookings_summary_refresh` | `refresh_bookings_summary_scheduled()` | 30 min | MTD/QTD/YTD from frozen files + live current month, YoY from dashboard files, + dashboard cache for current year | 2100s (35 min) | Yes |
-| `shipments_summary_refresh` | `refresh_shipments_summary_scheduled()` | 30 min | MTD/QTD/YTD from frozen files + live current month, YoY from shipments dashboard files | 2100s (35 min) | Yes |
-| `dashboard_current_refresh` | `refresh_dashboard_current_month()` | 60 min | Dashboard current month only (sotran, US + CA) | 3900s (65 min) | No* |
-| `goals_refresh` | `refresh_goals_cache()` | Daily at 2:00 AM | Territory stretch goals from SharePoint Excel file | 86400s (24 hr) | Yes |
+| Job ID | Function | Interval | What It Refreshes | Cache TTL | Run on Startup | SQL? |
+|---|---|---|---|---|---|---|
+| `bookings_refresh` | `refresh_bookings_and_rate()` | 10 min | Bookings snapshots + raw (US + CA), Shipments snapshots + raw (US + CA), CAD→USD exchange rate | 900s (15 min) | Yes | Yes (NOLOCK) |
+| `open_orders_refresh` | `refresh_open_orders_scheduled()` | 60 min | Open orders snapshots + raw (US + CA) | 3900s (65 min) | Yes | Yes (NOLOCK) |
+| `bookings_summary_refresh` | `refresh_bookings_summary_scheduled()` | 30 min | MTD/QTD/YTD from frozen files + live current month, YoY from dashboard files, + dashboard cache for current year | 2100s (35 min) | Yes | Yes (NOLOCK) |
+| `shipments_summary_refresh` | `refresh_shipments_summary_scheduled()` | 30 min | MTD/QTD/YTD from frozen files + live current month, YoY from shipments dashboard files | 2100s (35 min) | Yes | Yes (NOLOCK) |
+| `dashboard_current_refresh` | `refresh_dashboard_current_month()` | 60 min | Dashboard current month only (sotran, US + CA) | 3900s (65 min) | No* | Yes (NOLOCK) |
+| `goals_refresh` | `refresh_goals_cache()` | Daily 2:00 AM | Territory stretch goals from SharePoint Excel file | 86400s (24 hr) | Yes | No (SharePoint) |
+| `daily_health_summary` | `send_daily_summary()` | Daily 7:00 AM | Email health report to admin | N/A | No | No (in-memory) |
+| `session_cleanup` | `cleanup_stale_sessions()` | 60 min | Remove stale sessions >24h from active_sessions.json | N/A | No | No (local JSON) |
 
 *Dashboard current month is also populated by the Bookings Summary refresh (as a side effect of the YTD assembly), so it's usually already warm when the dedicated 60-min job runs.
 
@@ -852,7 +908,13 @@ Cards for Dashboard, Bookings Summary, Daily Bookings, Shipments, My Sales Track
 **Data source:** `sotran` where `ordate = today` — auto-refreshes every 10 min
 **Purpose:** TV/kiosk display — today's orders only, glance-friendly, auto-refreshing
 
-**Per region (US + Canada):** 4 KPI cards (Total Amount, Total Units, Sales Orders, Territories Active), 3 ranking tabs (Territory / Salesman / Customer) with instant CSS toggle, podium display (top 3 with gold/silver/bronze), remaining table below, export buttons gated by role.
+**Per region (US + Canada):** 4 KPI cards (Total Booking Amount, Total Units Ordered, Sales Orders, Territories Active), 3 ranking tabs (Territory / Salesman / Customer) with instant CSS toggle, podium display (top 3 with gold/silver/bronze and MTD + goal % sub-text), remaining table below, export buttons gated by role.
+
+**Territory ranking columns:** Location, Today, MTD (blue), Goal (INV.) (invoiced-based stretch goal), % (MTD/Goal, color-coded), Rank. Podium cards show today's amount, MTD total, and goal progress percentage.
+
+**Salesman ranking columns:** Salesman, Today, MTD (blue), Rank. Podium cards show today's amount and MTD total.
+
+**Customer ranking columns:** Customer, Today, MTD (blue), Rank.
 
 **Canada-specific:** All monetary amounts show both CAD and USD equivalent. Exchange rate badge displayed in the region header.
 
@@ -920,21 +982,23 @@ The shipments page is a **single consolidated view** combining today's data with
 **Purpose:** Per-salesman monthly performance tracker with margin analysis. Each salesman sees only their own data based on their EmployeeId (set in Entra ID → User → Job Information → Employee ID). Admins can browse all salesmen via a dropdown selector. Supports US and CA regions independently with native currency display (USD or CAD).
 
 **Selectors (top bar):**
-- **Month selector** — Goes back 3 years from current month
+- **Month selector** — Shows months from January 2025 to present (older months hidden from dropdown but backend still supports them)
 - **Region selector** — US / CA with country flag image from flagcdn.com CDN
 - **Salesman selector** (Admin only) — Dropdown of all salesmen with shipments in the selected month
 
-**KPI cards (4 + optional goal):**
-- Total Sales (with margin amount and margin %)
-- Total Margin (standalone)
-- Margin %
-- Territory Goal (purple card, shown when goal data exists) — displays the monthly stretch goal for the salesman's primary territory, with progress percentage and invoiced amount. Progress color: green (met, ≥100%), amber (close, ≥75%), red (behind, <75%).
+**KPI cards (6 in single row on desktop, 2x3 grid on mobile):**
+- **Sales (USD)** — Total invoiced sales for the month
+- **Margin (USD)** — Total margin dollars
+- **Margin %** — Margin percentage
+- **Est. Commission** — Estimated commission based on margin × payout rate (configurable per salesman in Admin → Commission Rates, default 2.5%). Tooltip on hover explains it's an estimate. Sub-text shows Mayhem status: "Incl. Mayhem +25%" (green, territory met goal), "Mayhem on pace" (amber, projected to meet), or "Mayhem not met" (red). For salesmen without a territory goal, shows the payout rate percentage.
+- **Territory Goal** (purple card) — Monthly stretch goal for the salesman's territory with team-wide invoiced progress. Uses territory-wide total (all salesmen in that territory), not individual. Progress color: green (met, ≥100%), amber (close, ≥75%), red (behind, <75%).
+- **Region Goal** (sky blue card) — Monthly stretch goal for the salesman's region with region-wide invoiced progress. Same color coding as territory goal.
 - Negative values display in red with red card border (handles credit memo months)
 
 **Charts (4, all Chart.js with chartjs-plugin-datalabels):**
 1. **Product line donut** — Sales breakdown by category (WHEEL, TIRE, ACCE, BA4X4, TPMS, TS, MISCELLANEOUS). Filters to positive-only amounts (donut chart cannot render negatives). Shows note if credit categories were excluded.
 2. **Daily combo chart** — Bar = daily sales amount, Line = margin %. Dynamic y-axis min (extends below zero when negative margins exist). All days of month shown on x-axis.
-3. **Cumulative MTD vs Last Year** — Area chart comparing running total of current month vs same month last year. Shaded fill areas for visual comparison.
+3. **Cumulative MTD vs Territory & Region Goal** — Line chart showing territory-wide and region-wide cumulative invoiced totals against flat goal lines. Four datasets: Territory MTD (green), Region MTD (orange), Territory Goal (purple dashed), Region Goal (blue dashed). Uses team-wide totals, not individual salesman.
 4. **Top 10 customers** — Horizontal bar chart by sales amount with data labels.
 
 **Product line table:** Below the donut chart — lists each product line category with amount, margin, and percentage of total. Sorted by absolute amount descending.
@@ -1149,13 +1213,17 @@ bookings_dashboard_data/
 
 **Route:** `/admin/dashboard-data` — **Role:** `Admin` only
 
-**Tabbed interface:** Two tabs — **Bookings** and **Shipments** — each showing year cards for available years (current year back 7 years). Tab selection persists across page reloads via `window.location.hash`.
+**Tabbed interface:** Five tabs — **Bookings**, **Shipments**, **System Health**, **Commission Rates**, and **Active Sessions**. Tab selection persists across page reloads via `window.location.hash`.
 
 **Per tab:** Each year card shows US and CA rows. Each row shows download status (file size, row count, frozen date) or "Not downloaded" with download/re-download/delete buttons. Current year row shows "Live from SQL" with no actions. "Download US + CA" button per year fetches both regions sequentially.
 
 **Background task system:** Downloads run in background threads to avoid HTTP timeouts on long SQL queries (2-5 min for full-year data). The frontend polls `/admin/dashboard-data/task-status/<task_id>` every 3 seconds for progress updates. A toast bar shows live status with a spinner and elapsed time counter.
 
 **Performance optimization:** The admin page uses `_read_meta_only()` to read just the first 2KB of each gzip file for status display, avoiding the cost of decompressing entire files (which can be 10-50MB).
+
+**Commission Rates tab:** Configure per-salesman commission payout rates. Default rate is 2.5%. Rates are stored in `commission_rates.json`. Mayhem Multiplier (25% bonus) is applied automatically when a territory meets its stretch goal. Supports add/edit/delete with AJAX.
+
+**Active Sessions tab:** Shows all users currently signed in — name, email, roles, IP address, browser/device, login time, and last seen. Green dot = active in last 30 minutes, gray dot = idle. Sessions older than 24 hours are automatically removed by the hourly `session_cleanup` job. Data stored in `active_sessions.json`.
 
 ---
 
@@ -1483,9 +1551,10 @@ Behind a reverse proxy with SSL termination, Flask sees `http://` from `request.
 | **Sales** | Daily Bookings | ✅ Live | Territory/Salesman/Customer ranking tabs with podium, auto-refresh for TV/kiosk, CAD→USD, Excel export |
 | **Sales** | Open Sales Orders | ✅ Live | Territory + salesman rankings, released amount tracking, hourly refresh, CAD→USD, Excel export |
 | **Sales** | Shipments | ✅ Live | Consolidated page: today's pulse + MTD/QTD/YTD with YoY, monthly frozen files, admin data management, Excel export |
-| **Sales** | My Sales Tracker | ✅ Live | Per-salesman monthly: Chart.js (donut, combo, cumulative MTD vs LY, top 10 bar), margin analysis, product line mapping, EmployeeId-locked, 60-min on-demand cache, Excel export |
+| **Sales** | My Sales Tracker | ✅ Live | Per-salesman monthly: 6 KPI cards (Sales, Margin, Margin %, Est. Commission with Mayhem, Territory Goal, Region Goal), Chart.js (donut, combo, cumulative MTD vs Territory & Region Goal, top 10 bar), margin analysis, product line mapping, EmployeeId-locked, 60-min on-demand cache, mobile-optimized (2-col grid, pinch-to-zoom), Excel export |
 | **Sales** | Territory Performance | 🔜 Planned | Monthly trends with period comparison |
-| **Admin** | Dashboard Data | ✅ Live | Tabbed Bookings + Shipments, download/delete yearly frozen files, background task system with progress polling |
+| **Admin** | Dashboard Data | ✅ Live | 5-tab interface: Bookings, Shipments, System Health, Commission Rates, Active Sessions. Download/delete yearly frozen files, background task system, commission rate CRUD, session tracking with online indicators |
+| **Admin** | Active Sessions | ✅ Live | Real-time view of signed-in users with name, email, roles, IP, browser, login time, last seen. Single-session enforcement (one device per user) |
 | **Warehouse** | — | 🔜 Planned | Inventory levels, fulfillment tracking |
 | **Accounting** | — | 🔜 Planned | Invoices, payments, financial reporting |
 | **HR** | — | 🔜 Planned | Employee directory, attendance |
